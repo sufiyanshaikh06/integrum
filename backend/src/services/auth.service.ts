@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
-import { hashPassword } from '../utils/password.js';
+import { hashPassword, comparePassword } from '../utils/password.js';
+import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
 
 export const authService = {
   async register(data: any) {
@@ -69,5 +70,49 @@ export const authService = {
         role: user.role,
       };
     });
+  },
+
+  async login(data: any) {
+    const user = await prisma.user.findUnique({
+      where: { email: data.email },
+    });
+
+    if (!user) {
+      throw ApiError.unauthorized('Invalid email or password');
+    }
+
+    if (!user.isActive) {
+      throw ApiError.forbidden('User account is inactive');
+    }
+
+    const isMatch = await comparePassword(data.password, user.passwordHash);
+    if (!isMatch) {
+      throw ApiError.unauthorized('Invalid email or password');
+    }
+
+    // Update lastLoginAt
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    const accessToken = generateAccessToken(payload);
+    const refreshToken = generateRefreshToken(payload);
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      },
+      accessToken,
+      refreshToken,
+    };
   },
 };
