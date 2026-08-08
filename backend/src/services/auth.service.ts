@@ -1,7 +1,7 @@
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
-import { generateAccessToken, generateRefreshToken } from '../utils/jwt.js';
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 
 export const authService = {
   async register(data: any) {
@@ -115,4 +115,43 @@ export const authService = {
       refreshToken,
     };
   },
+
+  async refresh(refreshToken: string) {
+    // We already handle JWT verification in the controller or via verifyRefreshToken
+    // but the service should verify against the database
+    const payload = verifyRefreshToken(refreshToken);
+
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (!user) {
+      throw ApiError.unauthorized('User associated with this token no longer exists');
+    }
+
+    if (!user.isActive) {
+      throw ApiError.forbidden('User account is inactive');
+    }
+
+    const newPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+
+    const newAccessToken = generateAccessToken(newPayload);
+    const newRefreshToken = generateRefreshToken(newPayload);
+
+    return {
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+    };
+  },
+
+  async logout(userId: string) {
+    // For V1, we just return success since we clear the cookie in the controller.
+    // Future: invalidate refresh token in the database.
+    return { success: true };
+  },
 };
+
