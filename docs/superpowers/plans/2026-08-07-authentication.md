@@ -59,19 +59,16 @@
 - Produces: `register(data)`, `login(data)`, `refresh(token)`, `logout(userId)`, `getProfile(userId)`
 
 - [ ] **Step 1: Write `register(data)`**
-  Check if email exists. Hash password. Use `prisma.$transaction` to create the `User` along with related initial records (`StudentProfile`, `StudentSettings`, `Semester { name: 'Semester 1', isCurrent: true }`, `StudentAnalytics`) in one atomic operation. Return the created user. Compile.
+  Check if email exists. Hash password. Use `prisma.$transaction` to create the `User` along with related initial records (`StudentProfile`, `StudentSettings`, `Semester { name: 'Semester 1', isCurrent: true }`, `StudentAnalytics`) in one atomic operation. Return the created user. Compile. Commit: `feat(auth): implement registration service`.
 
 - [ ] **Step 2: Write `login(data)`**
-  Find user by email. Reject inactive or deleted users. Compare password. Update `lastLoginAt`. Generate access and refresh tokens. Return tokens and user. Compile.
+  Find user by email. Reject inactive or deleted users. Compare password. Update `lastLoginAt`. Generate access and refresh tokens. Return tokens and user. Compile. Commit: `feat(auth): implement login service`.
 
 - [ ] **Step 3: Write `refresh(token)`**
-  Verify refresh token. Ensure user exists. Rotate refresh token. Return new tokens. Compile.
+  Verify refresh token. Ensure user exists. Rotate refresh token. Return new tokens. Compile. Commit: `feat(auth): implement token refresh service`.
 
 - [ ] **Step 4: Write `logout(userId)` and `getProfile(userId)`**
-  Implement basic logout. Create `user.service.ts` for `getProfile(userId)`. Compile.
-
-- [ ] **Step 5: Commit Sprint 2**
-  Commit: `feat(auth): implement authentication service`
+  Implement basic logout. Create `user.service.ts` for `getProfile(userId)` which returns a clean DTO. Compile. Commit: `feat(auth): implement profile service`.
 
 ---
 

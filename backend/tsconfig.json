@@ -10,9 +10,8 @@
     "module": "nodenext",
     "target": "esnext",
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
+      "@/*": ["./src/*"],
       "@shared/*": ["../shared/*"]
     },
     // For nodejs:
@@ -39,10 +38,11 @@
 
     // Recommended Options
     "strict": true,
-    "verbatimModuleSyntax": true,
+    "verbatimModuleSyntax": false,
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
-  }
+  },
+  "include": ["src/**/*"]
 }
