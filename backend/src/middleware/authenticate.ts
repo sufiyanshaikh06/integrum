@@ -37,6 +37,9 @@ export const authenticate = asyncHandler(async (req: Request, res: Response, nex
         email: true,
         role: true,
         isActive: true,
+        studentProfile: {
+          select: { id: true },
+        },
       },
     });
 

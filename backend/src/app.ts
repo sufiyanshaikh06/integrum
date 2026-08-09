@@ -7,6 +7,9 @@ import { env } from './config/env.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
+import semesterRoutes from './routes/semester.routes.js';
+import subjectRoutes from './routes/subject.routes.js';
+import assignmentRoutes from './routes/assignment.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 
@@ -31,6 +34,9 @@ app.use(cookieParser());
 app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/semesters', semesterRoutes);
+app.use('/api/v1/subjects', subjectRoutes);
+app.use('/api/v1/assignments', assignmentRoutes);
 
 // Error Handling
 app.use(notFound);
