@@ -4,7 +4,7 @@
 
 ---
 
-## 1. What are we building?
+## 1. What am I building?
 
 **Integrum** is an integrated student success platform combining academic management, productivity, career development, analytics, and AI intelligence around a unified student profile.
 
@@ -35,7 +35,7 @@ graph TD
 
 ---
 
-## 2. Why are we building it?
+## 2. Why am I building it?
 
 Currently, students experience extreme workflow fragmentation. The objective is to bring these disjointed tools into one unified student platform.
 
@@ -55,9 +55,9 @@ graph LR
 
 ---
 
-## 3. What have we designed?
+## 3. What have I designed?
 
-Before writing code, we established a robust technical foundation to ensure the system scales elegantly.
+Before writing code, I established a robust technical foundation to ensure the system scales elegantly.
 
 ### Core Domain Relationships
 The domain model enforces ownership: student-specific data belongs to the appropriate student context.
@@ -95,7 +95,7 @@ flowchart TD
 
 ---
 
-## 4. What have we actually implemented?
+## 4. What have I actually implemented?
 
 The design is no longer just conceptual documentation. 
 
@@ -174,8 +174,8 @@ Rather than a strict linear flow, the development focuses on the current priorit
 
 ```mermaid
 flowchart TD
-    A[Identity & Access Module]:::completed --> B[Academic Hub]:::completed
-    B --> C[Productivity Hub]:::current
+    A[Identity & Access Module] --> B[Academic Hub]
+    B --> C[Productivity Hub]
     
     subgraph Upcoming Development
     D[Career Hub]
@@ -187,6 +187,7 @@ flowchart TD
     
     C --> Upcoming
     
-    classDef completed fill:#10b981,stroke:#047857,color:#fff;
-    classDef current fill:#3b82f6,stroke:#1d4ed8,color:#fff,font-weight:bold;
+    style A fill:#10b981,stroke:#047857,color:#fff
+    style B fill:#10b981,stroke:#047857,color:#fff
+    style C fill:#3b82f6,stroke:#1d4ed8,color:#fff,stroke-width:2px
 ```
