@@ -119,7 +119,12 @@ export const authService = {
   async refresh(refreshToken: string) {
     // We already handle JWT verification in the controller or via verifyRefreshToken
     // but the service should verify against the database
-    const payload = verifyRefreshToken(refreshToken);
+    let payload;
+    try {
+      payload = verifyRefreshToken(refreshToken);
+    } catch (error) {
+      throw ApiError.unauthorized('Invalid or expired refresh token');
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },

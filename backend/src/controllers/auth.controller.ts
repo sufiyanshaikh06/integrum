@@ -4,6 +4,7 @@ import { ApiResponse } from '../utils/ApiResponse.js';
 import { authService } from '../services/auth.service.js';
 import { setRefreshCookie, clearRefreshCookie } from '../utils/cookies.js';
 import { HTTP_STATUS } from '../constants/httpStatus.js';
+import { ApiError } from '../utils/ApiError.js';
 
 export const authController = {
   register: asyncHandler(async (req: Request, res: Response) => {
@@ -22,8 +23,7 @@ export const authController = {
   refresh: asyncHandler(async (req: Request, res: Response) => {
     const currentRefreshToken = req.cookies.refreshToken;
     if (!currentRefreshToken) {
-      ApiResponse.error(res, 'Refresh token missing', [], HTTP_STATUS.UNAUTHORIZED);
-      return;
+      throw ApiError.unauthorized('Refresh token missing');
     }
 
     const { accessToken, refreshToken } = await authService.refresh(currentRefreshToken);
