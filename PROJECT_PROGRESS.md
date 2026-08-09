@@ -176,18 +176,30 @@ Rather than a strict linear flow, the development focuses on the current priorit
 flowchart TD
     A[Identity & Access Module] --> B[Academic Hub]
     B --> C[Productivity Hub]
-    
-    subgraph Upcoming Development
-    D[Career Hub]
-    E[Analytics Hub]
-    F[AI Intelligence Hub]
-    G[Administration Portal]
-    H[Frontend Integration]
+    C --> I[Upcoming]
+
+    subgraph UpcomingDevelopment["Upcoming Development"]
+        direction LR
+        F[AI Intelligence Hub]
+        D[Career Hub]
+        E[Analytics Hub]
+        G[Administration Portal]
+        H[Frontend Integration]
     end
-    
-    C --> Upcoming
-    
+
+    %% Force Upcoming Development below the completed flow
+    I ~~~ F
+
     style A fill:#10b981,stroke:#047857,color:#fff
     style B fill:#10b981,stroke:#047857,color:#fff
     style C fill:#3b82f6,stroke:#1d4ed8,color:#fff,stroke-width:2px
-```
+
+    style I fill:#1f1f1f,stroke:#888,color:#fff
+
+    style F fill:#1f1f1f,stroke:#888,color:#fff
+    style D fill:#1f1f1f,stroke:#888,color:#fff
+    style E fill:#1f1f1f,stroke:#888,color:#fff
+    style G fill:#1f1f1f,stroke:#888,color:#fff
+    style H fill:#1f1f1f,stroke:#888,color:#fff
+
+    style UpcomingDevelopment fill:#1f1f1f,stroke:#888,color:#fff
