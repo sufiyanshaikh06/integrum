@@ -134,6 +134,7 @@ flowchart TD
 - [x] **Logout:** Securely clearing the session cookies.
 - [x] **Validation & Error Handling:** Graceful handling of duplicate emails (409 Conflict) and bad inputs (400 Bad Request).
 - [x] **Academic Hub (Ownership Hierarchy):** Creating Semesters, Subjects, and Assignments with strict data isolation.
+- [x] **Productivity Hub (Tasks):** Creating, updating, and fetching Tasks while verifying cross-user data isolation.
 
 ---
 
@@ -146,8 +147,9 @@ flowchart LR
     C --> D[Database Design]
     D --> E[Backend Infrastructure]
     E --> F[Identity & Access Implementation]
-    F --> G[End-to-End Verification]
-    G --> H[Productivity Hub - Next]
+    F --> G[Academic Hub Implementation]
+    G --> H[Productivity Hub Implementation]
+    H --> I[End-to-End Verification]
 ```
 
 Each major development step follows SDLC phases: implemented incrementally, verified locally, and committed to Git as a separate logical change.
@@ -167,6 +169,7 @@ The authentication layer is now a working vertical slice of the architecture, an
 | **Backend Infrastructure** | ✅ Complete |
 | **Identity & Access Module** | ✅ Complete |
 | **Academic Hub** | ✅ Complete |
+| **Productivity Hub (Tasks)** | ✅ Complete |
 
 ### Project Roadmap
 
@@ -192,7 +195,7 @@ flowchart TD
 
     style A fill:#10b981,stroke:#047857,color:#fff
     style B fill:#10b981,stroke:#047857,color:#fff
-    style C fill:#3b82f6,stroke:#1d4ed8,color:#fff,stroke-width:2px
+    style C fill:#10b981,stroke:#047857,color:#fff
 
     style I fill:#1f1f1f,stroke:#888,color:#fff
 
