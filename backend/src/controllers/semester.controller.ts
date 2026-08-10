@@ -26,7 +26,7 @@ export const semesterController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can view semesters');
 
-    const semester = await semesterService.getSemesterById(profileId, req.params.id);
+    const semester = await semesterService.getSemesterById(profileId, req.params.id as string);
     ApiResponse.success(res, 'Semester retrieved successfully', semester, HTTP_STATUS.OK);
   }),
 
@@ -34,7 +34,7 @@ export const semesterController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can update semesters');
 
-    const semester = await semesterService.updateSemester(profileId, req.params.id, req.body);
+    const semester = await semesterService.updateSemester(profileId, req.params.id as string, req.body);
     ApiResponse.success(res, 'Semester updated successfully', semester, HTTP_STATUS.OK);
   }),
 
@@ -42,7 +42,7 @@ export const semesterController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can delete semesters');
 
-    await semesterService.deleteSemester(profileId, req.params.id);
+    await semesterService.deleteSemester(profileId, req.params.id as string);
     ApiResponse.success(res, 'Semester deleted successfully', null, HTTP_STATUS.OK);
   }),
 };

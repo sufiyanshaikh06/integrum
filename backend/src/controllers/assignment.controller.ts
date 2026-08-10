@@ -27,7 +27,7 @@ export const assignmentController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can view assignments');
 
-    const assignment = await assignmentService.getAssignmentById(profileId, req.params.id);
+    const assignment = await assignmentService.getAssignmentById(profileId, req.params.id as string);
     ApiResponse.success(res, 'Assignment retrieved successfully', assignment, HTTP_STATUS.OK);
   }),
 
@@ -35,7 +35,7 @@ export const assignmentController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can update assignments');
 
-    const assignment = await assignmentService.updateAssignment(profileId, req.params.id, req.body);
+    const assignment = await assignmentService.updateAssignment(profileId, req.params.id as string, req.body);
     ApiResponse.success(res, 'Assignment updated successfully', assignment, HTTP_STATUS.OK);
   }),
 
@@ -43,7 +43,7 @@ export const assignmentController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can delete assignments');
 
-    await assignmentService.deleteAssignment(profileId, req.params.id);
+    await assignmentService.deleteAssignment(profileId, req.params.id as string);
     ApiResponse.success(res, 'Assignment deleted successfully', null, HTTP_STATUS.OK);
   }),
 };

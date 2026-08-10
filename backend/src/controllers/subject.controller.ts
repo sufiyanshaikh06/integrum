@@ -27,7 +27,7 @@ export const subjectController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can view subjects');
 
-    const subject = await subjectService.getSubjectById(profileId, req.params.id);
+    const subject = await subjectService.getSubjectById(profileId, req.params.id as string);
     ApiResponse.success(res, 'Subject retrieved successfully', subject, HTTP_STATUS.OK);
   }),
 
@@ -35,7 +35,7 @@ export const subjectController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can update subjects');
 
-    const subject = await subjectService.updateSubject(profileId, req.params.id, req.body);
+    const subject = await subjectService.updateSubject(profileId, req.params.id as string, req.body);
     ApiResponse.success(res, 'Subject updated successfully', subject, HTTP_STATUS.OK);
   }),
 
@@ -43,7 +43,7 @@ export const subjectController = {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can delete subjects');
 
-    await subjectService.deleteSubject(profileId, req.params.id);
+    await subjectService.deleteSubject(profileId, req.params.id as string);
     ApiResponse.success(res, 'Subject deleted successfully', null, HTTP_STATUS.OK);
   }),
 };
