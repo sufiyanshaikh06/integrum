@@ -135,6 +135,7 @@ flowchart TD
 - [x] **Validation & Error Handling:** Graceful handling of duplicate emails (409 Conflict) and bad inputs (400 Bad Request).
 - [x] **Academic Hub (Ownership Hierarchy):** Creating Semesters, Subjects, and Assignments with strict data isolation.
 - [x] **Productivity Hub (Tasks):** Creating, updating, and fetching Tasks while verifying cross-user data isolation.
+- [x] **Productivity Hub (Reminders):** Creating, updating, and fetching Reminders while verifying cross-user data isolation.
 
 ---
 
@@ -169,7 +170,7 @@ The authentication layer is now a working vertical slice of the architecture, an
 | **Backend Infrastructure** | ✅ Complete |
 | **Identity & Access Module** | ✅ Complete |
 | **Academic Hub** | ✅ Complete |
-| **Productivity Hub (Tasks)** | ✅ Complete |
+| **Productivity Hub (Tasks & Reminders)** | ✅ Complete |
 
 ### Project Roadmap
 
