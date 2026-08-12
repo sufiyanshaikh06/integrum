@@ -11,6 +11,7 @@ import semesterRoutes from './routes/semester.routes.js';
 import subjectRoutes from './routes/subject.routes.js';
 import assignmentRoutes from './routes/assignment.routes.js';
 import taskRoutes from './routes/task.routes.js';
+import reminderRoutes from './routes/reminder.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 
@@ -39,6 +40,7 @@ app.use('/api/v1/semesters', semesterRoutes);
 app.use('/api/v1/subjects', subjectRoutes);
 app.use('/api/v1/assignments', assignmentRoutes);
 app.use('/api/v1/tasks', taskRoutes);
+app.use('/api/v1/reminders', reminderRoutes);
 
 // Error Handling
 app.use(notFound);
