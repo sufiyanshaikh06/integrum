@@ -65,6 +65,25 @@ enum AIModule {
   NOTES
 }
 
+enum StudyPlanStatus {
+  ACTIVE
+  COMPLETED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum CalendarEventType {
+  EXAM
+  HOLIDAY
+  COLLEGE_EVENT
+  CLASS
+}
+
 // ---------------------------------------------------------
 // 1. IDENTITY, ACCESS & SETTINGS
 // ---------------------------------------------------------
@@ -102,6 +121,7 @@ model StudentProfile {
   tasks            Task[]
   reminders        Reminder[]
   studyPlans       StudyPlan[]
+  calendarEvents   CalendarEvent[]
   resumes          Resume[]
   skills           Skill[]
   studentAnalytics StudentAnalytics?
@@ -176,8 +196,9 @@ model Subject {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  assignments Assignment[]
-  notes       Note[]
+  assignments       Assignment[]
+  notes             Note[]
+  attendanceRecords AttendanceRecord[]
 }
 
 model Assignment {
@@ -212,10 +233,36 @@ model StudyPlan {
   title            String
   targetDate       DateTime?
   goals            String?        @db.Text
+  status           StudyPlanStatus @default(ACTIVE)
+  progressPercentage Float        @default(0.0)
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
   tasks Task[]
+}
+
+model AttendanceRecord {
+  id          String           @id @default(uuid())
+  subjectId   String
+  subject     Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  date        DateTime
+  status      AttendanceStatus
+  notes       String?          @db.Text
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model CalendarEvent {
+  id               String            @id @default(uuid())
+  studentProfileId String
+  studentProfile   StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  title            String
+  description      String?           @db.Text
+  date             DateTime
+  endDate          DateTime?
+  eventType        CalendarEventType
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
 
 // ---------------------------------------------------------

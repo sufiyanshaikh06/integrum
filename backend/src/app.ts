@@ -9,9 +9,24 @@ import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
 import semesterRoutes from './routes/semester.routes.js';
 import subjectRoutes from './routes/subject.routes.js';
+import express from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
+import { env } from './config/env.js';
+import healthRoutes from './routes/health.routes.js';
+import authRoutes from './routes/auth.routes.js';
+import userRoutes from './routes/user.routes.js';
+import semesterRoutes from './routes/semester.routes.js';
+import subjectRoutes from './routes/subject.routes.js';
 import assignmentRoutes from './routes/assignment.routes.js';
 import taskRoutes from './routes/task.routes.js';
 import reminderRoutes from './routes/reminder.routes.js';
+import studyPlanRoutes from './routes/studyplan.routes.js';
+import noteRoutes from './routes/note.routes.js';
+import attendanceRoutes from './routes/attendance.routes.js';
+import calendarRoutes from './routes/calendar.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 
@@ -41,6 +56,10 @@ app.use('/api/v1/subjects', subjectRoutes);
 app.use('/api/v1/assignments', assignmentRoutes);
 app.use('/api/v1/tasks', taskRoutes);
 app.use('/api/v1/reminders', reminderRoutes);
+app.use('/api/v1/study-plans', studyPlanRoutes);
+app.use('/api/v1/notes', noteRoutes);
+app.use('/api/v1/attendance', attendanceRoutes);
+app.use('/api/v1/calendar', calendarRoutes);
 
 // Error Handling
 app.use(notFound);
