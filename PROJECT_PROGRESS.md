@@ -191,17 +191,26 @@ The Productivity Hub focuses on immediate actionable items and schedule manageme
 
 ### 4.5 Career Hub
 
-**Status:** ⏳ Planned
+**Status:** ⏳ In Progress
 
-The Career Hub will manage professional development artifacts and job applications.
+The Career Hub manages professional development artifacts and job applications.
 
-#### Planned Components
+#### Implemented Components
 
 | Component | Status | Key functionality |
 |---|---|---|
-| Resume Management | ⏳ | Versioning, ATS scoring, feedback |
+| Resume Management | ✅ | Versioning, ATS scoring, feedback |
 | Skill Management | ⏳ | Tracking technical and soft skills |
 | Job Application Tracking | ⏳ | Application status, notes, pipeline |
+
+#### Working Software
+- [x] Creating, updating, and retrieving Resumes (including automatic version creation)
+
+#### Verification
+- [x] CRUD testing
+- [x] Validation testing
+- [x] Cross-user isolation
+- [x] Invalid-resource handling
 
 ### 4.6 Analytics Hub
 
