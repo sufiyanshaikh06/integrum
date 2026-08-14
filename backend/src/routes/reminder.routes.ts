@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { authenticate, authorize } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
+import { authenticate } from '../middleware/authenticate.js';
+import { authorize } from '../middleware/authorize.js';
+import { validateRequest } from '../middleware/validateRequest.js';
 import { createReminderSchema, updateReminderSchema } from '../schemas/reminder.schema.js';
 import {
   createReminder,
@@ -13,13 +14,12 @@ import {
 const router = Router();
 
 // All reminder routes require authentication and STUDENT role
-router.use(authenticate);
-router.use(authorize('STUDENT'));
+router.use(authenticate, authorize('STUDENT'));
 
-router.post('/', validate(createReminderSchema), createReminder);
+router.post('/', validateRequest(createReminderSchema), createReminder);
 router.get('/', getReminders);
 router.get('/:id', getReminderById);
-router.patch('/:id', validate(updateReminderSchema), updateReminder);
+router.patch('/:id', validateRequest(updateReminderSchema), updateReminder);
 router.delete('/:id', deleteReminder);
 
 export default router;

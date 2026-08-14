@@ -1,6 +1,6 @@
 # Integrum — Mini Project Progress Review
 
-> **From Problem Definition → System Architecture → Database → Working Authentication**
+> **From Problem Definition → System Architecture → Database → Working Backend Modules**
 
 ---
 
@@ -95,50 +95,153 @@ flowchart TD
 
 ---
 
-## 4. What have I actually implemented?
+## 4. What have we actually implemented?
 
 The design is no longer just conceptual documentation. 
 
-### Database Infrastructure
+### 4.1 Database Infrastructure
 The schema has been successfully migrated to a local PostgreSQL database, establishing the real table structure (15 models, 9 enums).
 
-### Complete Backend Authentication Flow
-The first major backend feature—the **Identity & Access: Authentication Module**—is implemented and tested with the planned security controls.
+### 4.2 Identity & Access
 
-```mermaid
-flowchart TD
-    A[Registration] --> B[Zod Validation]
-    B --> C[bcrypt Password Hashing]
-    C --> D[Prisma Database Transaction]
-    D --> E[User + Student Records Created]
-    
-    F[Login] --> G[bcrypt Verification]
-    G --> H[Access Token generated]
-    G --> I[Refresh Token generated]
-    
-    H -->|Client Memory| J[Protected API Routes]
-    I -->|HttpOnly Cookie| K[Refresh-token lifecycle]
-```
+**Status:** ✅ Complete
 
----
+The Identity & Access module provides secure authentication, authorization, and session management.
 
-## 5. Live Demonstration (Working Software)
+#### Implemented Components
 
-> [!NOTE]
-> *Switching to terminal/browser to demonstrate actual API workflows:*
+| Component | Status | Key functionality |
+|---|---|---|
+| Registration | ✅ | Transactional account creation with automatic default semester assignment |
+| Login | ✅ | Secure credential verification |
+| JWT Access Tokens | ✅ | Secure API access via Bearer tokens |
+| Refresh Token Lifecycle | ✅ | Secure rotation via `HttpOnly` cookie |
+| Logout | ✅ | Securely clearing session cookies |
+| RBAC | ✅ | Role-based authorization controls |
+| Validation & Error Handling | ✅ | Graceful handling of duplicate emails (409 Conflict) and bad inputs (400 Bad Request) |
 
-- [x] **Registration:** Transactional account creation with automatic default semester assignment.
-- [x] **Login:** Secure credential verification generating JWT access & refresh tokens.
-- [x] **Protected API (`/users/me`):** Fetching the authenticated user's profile using a Bearer token.
-- [x] **Refresh Token:** Using the secure `HttpOnly` cookie to rotate access tokens.
-- [x] **Logout:** Securely clearing the session cookies.
-- [x] **Validation & Error Handling:** Graceful handling of duplicate emails (409 Conflict) and bad inputs (400 Bad Request).
-- [x] **Academic Hub (Ownership Hierarchy):** Complete implementation of Semesters, Subjects, Assignments, Study Planner, Notes Manager, Attendance Tracker, and Academic Calendar with strict data isolation.
-- [x] **Productivity Hub:** Complete implementation of Tasks and Reminders while verifying cross-user data isolation.
+#### Working Software
+- [x] Registration
+- [x] Login
+- [x] Protected API access (`/users/me`)
+- [x] Token refresh
+- [x] Logout
+- [x] Validation & Error Handling
 
----
+#### Verification
+- [x] CRUD testing
+- [x] Validation testing
+- [x] Security testing (Auth/RBAC)
+- [x] Invalid-resource handling
 
-## 6. Development Methodology
+### 4.3 Academic Hub
+
+**Status:** ✅ Complete
+
+The Academic Hub provides the core ownership hierarchy and academic management tools for the student.
+
+#### Implemented Components
+
+| Component | Status | Key functionality |
+|---|---|---|
+| Semester Management | ✅ | CRUD + ownership |
+| Subject Management | ✅ | CRUD + semester ownership |
+| Assignment Manager | ✅ | CRUD + subject ownership |
+| Study Planner | ✅ | CRUD + progress tracking |
+| Notes Manager | ✅ | CRUD + tags and file metadata |
+| Attendance Tracker | ✅ | Daily logging + percentage calculation |
+| Academic Calendar | ✅ | Event creation + timeline mapping |
+
+#### Working Software
+- [x] Creating Semesters, Subjects, and Assignments with strict data isolation
+- [x] Managing Study Plans and generating progress
+- [x] Storing Notes with metadata
+- [x] Tracking Subject Attendance
+- [x] Managing Calendar Events
+
+#### Verification
+- [x] CRUD testing
+- [x] Validation testing
+- [x] Cross-user isolation
+- [x] Invalid-resource handling
+- [x] Regression testing
+
+### 4.4 Productivity Hub
+
+**Status:** ✅ Complete
+
+The Productivity Hub focuses on immediate actionable items and schedule management for the student.
+
+#### Implemented Components
+
+| Component | Status | Key functionality |
+|---|---|---|
+| Task Management | ✅ | CRUD + ownership + status tracking |
+| Reminder Management | ✅ | CRUD + ownership + trigger scheduling |
+
+#### Working Software
+- [x] Creating, updating, and fetching Tasks while verifying cross-user data isolation
+- [x] Creating, updating, and fetching Reminders while verifying cross-user data isolation
+
+#### Verification
+- [x] CRUD testing
+- [x] Validation testing
+- [x] Cross-user isolation
+- [x] Invalid-resource handling
+
+### 4.5 Career Hub
+
+**Status:** ⏳ Planned
+
+The Career Hub will manage professional development artifacts and job applications.
+
+#### Planned Components
+
+| Component | Status | Key functionality |
+|---|---|---|
+| Resume Management | ⏳ | Versioning, ATS scoring, feedback |
+| Skill Management | ⏳ | Tracking technical and soft skills |
+| Job Application Tracking | ⏳ | Application status, notes, pipeline |
+
+### 4.6 Analytics Hub
+
+**Status:** ⏳ Planned
+
+The Analytics Hub will provide aggregated insights across the student's academic and productivity profiles.
+
+#### Planned Components
+
+| Component | Status | Key functionality |
+|---|---|---|
+| Student Analytics | ⏳ | Attendance percentage, task completion rates, overall score |
+
+### 4.7 AI Intelligence
+
+**Status:** ⏳ Planned
+
+The AI Intelligence Hub will integrate language models to assist with learning and career development.
+
+#### Planned Components
+
+| Component | Status | Key functionality |
+|---|---|---|
+| AI Execution Tracking | ⏳ | Logging AI requests across Resume, Study Plan, and Notes modules |
+
+### 4.8 Administration Portal
+
+**Status:** ⏳ Planned
+
+The Administration Portal will allow administrators to manage global settings, announcements, and university-level configurations.
+
+#### Planned Components
+
+| Component | Status | Key functionality |
+|---|---|---|
+| Admin Profile Management | ⏳ | Department and permissions tracking |
+| Global Announcements | ⏳ | Broadcasting system notifications |
+
+
+## 5. Development Methodology
 
 ```mermaid
 flowchart LR

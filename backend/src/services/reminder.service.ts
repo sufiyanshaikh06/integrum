@@ -27,16 +27,15 @@ export const reminderService = {
   },
 
   async getReminderById(studentProfileId: string, reminderId: string) {
-    const reminder = await prisma.reminder.findUnique({
-      where: { id: reminderId },
+    const reminder = await prisma.reminder.findFirst({
+      where: {
+        id: reminderId,
+        studentProfileId,
+      },
     });
 
     if (!reminder) {
-      throw ApiError.notFound('Reminder not found');
-    }
-
-    if (reminder.studentProfileId !== studentProfileId) {
-      throw ApiError.notFound('Reminder not found'); // Using notFound to prevent info leakage
+      throw ApiError.notFound('Reminder not found or does not belong to you');
     }
 
     return reminder;
