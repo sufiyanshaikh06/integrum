@@ -200,11 +200,12 @@ The Career Hub manages professional development artifacts and job applications.
 | Component | Status | Key functionality |
 |---|---|---|
 | Resume Management | ✅ | Versioning, ATS scoring, feedback |
-| Skill Management | ⏳ | Tracking technical and soft skills |
+| Skill Management | ✅ | Tracking technical and soft skills |
 | Job Application Tracking | ⏳ | Application status, notes, pipeline |
 
 #### Working Software
 - [x] Creating, updating, and retrieving Resumes (including automatic version creation)
+- [x] Creating, updating, and retrieving Skills with predefined categories
 
 #### Verification
 - [x] CRUD testing
