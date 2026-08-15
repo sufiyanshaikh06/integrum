@@ -29,6 +29,7 @@ import attendanceRoutes from './routes/attendance.routes.js';
 import calendarRoutes from './routes/calendar.routes.js';
 import resumeRoutes from './routes/resume.routes.js';
 import skillRoutes from './routes/skill.routes.js';
+import jobApplicationRoutes from './routes/jobapplication.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 
@@ -64,6 +65,7 @@ app.use('/api/v1/attendance', attendanceRoutes);
 app.use('/api/v1/calendar', calendarRoutes);
 app.use('/api/v1/resumes', resumeRoutes);
 app.use('/api/v1/skills', skillRoutes);
+app.use('/api/v1/job-applications', jobApplicationRoutes);
 
 // Error Handling
 app.use(notFound);
