@@ -216,21 +216,20 @@ The Career Hub manages professional development artifacts and job applications.
 
 ### 4.6 Analytics Hub
 
-**Status:** ⏳ Planned
+**Status:** 🚧 Foundation / Partially Complete
 
-The Analytics Hub will provide aggregated insights across the student's academic and productivity profiles.
+The Analytics Hub aggregates and analyzes data across the Academic, Productivity, and Career Hubs.
 
-#### Planned Components
+#### Implemented Components
 
 | Component | Status | Key functionality |
 |---|---|---|
-| Student Analytics | ⏳ | Attendance percentage, task completion rates, overall score |
+| Student Dashboard | 🚧 | Core metrics aggregation across modules |
+| Score Calculation | 🚧 | Multi-dimensional student performance score |
 
-### 4.7 AI Intelligence
-
-**Status:** ⏳ Planned
-
-The AI Intelligence Hub will integrate language models to assist with learning and career development.
+#### Working Software
+- [x] Initial aggregate endpoints that compile existing database data
+- [x] Cross-module calculations for assignments, attendance, tasks, and applications
 
 #### Planned Components
 
