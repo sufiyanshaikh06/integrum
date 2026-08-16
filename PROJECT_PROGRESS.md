@@ -140,6 +140,16 @@ The Identity & Access module provides secure authentication, authorization, and 
 
 The Academic Hub provides the core ownership hierarchy and academic management tools for the student.
 
+```mermaid
+graph TD
+    A[Academic Hub] --> B(Semester & Subject)
+    A --> C(Study Planner)
+    A --> D(Notes Manager)
+    A --> E(Attendance Tracker)
+    A --> F(Academic Calendar)
+    A --> G(Assignment Manager)
+```
+
 #### Implemented Components
 
 | Component | Status | Key functionality |
@@ -172,6 +182,12 @@ The Academic Hub provides the core ownership hierarchy and academic management t
 
 The Productivity Hub focuses on immediate actionable items and schedule management for the student.
 
+```mermaid
+graph TD
+    A[Productivity Hub] --> B(Task Management)
+    A --> C(Reminder Management)
+```
+
 #### Implemented Components
 
 | Component | Status | Key functionality |
@@ -194,6 +210,13 @@ The Productivity Hub focuses on immediate actionable items and schedule manageme
 **Status:** ✅ Complete
 
 The Career Hub manages professional development artifacts and job applications.
+
+```mermaid
+graph TD
+    A[Career Hub] --> B(Resume Management)
+    A --> C(Skill Management)
+    A --> D(Job Application Tracking)
+```
 
 #### Implemented Components
 
@@ -231,11 +254,17 @@ The Analytics Hub aggregates and analyzes data across the Academic, Productivity
 - [x] Initial aggregate endpoints that compile existing database data
 - [x] Cross-module calculations for assignments, attendance, tasks, and applications
 
+### 4.7 AI Intelligence Hub
+
+**Status:** ⏳ Planned
+
+The AI Intelligence Hub integrates language models to assist with learning and career development through AI-driven insights.
+
 #### Planned Components
 
 | Component | Status | Key functionality |
 |---|---|---|
-| AI Execution Tracking | ⏳ | Logging AI requests across Resume, Study Plan, and Notes modules |
+| AI Execution Tracking | ⏳ | Detailed logging of all interactions with language models across the platform, ensuring full visibility into AI requests, performance, and status across the Resume, Study Plan, and Notes modules. |
 
 ### 4.8 Administration Portal
 
@@ -247,14 +276,14 @@ The Administration Portal will allow administrators to manage global settings, a
 
 | Component | Status | Key functionality |
 |---|---|---|
-| Admin Profile Management | ⏳ | Department and permissions tracking |
-| Global Announcements | ⏳ | Broadcasting system notifications |
+| Admin Profile Management | ⏳ | Comprehensive department alignment and multi-tiered permissions tracking to ensure staff can safely access and configure specific segments of the university ecosystem. |
+| Global Announcements | ⏳ | Broadcasting system notifications and urgent administrative alerts globally to all enrolled student profiles. |
 
 
 ## 5. Development Methodology
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[Requirements & Scope] --> B[Domain Modeling]
     B --> C[Architecture Design]
     C --> D[Database Design]
@@ -263,12 +292,13 @@ flowchart LR
     F --> G[Academic Hub Implementation]
     G --> H[Productivity Hub Implementation]
     H --> I[End-to-End Verification]
-    I --> J[Career Hub Implementation - Next]
+    I --> J[Career Hub Implementation]
+    J --> K[Analytics Hub Implementation - Next]
 ```
 
 ### What Comes Next?
 
-The **Academic Hub** and **Productivity Hub** are fully implemented and verified. The next milestone is the **Career Hub**, starting with Resume and Skill Management.
+The **Academic Hub**, **Productivity Hub**, and **Career Hub** are fully implemented and verified. The next milestone is the **Analytics Hub**, which is partially complete and will aggregate the student data across all modules.
 
 ### Current Status
 | Area | Status |
@@ -280,6 +310,8 @@ The **Academic Hub** and **Productivity Hub** are fully implemented and verified
 | **Identity & Access Module** | ✅ Complete |
 | **Academic Hub** | ✅ Complete |
 | **Productivity Hub** | ✅ Complete |
+| **Career Hub** | ✅ Complete |
+| **Analytics Hub** | 🚧 Partially Complete |
 
 ### Project Roadmap
 
@@ -289,13 +321,13 @@ Rather than a strict linear flow, the development focuses on the current priorit
 flowchart TD
     A[Identity & Access Module] --> B[Academic Hub]
     B --> C[Productivity Hub]
-    C --> I[Upcoming]
+    C --> D[Career Hub]
+    D --> E[Analytics Hub]
+    E --> I[Upcoming]
 
     subgraph UpcomingDevelopment["Upcoming Development"]
         direction LR
         F[AI Intelligence Hub]
-        D[Career Hub]
-        E[Analytics Hub]
         G[Administration Portal]
         H[Frontend Integration]
     end
@@ -306,13 +338,14 @@ flowchart TD
     style A fill:#10b981,stroke:#047857,color:#fff
     style B fill:#10b981,stroke:#047857,color:#fff
     style C fill:#10b981,stroke:#047857,color:#fff
+    style D fill:#10b981,stroke:#047857,color:#fff
+    style E fill:#f59e0b,stroke:#d97706,color:#fff
 
     style I fill:#1f1f1f,stroke:#888,color:#fff
 
     style F fill:#1f1f1f,stroke:#888,color:#fff
-    style D fill:#1f1f1f,stroke:#888,color:#fff
-    style E fill:#1f1f1f,stroke:#888,color:#fff
     style G fill:#1f1f1f,stroke:#888,color:#fff
     style H fill:#1f1f1f,stroke:#888,color:#fff
 
     style UpcomingDevelopment fill:#1f1f1f,stroke:#888,color:#fff
+```
