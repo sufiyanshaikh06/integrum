@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { authenticate, authorize } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
+import { authenticate } from '../middleware/authenticate.js';
+import { authorize } from '../middleware/authorize.js';
+import { validateRequest as validate } from '../middleware/validateRequest.js';
 import { createNoteSchema, updateNoteSchema } from '../schemas/note.schema.js';
 import {
   createNote,

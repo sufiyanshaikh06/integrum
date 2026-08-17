@@ -4,17 +4,8 @@ import cors from 'cors';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import { env } from './config/env.js';
-import healthRoutes from './routes/health.routes.js';
-import authRoutes from './routes/auth.routes.js';
-import userRoutes from './routes/user.routes.js';
-import semesterRoutes from './routes/semester.routes.js';
-import subjectRoutes from './routes/subject.routes.js';
-import express from 'express';
-import helmet from 'helmet';
-import cors from 'cors';
-import morgan from 'morgan';
-import cookieParser from 'cookie-parser';
-import { env } from './config/env.js';
+
+// Route imports
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import userRoutes from './routes/user.routes.js';
@@ -31,6 +22,8 @@ import resumeRoutes from './routes/resume.routes.js';
 import skillRoutes from './routes/skill.routes.js';
 import jobApplicationRoutes from './routes/jobapplication.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
+import aiRoutes from './routes/ai.routes.js';
+
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 
@@ -68,6 +61,7 @@ app.use('/api/v1/resumes', resumeRoutes);
 app.use('/api/v1/skills', skillRoutes);
 app.use('/api/v1/job-applications', jobApplicationRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/ai', aiRoutes);
 
 // Error Handling
 app.use(notFound);
