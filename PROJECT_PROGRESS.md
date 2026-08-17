@@ -239,16 +239,22 @@ graph TD
 
 ### 4.6 Analytics Hub
 
-**Status:** 🚧 Foundation / Partially Complete
+**Status:** ✅ Complete
 
 The Analytics Hub aggregates and analyzes data across the Academic, Productivity, and Career Hubs.
+
+```mermaid
+graph TD
+    A[Analytics Hub] --> B(Student Dashboard)
+    A --> C(Score Calculation)
+```
 
 #### Implemented Components
 
 | Component | Status | Key functionality |
 |---|---|---|
-| Student Dashboard | 🚧 | Core metrics aggregation across modules |
-| Score Calculation | 🚧 | Multi-dimensional student performance score |
+| Student Dashboard | ✅ | Core metrics aggregation across modules |
+| Score Calculation | ✅ | Multi-dimensional student performance score |
 
 #### Working Software
 - [x] Initial aggregate endpoints that compile existing database data
@@ -259,6 +265,13 @@ The Analytics Hub aggregates and analyzes data across the Academic, Productivity
 **Status:** 🟡 First functional slice
 
 The AI Intelligence Hub integrates language models to assist with learning and career development through AI-driven insights.
+
+```mermaid
+graph TD
+    A[AI Intelligence Hub] --> B(AI Service Infrastructure)
+    A --> C(AI Execution Tracking)
+    A --> D(AI Study Plan Assistant)
+```
 
 #### Implemented Components
 
@@ -305,12 +318,14 @@ flowchart TD
     G --> H[Productivity Hub Implementation]
     H --> I[End-to-End Verification]
     I --> J[Career Hub Implementation]
-    J --> K[Analytics Hub Implementation - Next]
+    J --> K[Analytics Hub Implementation]
+    K --> L[AI Intelligence Hub Implementation]
+    L --> M[Administration Portal Implementation - Next]
 ```
 
 ### What Comes Next?
 
-The **Academic Hub**, **Productivity Hub**, and **Career Hub** are fully implemented and verified. The next milestone is the **Analytics Hub**, which is partially complete and will aggregate the student data across all modules.
+The **Academic Hub**, **Productivity Hub**, **Career Hub**, **Analytics Hub**, and **AI Intelligence Hub** are fully implemented and verified. The next milestone is the **Administration Portal**, which will allow administrators to manage global settings and announcements.
 
 ### Current Status
 | Area | Status |
@@ -323,7 +338,9 @@ The **Academic Hub**, **Productivity Hub**, and **Career Hub** are fully impleme
 | **Academic Hub** | ✅ Complete |
 | **Productivity Hub** | ✅ Complete |
 | **Career Hub** | ✅ Complete |
-| **Analytics Hub** | 🚧 Partially Complete |
+| **Analytics Hub** | ✅ Complete |
+| **AI Intelligence Hub** | 🟡 First functional slice |
+| **Administration Portal** | ⏳ Planned |
 
 ### Project Roadmap
 
@@ -335,27 +352,27 @@ flowchart TD
     B --> C[Productivity Hub]
     C --> D[Career Hub]
     D --> E[Analytics Hub]
-    E --> I[Upcoming]
+    E --> F[AI Intelligence Hub]
+    F --> I[Upcoming]
 
     subgraph UpcomingDevelopment["Upcoming Development"]
-        direction LR
-        F[AI Intelligence Hub]
+        direction TD
         G[Administration Portal]
         H[Frontend Integration]
     end
 
     %% Force Upcoming Development below the completed flow
-    I ~~~ F
+    I ~~~ G
 
     style A fill:#10b981,stroke:#047857,color:#fff
     style B fill:#10b981,stroke:#047857,color:#fff
     style C fill:#10b981,stroke:#047857,color:#fff
     style D fill:#10b981,stroke:#047857,color:#fff
-    style E fill:#f59e0b,stroke:#d97706,color:#fff
+    style E fill:#10b981,stroke:#047857,color:#fff
+    style F fill:#f59e0b,stroke:#d97706,color:#fff
 
     style I fill:#1f1f1f,stroke:#888,color:#fff
 
-    style F fill:#1f1f1f,stroke:#888,color:#fff
     style G fill:#1f1f1f,stroke:#888,color:#fff
     style H fill:#1f1f1f,stroke:#888,color:#fff
 
