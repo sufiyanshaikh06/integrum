@@ -1,9 +1,20 @@
 import { prisma } from '../config/prisma.js';
+import { env } from '../config/env.js';
 import { ApiError } from '../utils/ApiError.js';
 import { AIExecutionStatus, AIModule } from '@prisma/client';
+import { IAIProvider, StudyPlanContext } from './ai/ai.provider.js';
+import { MockProvider } from './ai/mock.provider.js';
+import { GeminiProvider } from './ai/gemini.provider.js';
 
 export class AIService {
   
+  private static getProvider(): IAIProvider {
+    if (env.AI_PROVIDER === 'gemini') {
+      return new GeminiProvider();
+    }
+    return new MockProvider();
+  }
+
   /**
    * Core AI execution logging infrastructure
    */
@@ -58,26 +69,17 @@ export class AIService {
         select: { name: true, targetGrade: true }
       });
 
-      // 3. Mock the AI response generation
-      // In a real app, this would call an LLM (OpenAI, Gemini, etc.) using the input + context
-      
-      // Simulate network delay for realistic execution logging test
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      const generatedPlan = {
-        title: `AI Study Plan: ${input.topic}`,
-        recommendedTargetDate: input.targetDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-        overview: `Based on your goal to study ${input.topic}, and considering your current subjects (${subjects.map(s => s.name).join(', ') || 'None'}), we recommend a structured approach.`,
-        suggestedTasks: [
-          { title: `Read foundational materials on ${input.topic}`, description: 'Focus on core concepts.' },
-          { title: 'Complete practice exercises', description: 'Apply concepts in a practical setting.' },
-          { title: 'Review and summarize', description: 'Create a cheat sheet or summary notes.' }
-        ],
-        contextUsed: {
-          attendancePercentage: analytics?.attendancePercentage || 0,
-          subjectsCount: subjects.length
-        }
+      const context: StudyPlanContext = {
+        topic: input.topic,
+        targetDate: input.targetDate,
+        goals: input.goals,
+        attendancePercentage: analytics?.attendancePercentage || 0,
+        subjects: subjects
       };
+
+      // 3. Delegate to the configured AI Provider
+      const provider = this.getProvider();
+      const generatedPlan = await provider.generateStudyPlan(context);
 
       // 4. Log successful completion
       await this.logExecutionSuccess(executionLog.id);
@@ -86,6 +88,7 @@ export class AIService {
 
     } catch (error: any) {
       // 5. Log failure and re-throw
+      console.error('AIService caught error:', error);
       await this.logExecutionFailure(executionLog.id, error.message || 'Unknown AI execution error');
       throw ApiError.internal('Failed to generate AI study plan');
     }

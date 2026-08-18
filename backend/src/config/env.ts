@@ -13,6 +13,9 @@ const envSchema = z.object({
   CLIENT_URL: z.string().url(),
   PORT: z.coerce.number().default(5000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  AI_PROVIDER: z.enum(['mock', 'gemini']).default('mock'),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().optional(),
 });
 
 const _env = envSchema.safeParse(process.env);
