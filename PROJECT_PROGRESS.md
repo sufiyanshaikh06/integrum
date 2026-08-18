@@ -262,9 +262,9 @@ graph TD
 
 ### 4.7 AI Intelligence Hub
 
-**Status:** ✅ Complete
+**Status:** ✅ Foundation & Study Plan Complete (Future slices planned)
 
-The AI Intelligence Hub integrates language models to assist with learning and career development through AI-driven insights.
+The AI Intelligence Hub integrates language models to assist with learning and career development through AI-driven insights. While the core provider layer and study plan generation are complete, capabilities like Resume ATS analysis and Notes summarization remain future vertical slices.
 
 ```mermaid
 graph TD
