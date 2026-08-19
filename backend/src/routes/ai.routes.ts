@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateStudyPlan } from '../controllers/ai.controller.js';
+import { generateStudyPlan, analyzeResume } from '../controllers/ai.controller.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
@@ -15,6 +15,11 @@ router.post(
   '/study-plan',
   validateRequest(generateStudyPlanSchema),
   asyncHandler(generateStudyPlan)
+);
+
+router.post(
+  '/resume/:id/analyze',
+  asyncHandler(analyzeResume)
 );
 
 export default router;

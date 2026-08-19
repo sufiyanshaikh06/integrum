@@ -11,12 +11,29 @@ export interface GeneratedStudyPlan {
   recommendedTargetDate: string;
   overview: string;
   suggestedTasks: { title: string; description: string }[];
-  contextUsed: {
+  contextUsed?: {
     attendancePercentage: number;
     subjectsCount: number;
   };
 }
 
+export interface ResumeContent {
+  personalInfo?: any;
+  education?: any[];
+  experience?: any[];
+  skills?: string[];
+  projects?: any[];
+}
+
+export interface GeneratedResumeAnalysis {
+  atsScore: number;
+  strengths: string[];
+  weaknesses: string[];
+  missingSkills: string[];
+  improvementFeedback: string;
+}
+
 export interface IAIProvider {
   generateStudyPlan(context: StudyPlanContext): Promise<GeneratedStudyPlan>;
+  analyzeResume(content: ResumeContent): Promise<GeneratedResumeAnalysis>;
 }

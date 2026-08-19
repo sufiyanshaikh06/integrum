@@ -55,18 +55,55 @@ async function main() {
     if (!planRes.data.recommendedTargetDate) throw new Error('Missing recommendedTargetDate in AI response');
     console.log('✅ Study plan generation successful');
 
-    // 3. Test AI Execution Logging
+    // 3. Setup Resume Data for Testing Resume Analysis
+    console.log('Setting up Resume Data...');
+    const resume = await prisma.resume.create({
+      data: {
+        studentProfileId,
+        title: 'Software Engineering Resume'
+      }
+    });
+    const resumeVersion = await prisma.resumeVersion.create({
+      data: {
+        resumeId: resume.id,
+        content: {
+          personalInfo: { name: 'AI Tester' },
+          experience: [{ role: 'Developer', description: 'Coded stuff' }]
+        }
+      }
+    });
+
+    // 4. Test Resume AI Analysis
+    console.log('Testing Resume AI Analysis...');
+    const resumeAnalysisReq = await fetch(`${BASE_URL}/ai/resume/${resume.id}/analyze`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (resumeAnalysisReq.status !== 200) throw new Error(`Resume Analysis failed: ${await resumeAnalysisReq.text()}`);
+    const analysisRes = await resumeAnalysisReq.json();
+    if (typeof analysisRes.data.atsScore !== 'number') throw new Error('Missing ATS score in AI response');
+    
+    // Verify Persistence
+    const updatedVersion = await prisma.resumeVersion.findUnique({ where: { id: resumeVersion.id } });
+    if (updatedVersion!.atsScore !== analysisRes.data.atsScore) throw new Error('ATS Score was not persisted to the database');
+    console.log('✅ Resume Analysis generated and persisted successfully');
+
+    // 5. Test AI Execution Logging
     console.log('Testing AI Execution Logging...');
     const executionLogs = await prisma.aIExecutionLog.findMany({
-      where: { studentProfileId, module: 'STUDY_PLAN' }
+      where: { studentProfileId },
+      orderBy: { startedAt: 'desc' }
     });
     
-    if (executionLogs.length !== 1) throw new Error('AI execution log was not created');
+    if (executionLogs.length !== 2) throw new Error(`Expected 2 AI execution logs, got ${executionLogs.length}`);
     if (executionLogs[0].status !== 'SUCCESS') throw new Error('AI execution log did not record SUCCESS');
     if (!executionLogs[0].completedAt) throw new Error('AI execution log missing completedAt');
     console.log('✅ AI execution log verified');
 
-    // 4. Test Invalid Input Validation
+    // 6. Test Invalid Input Validation
     console.log('Testing Invalid Input Validation...');
     const invalidReq = await fetch(`${BASE_URL}/ai/study-plan`, {
       method: 'POST',
@@ -82,7 +119,7 @@ async function main() {
     if (invalidReq.status !== 400) throw new Error(`Invalid input test failed. Expected 400, got ${invalidReq.status}`);
     console.log('✅ Invalid input handling verified');
 
-    // 5. Test Unauthorized Request
+    // 7. Test Unauthorized Request
     console.log('Testing Unauthorized Access...');
     const unauthReq = await fetch(`${BASE_URL}/ai/study-plan`, {
       method: 'POST',
@@ -95,8 +132,8 @@ async function main() {
     if (unauthReq.status !== 401) throw new Error(`Unauthorized access test failed. Expected 401, got ${unauthReq.status}`);
     console.log('✅ Unauthorized access handling verified');
 
-    // 6. Test Cross-User Isolation (Creating another user)
-    console.log('Testing Cross-User Data Isolation...');
+    // 8. Test Resume Analysis Ownership / Data Isolation
+    console.log('Testing Resume Ownership Data Isolation...');
     const otherEmail = `other_ai_${Date.now()}@example.com`;
     const registerOther = await fetch(`${BASE_URL}/auth/register`, {
       method: 'POST',
@@ -104,17 +141,23 @@ async function main() {
       body: JSON.stringify({ email: otherEmail, password, firstName: 'Other', lastName: 'User' })
     });
 
-    const otherUser = await prisma.user.findUnique({
-      where: { email: otherEmail },
-      include: { studentProfile: true }
+    const loginOtherRes = await fetch(`${BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: otherEmail, password })
+    });
+    const otherData = await loginOtherRes.json();
+    const otherToken = otherData.data.accessToken;
+
+    const crossUserResumeReq = await fetch(`${BASE_URL}/ai/resume/${resume.id}/analyze`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${otherToken}`
+      }
     });
 
-    const otherLogs = await prisma.aIExecutionLog.findMany({
-      where: { studentProfileId: otherUser!.studentProfile!.id }
-    });
-
-    if (otherLogs.length !== 0) throw new Error('Data isolation failed - logs bled across profiles');
-    console.log('✅ Cross-user data isolation verified');
+    if (crossUserResumeReq.status !== 404) throw new Error(`Cross-user resume access should fail with 404, got ${crossUserResumeReq.status}`);
+    console.log('✅ Resume Ownership enforcement verified');
 
     console.log('\n🎉 All AI Intelligence Hub tests passed successfully!');
 
