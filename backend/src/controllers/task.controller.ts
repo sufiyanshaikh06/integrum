@@ -45,4 +45,13 @@ export const taskController = {
     await taskService.deleteTask(profileId, req.params.id as string);
     ApiResponse.success(res, 'Task deleted successfully', null, HTTP_STATUS.OK);
   }),
+
+  // I-6: Upcoming Tasks
+  getUpcomingTasks: asyncHandler(async (req: Request, res: Response) => {
+    const profileId = req.user?.studentProfile?.id;
+    if (!profileId) throw ApiError.forbidden('Only students can view tasks');
+
+    const tasks = await taskService.getUpcomingTasks(profileId);
+    ApiResponse.success(res, 'Upcoming tasks retrieved successfully', tasks, HTTP_STATUS.OK);
+  }),
 };

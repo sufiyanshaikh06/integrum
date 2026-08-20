@@ -99,6 +99,14 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Password reset (hashed token stored, not plaintext)
+  passwordResetTokenHash String?
+  passwordResetExpires   DateTime?
+
+  // Email verification
+  verificationTokenHash  String?
+  verificationExpires    DateTime?
+
   studentProfile StudentProfile?
   adminProfile   AdminProfile?
   settings       StudentSettings?
@@ -114,6 +122,8 @@ model StudentProfile {
   university     String?
   enrollmentYear Int?
   graduationYear Int?
+  careerGoals    String?  @db.Text
+  socialLinks    Json?    // { linkedin, github, portfolio, twitter }
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -193,6 +203,7 @@ model Subject {
   targetGrade     Float?
   totalClasses    Int        @default(0)
   attendedClasses Int        @default(0)
+  attendanceGoal  Float?     // e.g. 75.0 = 75% target attendance
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -281,6 +292,7 @@ model Task {
   title       String
   description String?        @db.Text
   dueDate     DateTime?
+  priority    Priority       @default(MEDIUM)
   status      TaskStatus     @default(TODO)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt

@@ -83,8 +83,48 @@ export const attendanceService = {
     await this.recalculateSubjectAttendance(record.subjectId);
   },
 
-  // Helper to keep the legacy Subject counters somewhat aligned
-  // We count PRESENT and LATE as 'attended'
+  // A-4: Per-subject attendance report
+  async getAttendanceReport(studentProfileId: string) {
+    // Fetch all subjects owned by this student across all semesters
+    const subjects = await prisma.subject.findMany({
+      where: { semester: { studentProfileId } },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        totalClasses: true,
+        attendedClasses: true,
+        attendanceGoal: true,
+        semester: { select: { id: true, name: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return subjects.map((subject) => {
+      const totalClasses = subject.totalClasses;
+      const attendedClasses = subject.attendedClasses;
+      const absentClasses = totalClasses - attendedClasses;
+      const attendancePercentage =
+        totalClasses > 0 ? parseFloat(((attendedClasses / totalClasses) * 100).toFixed(2)) : 0;
+
+      const goal = subject.attendanceGoal ?? null;
+      const goalDelta = goal !== null ? parseFloat((attendancePercentage - goal).toFixed(2)) : null;
+
+      return {
+        subjectId: subject.id,
+        subjectName: subject.name,
+        subjectCode: subject.code,
+        semester: subject.semester,
+        totalClasses,
+        attendedClasses,
+        absentClasses,
+        attendancePercentage,
+        attendanceGoal: goal,
+        goalDelta, // positive = exceeding goal, negative = below goal
+      };
+    });
+  },
+
   async recalculateSubjectAttendance(subjectId: string) {
     const records = await prisma.attendanceRecord.findMany({
       where: { subjectId },

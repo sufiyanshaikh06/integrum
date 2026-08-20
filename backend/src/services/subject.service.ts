@@ -16,6 +16,7 @@ export const subjectService = {
         targetGrade: data.targetGrade,
         totalClasses: data.totalClasses ?? 0,
         attendedClasses: data.attendedClasses ?? 0,
+        attendanceGoal: data.attendanceGoal,
       },
     });
   },
@@ -53,7 +54,6 @@ export const subjectService = {
   },
 
   async updateSubject(studentProfileId: string, subjectId: string, data: any) {
-    // Verify ownership
     await this.getSubjectById(studentProfileId, subjectId);
 
     const updateData: any = {};
@@ -63,6 +63,7 @@ export const subjectService = {
     if (data.targetGrade !== undefined) updateData.targetGrade = data.targetGrade;
     if (data.totalClasses !== undefined) updateData.totalClasses = data.totalClasses;
     if (data.attendedClasses !== undefined) updateData.attendedClasses = data.attendedClasses;
+    if (data.attendanceGoal !== undefined) updateData.attendanceGoal = data.attendanceGoal;
 
     return prisma.subject.update({
       where: { id: subjectId },

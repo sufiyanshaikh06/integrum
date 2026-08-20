@@ -9,6 +9,7 @@ export const createSubjectSchema = z.object({
     targetGrade: z.number().nonnegative().optional(),
     totalClasses: z.number().int().nonnegative().optional(),
     attendedClasses: z.number().int().nonnegative().optional(),
+    attendanceGoal: z.number().min(0).max(100).optional(),
   }),
 });
 
@@ -20,5 +21,6 @@ export const updateSubjectSchema = z.object({
     targetGrade: z.number().nonnegative().optional(),
     totalClasses: z.number().int().nonnegative().optional(),
     attendedClasses: z.number().int().nonnegative().optional(),
+    attendanceGoal: z.number().min(0).max(100).optional(),
   }),
 });

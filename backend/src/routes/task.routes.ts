@@ -12,6 +12,7 @@ router.use(authenticate, authorize('STUDENT'));
 
 router.post('/', validateRequest(createTaskSchema), taskController.createTask);
 router.get('/', taskController.getTasks);
+router.get('/upcoming', taskController.getUpcomingTasks); // I-6: must be before /:id
 router.get('/:id', taskController.getTaskById);
 router.patch('/:id', validateRequest(updateTaskSchema), taskController.updateTask);
 router.delete('/:id', taskController.deleteTask);

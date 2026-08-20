@@ -9,6 +9,7 @@ import {
   getAttendanceRecordById,
   updateAttendanceRecord,
   deleteAttendanceRecord,
+  getAttendanceReport,
 } from '../controllers/attendance.controller.js';
 
 const router = Router();
@@ -18,6 +19,7 @@ router.use(authorize('STUDENT'));
 
 router.post('/', validate(createAttendanceRecordSchema), createAttendanceRecord);
 router.get('/', getAttendanceRecords);
+router.get('/report', getAttendanceReport); // A-4: must be before /:id
 router.get('/:id', getAttendanceRecordById);
 router.patch('/:id', validate(updateAttendanceRecordSchema), updateAttendanceRecord);
 router.delete('/:id', deleteAttendanceRecord);
