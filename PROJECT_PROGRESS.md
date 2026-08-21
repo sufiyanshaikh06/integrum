@@ -1,6 +1,6 @@
 # Integrum — Mini Project Progress Review
 
-> **From Problem Definition → System Architecture → Database → Working Backend Modules**
+> **From Problem Definition → System Architecture → Database → Working Backend Modules → V1 Gap Closure**
 
 ---
 
@@ -39,42 +39,11 @@ graph TD
 
 Currently, students experience extreme workflow fragmentation. The objective is to bring these disjointed tools into one unified student platform.
 
-```mermaid
-graph LR
-    A[Academic tools] -->|fragmented student workflow| E[INTEGRUM]
-    B[Task management] -->|fragmented student workflow| E
-    C[Career tracking] -->|fragmented student workflow| E
-    D[Analytics & AI] -->|fragmented student workflow| E
-    
-    classDef problem fill:#ef4444,stroke:#b91c1c,color:#fff;
-    classDef solution fill:#10b981,stroke:#047857,color:#fff,font-weight:bold;
-    
-    class A,B,C,D problem;
-    class E solution;
-```
-
 ---
 
 ## 3. What have I designed?
 
 Before writing code, I established a robust technical foundation to ensure the system scales elegantly.
-
-### Core Domain Relationships
-The domain model enforces ownership: student-specific data belongs to the appropriate student context.
-
-```mermaid
-graph LR
-    User[User] -->|1:1| SP[StudentProfile]
-    SP -->|1:N| Sem[Semester]
-    Sem -->|1:N| Sub[Subject]
-    Sub -->|1:N| Ass[Assignment]
-    
-    SP -->|1:1| Plan[StudyPlan]
-    SP -->|1:N| Task[Task]
-    SP -->|1:N| Res[Resume]
-    SP -->|1:N| Job[JobApplication]
-    SP -->|1:1| Anal[StudentAnalytics]
-```
 
 ### System Architecture
 A layered architecture where HTTP requests, business logic, and database access are strictly decoupled.
@@ -97,216 +66,161 @@ flowchart TD
 
 ## 4. What have we actually implemented?
 
-The design is no longer just conceptual documentation. 
-
 ### 4.1 Database Infrastructure
-The schema has been successfully migrated to a local PostgreSQL database, establishing the real table structure (15 models, 9 enums).
+
+**Status:** ✅ Complete — 17 models, 9 enums, 4 migrations applied
+
+| Migration | What it added |
+|---|---|
+| `20260806_initial` | Full 15-model schema, all enums |
+| `20260819_v1_core_gaps` | Forgot-password tokens, verification tokens, careerGoals, socialLinks, attendanceGoal, task priority |
+| `20260820_v1_identity_academic` | Full P1+P2 migration |
+| `20260821_v1_career_hub_p3` | Certification, Project models; templateId on ResumeVersion; interviewDate, interviewRound, offerDetails on JobApplication |
 
 ### 4.2 Identity & Access
 
-**Status:** ✅ Complete
-
-The Identity & Access module provides secure authentication, authorization, and session management.
-
-#### Implemented Components
+**Status:** ✅ Complete (V1 gap closure applied)
 
 | Component | Status | Key functionality |
 |---|---|---|
-| Registration | ✅ | Transactional account creation with automatic default semester assignment |
+| Registration | ✅ | Transactional account creation + email verification token |
 | Login | ✅ | Secure credential verification |
+| Forgot Password | ✅ | Hashed token, expiry, generic response (no enumeration) |
+| Reset Password | ✅ | Token validation, one-time use, invalidation on use |
+| Email Verification | ✅ | Secure token, one-time use, resend capability |
+| Update Profile | ✅ | PATCH /users/me — firstName, lastName, university, careerGoals, socialLinks |
 | JWT Access Tokens | ✅ | Secure API access via Bearer tokens |
-| Refresh Token Lifecycle | ✅ | Secure rotation via `HttpOnly` cookie |
-| Logout | ✅ | Securely clearing session cookies |
+| Refresh Token Lifecycle | ✅ | Secure rotation via HttpOnly cookie |
 | RBAC | ✅ | Role-based authorization controls |
-| Validation & Error Handling | ✅ | Graceful handling of duplicate emails (409 Conflict) and bad inputs (400 Bad Request) |
-
-#### Working Software
-- [x] Registration
-- [x] Login
-- [x] Protected API access (`/users/me`)
-- [x] Token refresh
-- [x] Logout
-- [x] Validation & Error Handling
-
-#### Verification
-- [x] CRUD testing
-- [x] Validation testing
-- [x] Security testing (Auth/RBAC)
-- [x] Invalid-resource handling
 
 ### 4.3 Academic Hub
 
-**Status:** ✅ Complete
-
-The Academic Hub provides the core ownership hierarchy and academic management tools for the student.
-
-```mermaid
-graph TD
-    A[Academic Hub] --> B(Semester & Subject)
-    A --> C(Study Planner)
-    A --> D(Notes Manager)
-    A --> E(Attendance Tracker)
-    A --> F(Academic Calendar)
-    A --> G(Assignment Manager)
-```
-
-#### Implemented Components
+**Status:** ✅ Complete (V1 gap closure applied)
 
 | Component | Status | Key functionality |
 |---|---|---|
 | Semester Management | ✅ | CRUD + ownership |
-| Subject Management | ✅ | CRUD + semester ownership |
-| Assignment Manager | ✅ | CRUD + subject ownership |
-| Study Planner | ✅ | CRUD + progress tracking |
-| Notes Manager | ✅ | CRUD + tags and file metadata |
-| Attendance Tracker | ✅ | Daily logging + percentage calculation |
-| Academic Calendar | ✅ | Event creation + timeline mapping |
-
-#### Working Software
-- [x] Creating Semesters, Subjects, and Assignments with strict data isolation
-- [x] Managing Study Plans and generating progress
-- [x] Storing Notes with metadata
-- [x] Tracking Subject Attendance
-- [x] Managing Calendar Events
-
-#### Verification
-- [x] CRUD testing
-- [x] Validation testing
-- [x] Cross-user isolation
-- [x] Invalid-resource handling
-- [x] Regression testing
+| Subject Management | ✅ | CRUD + attendance goal (A-3) |
+| Assignment Manager | ✅ | CRUD + priority |
+| Study Planner | ✅ | CRUD + AI integration |
+| Notes Manager | ✅ | CRUD + tags + file metadata |
+| Attendance Tracker | ✅ | Daily logging + per-subject report with % and goal delta (A-4) |
+| Academic Calendar | ✅ | Events + timeline |
+| Upcoming Tasks | ✅ | GET /tasks/upcoming — future-dated, non-done (I-6) |
+| Task Priority | ✅ | priority field on Task (LOW/MEDIUM/HIGH) (A-1) |
 
 ### 4.4 Productivity Hub
 
-**Status:** ✅ Complete
-
-The Productivity Hub focuses on immediate actionable items and schedule management for the student.
-
-```mermaid
-graph TD
-    A[Productivity Hub] --> B(Task Management)
-    A --> C(Reminder Management)
-```
-
-#### Implemented Components
+**Status:** ✅ Complete + P4 verified
 
 | Component | Status | Key functionality |
 |---|---|---|
-| Task Management | ✅ | CRUD + ownership + status tracking |
-| Reminder Management | ✅ | CRUD + ownership + trigger scheduling |
-
-#### Working Software
-- [x] Creating, updating, and fetching Tasks while verifying cross-user data isolation
-- [x] Creating, updating, and fetching Reminders while verifying cross-user data isolation
-
-#### Verification
-- [x] CRUD testing
-- [x] Validation testing
-- [x] Cross-user isolation
-- [x] Invalid-resource handling
+| Task Management | ✅ | CRUD + priority + upcoming filter |
+| Reminder Management | ✅ | CRUD + trigger scheduling |
+| Certification Renewal | ✅ | GET /certifications/expiring?days=N covers renewal without new model |
 
 ### 4.5 Career Hub
 
-**Status:** ✅ Complete
-
-The Career Hub manages professional development artifacts and job applications.
+**Status:** ✅ Complete (V1 gap closure applied — C-1 through C-6)
 
 ```mermaid
 graph TD
     A[Career Hub] --> B(Resume Management)
     A --> C(Skill Management)
     A --> D(Job Application Tracking)
-```
+    A --> E(Certifications)
+    A --> F(Personal Projects)
 
-#### Implemented Components
+    B --> B1[Templates C-1]
+    B --> B2[PDF Export C-2]
+    B --> B3[AI Analysis]
+
+    D --> D1[Interview Schedule C-5]
+    D --> D2[Offer Details C-6]
+```
 
 | Component | Status | Key functionality |
 |---|---|---|
-| Resume Management | ✅ | Versioning, ATS scoring, feedback |
-| Skill Management | ✅ | Tracking technical and soft skills |
-| Job Application Tracking | ✅ | Application status, notes, pipeline |
-
-#### Working Software
-- [x] Creating, updating, and retrieving Resumes (including automatic version creation)
-- [x] Creating, updating, and retrieving Skills with predefined categories
-- [x] Creating, updating, and retrieving Job Applications with status tracking
-
-#### Verification
-- [x] CRUD testing
-- [x] Validation testing
-- [x] Cross-user isolation
-- [x] Invalid-resource handling
+| Resume Templates (C-1) | ✅ | 5 templates; templateId per version; GET /resumes/templates |
+| Resume PDF Export (C-2) | ✅ | GET /resumes/:id/pdf — structured JSON for PDF rendering |
+| Certifications (C-3) | ✅ | Full CRUD + expiry date + GET /certifications/expiring |
+| Personal Projects (C-4) | ✅ | Full CRUD + technologies[] array |
+| Interview Schedule (C-5) | ✅ | interviewDate + interviewRound on JobApplication |
+| Offer Details (C-6) | ✅ | offerDetails JSON (salary, currency, benefits, deadline) |
+| Skill Management | ✅ | CRUD + proficiency levels |
+| AI Resume Analysis | ✅ | ATS scoring + structured feedback via Gemini |
 
 ### 4.6 Analytics Hub
 
 **Status:** ✅ Complete
-
-The Analytics Hub aggregates and analyzes data across the Academic, Productivity, and Career Hubs.
-
-```mermaid
-graph TD
-    A[Analytics Hub] --> B(Student Dashboard)
-    A --> C(Score Calculation)
-```
-
-#### Implemented Components
 
 | Component | Status | Key functionality |
 |---|---|---|
 | Student Dashboard | ✅ | Core metrics aggregation across modules |
 | Score Calculation | ✅ | Multi-dimensional student performance score |
 
-#### Working Software
-- [x] Initial aggregate endpoints that compile existing database data
-- [x] Cross-module calculations for assignments, attendance, tasks, and applications
-
 ### 4.7 AI Intelligence Hub
 
-**Status:** ✅ Foundation & Study Plan Complete (Future slices planned)
-
-The AI Intelligence Hub integrates language models to assist with learning and career development through AI-driven insights. While the core provider layer and study plan generation are complete, capabilities like Resume ATS analysis and Notes summarization remain future vertical slices.
-
-```mermaid
-graph TD
-    A[AI Intelligence Hub] --> B(AI Service Infrastructure)
-    A --> C(AI Execution Tracking)
-    A --> D(AI Study Plan Assistant)
-```
-
-#### Implemented Components
+**Status:** ✅ Foundation Complete (Study Plan + Resume Analysis)
 
 | Component | Status | Key functionality |
 |---|---|---|
-| AI Service Infrastructure | ✅ | Abstracted service layer with validation, execution logging, and centralized error handling. |
-| AI Execution Tracking | ✅ | Detailed logging of all interactions with language models across the platform. |
-| AI Study Plan Assistant | ✅ | Concrete AI capability recommending structured study plans based on student context. |
-
-#### Working Software
-- [x] AI Execution Log tracking in PostgreSQL
-- [x] Study Plan generation endpoint with student isolation
-- [x] Real AI Integration using Google Generative AI (Gemini SDK)
-- [x] Pluggable AI Provider Layer for Mock/Gemini swapping
-
-#### Verification
-- [x] Valid AI request generation
-- [x] Invalid input and unauthorized request handling
-- [x] Cross-user isolation and execution logging verification
+| AI Provider Abstraction | ✅ | IAIProvider → GeminiProvider / MockProvider |
+| AI Execution Logging | ✅ | Full audit trail per AI call |
+| AI Error Handling | ✅ | Maps 401/403/404/429/503 gracefully |
+| Study Plan Assistant | ✅ | Gemini-powered structured study plan generation |
+| Resume Analysis | ✅ | ATS scoring + feedback via Gemini |
+| Zod Output Validation | ✅ | All AI outputs validated before DB persistence |
 
 ### 4.8 Administration Portal
 
-**Status:** ⏳ Planned
+**Status:** ⏳ Planned (after AI Notes Assistant and Analytics gaps)
 
-The Administration Portal will allow administrators to manage global settings, announcements, and university-level configurations.
+---
 
-#### Planned Components
+## 5. V1 Gap Closure Progress
 
-| Component | Status | Key functionality |
+Audit performed: 105 functionalities across 26 features in 7 modules.
+
+| Phase | Tasks | Status |
 |---|---|---|
-| Admin Profile Management | ⏳ | Comprehensive department alignment and multi-tiered permissions tracking to ensure staff can safely access and configure specific segments of the university ecosystem. |
-| Global Announcements | ⏳ | Broadcasting system notifications and urgent administrative alerts globally to all enrolled student profiles. |
+| P1 — Identity & Access | I-1 through I-6 | ✅ Done (commit 94fdb22) |
+| P2 — Academic Hub | A-1, A-3, A-4 | ✅ Done (commit 94fdb22) |
+| P3 — Career Hub | C-1 through C-6 | ✅ Done (commit c0b3455) |
+| P4 — Productivity verification | Cert renewal reminders | ✅ Done (commit c0b3455) |
+| P5 — AI Notes Assistant | AN-notes | ⏳ Next |
+| P6 — Analytics gaps | AN-1, AN-2, AN-3 | ⏳ Planned |
+| — Administration Portal | Full module | ⏳ After core gaps |
+| — Frontend Integration | Full UI layer | ⏳ Final phase |
 
+---
 
-## 5. Development Methodology
+## 6. API Surface (Current)
+
+| Module | Routes | Notes |
+|---|---|---|
+| Auth | `/auth/*` | register, login, refresh, logout, forgot-password, reset-password, verify-email, resend-verification |
+| Users | `/users/*` | GET + PATCH /me |
+| Semesters | `/semesters/*` | Full CRUD |
+| Subjects | `/subjects/*` | Full CRUD + attendanceGoal |
+| Assignments | `/assignments/*` | Full CRUD |
+| Tasks | `/tasks/*` | Full CRUD + priority + /upcoming |
+| Reminders | `/reminders/*` | Full CRUD |
+| Study Plans | `/study-plans/*` | Full CRUD |
+| Notes | `/notes/*` | Full CRUD |
+| Attendance | `/attendance/*` | Full CRUD + /report |
+| Calendar | `/calendar/*` | Full CRUD |
+| Resumes | `/resumes/*` | Full CRUD + /templates + /:id/pdf |
+| Skills | `/skills/*` | Full CRUD |
+| Job Applications | `/job-applications/*` | Full CRUD + interview + offer |
+| Certifications | `/certifications/*` | Full CRUD + /expiring |
+| Projects | `/projects/*` | Full CRUD |
+| Analytics | `/analytics/*` | Dashboard metrics |
+| AI | `/ai/*` | Study plan + Resume analysis |
+
+---
+
+## 7. Development Methodology
 
 ```mermaid
 flowchart TD
@@ -314,56 +228,14 @@ flowchart TD
     B --> C[Architecture Design]
     C --> D[Database Design]
     D --> E[Backend Infrastructure]
-    E --> F[Identity & Access Implementation]
-    F --> G[Academic Hub Implementation]
-    G --> H[Productivity Hub Implementation]
-    H --> I[End-to-End Verification]
-    I --> J[Career Hub Implementation]
-    J --> K[Analytics Hub Implementation]
-    K --> L[AI Intelligence Hub Implementation]
-    L --> M[Administration Portal Implementation - Next]
-```
-
-### What Comes Next?
-
-The **Academic Hub**, **Productivity Hub**, **Career Hub**, **Analytics Hub**, and **AI Intelligence Hub** are fully implemented and verified. The next milestone is the **Administration Portal**, which will allow administrators to manage global settings and announcements.
-
-### Current Status
-| Area | Status |
-| :--- | :--- |
-| **Requirements & Scope** | ✅ Complete |
-| **Domain Model & Architecture** | ✅ Complete |
-| **PostgreSQL Database** | ✅ Complete |
-| **Backend Infrastructure** | ✅ Complete |
-| **Identity & Access Module** | ✅ Complete |
-| **Academic Hub** | ✅ Complete |
-| **Productivity Hub** | ✅ Complete |
-| **Career Hub** | ✅ Complete |
-| **Analytics Hub** | ✅ Complete |
-| **AI Intelligence Hub** | ✅ Complete |
-| **Administration Portal** | ⏳ Planned |
-
-### Project Roadmap
-
-Rather than a strict linear flow, the development focuses on the current priority hub, with remaining modules mapped as upcoming development.
-
-```mermaid
-flowchart TD
-    A[Identity & Access Module] --> B[Academic Hub]
-    B --> C[Productivity Hub]
-    C --> D[Career Hub]
-    D --> E[Analytics Hub]
-    E --> F[AI Intelligence Hub]
-    F --> I[Upcoming]
-
-    subgraph UpcomingDevelopment["Upcoming Development"]
-        direction TD
-        G[Administration Portal]
-        H[Frontend Integration]
-    end
-
-    %% Force Upcoming Development below the completed flow
-    I ~~~ G
+    E --> F[Identity & Access]
+    F --> G[Academic Hub]
+    G --> H[Career Hub / AI Layer]
+    H --> I[V1 Gap Closure P1-P4]
+    I --> J[AI Notes Assistant]
+    J --> K[Analytics Gaps]
+    K --> L[Administration Portal]
+    L --> M[Frontend Integration]
 
     style A fill:#10b981,stroke:#047857,color:#fff
     style B fill:#10b981,stroke:#047857,color:#fff
@@ -371,11 +243,30 @@ flowchart TD
     style D fill:#10b981,stroke:#047857,color:#fff
     style E fill:#10b981,stroke:#047857,color:#fff
     style F fill:#10b981,stroke:#047857,color:#fff
-
-    style I fill:#1f1f1f,stroke:#888,color:#fff
-
-    style G fill:#1f1f1f,stroke:#888,color:#fff
-    style H fill:#1f1f1f,stroke:#888,color:#fff
-
-    style UpcomingDevelopment fill:#1f1f1f,stroke:#888,color:#fff
+    style G fill:#10b981,stroke:#047857,color:#fff
+    style H fill:#10b981,stroke:#047857,color:#fff
+    style I fill:#10b981,stroke:#047857,color:#fff
+    style J fill:#f59e0b,stroke:#b45309,color:#fff
+    style K fill:#1f1f1f,stroke:#888,color:#fff
+    style L fill:#1f1f1f,stroke:#888,color:#fff
+    style M fill:#1f1f1f,stroke:#888,color:#fff
 ```
+
+### Current Status
+
+| Area | Status |
+| :--- | :--- |
+| **Requirements & Scope** | ✅ Complete |
+| **Domain Model & Architecture** | ✅ Complete |
+| **PostgreSQL Database** | ✅ Complete (17 models, 4 migrations) |
+| **Backend Infrastructure** | ✅ Complete |
+| **Identity & Access (V1 gaps closed)** | ✅ Complete |
+| **Academic Hub (V1 gaps closed)** | ✅ Complete |
+| **Productivity Hub (V1 verified)** | ✅ Complete |
+| **Career Hub (V1 gaps closed C-1→C-6)** | ✅ Complete |
+| **AI Foundation + Study Plan + Resume** | ✅ Complete |
+| **Analytics Hub** | ✅ Complete |
+| **AI Notes Assistant** | ⏳ Next |
+| **Analytics Gaps (AN-1, AN-2, AN-3)** | ⏳ Planned |
+| **Administration Portal** | ⏳ Planned |
+| **Frontend Integration** | ⏳ Final phase |
