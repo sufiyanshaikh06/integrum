@@ -134,6 +134,8 @@ model StudentProfile {
   calendarEvents   CalendarEvent[]
   resumes          Resume[]
   skills           Skill[]
+  certifications   Certification[]
+  projects         Project[]
   studentAnalytics StudentAnalytics?
   aiExecutionLogs  AIExecutionLog[]
   jobApplications  JobApplication[]
@@ -341,6 +343,7 @@ model ResumeVersion {
   resumeId       String
   resume         Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
   content        Json
+  templateId     String?  // C-1: e.g. "classic", "modern", "minimal"
   atsScore       Float?
   reviewFeedback String?  @db.Text
   createdAt      DateTime @default(now())
@@ -367,8 +370,54 @@ model JobApplication {
   notes            String?           @db.Text
   appliedDate      DateTime?
   status           ApplicationStatus @default(APPLIED)
+
+  // C-5: Interview Scheduling
+  interviewDate    DateTime?
+  interviewRound   String?           // e.g. "HR Screen", "Technical Round 1", "Final"
+
+  // C-6: Offer Details (stored as structured JSON)
+  offerDetails     Json?             // { salary, currency, benefits, deadline, notes }
+
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
+}
+
+// ---------------------------------------------------------
+// C-3: CERTIFICATIONS
+// ---------------------------------------------------------
+
+model Certification {
+  id               String         @id @default(uuid())
+  studentProfileId String
+  studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  name             String
+  issuer           String
+  dateObtained     DateTime?
+  expiryDate       DateTime?      // Used for certification renewal reminders
+  credentialId     String?
+  credentialUrl    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+// ---------------------------------------------------------
+// C-4: PERSONAL PROJECTS
+// ---------------------------------------------------------
+
+model Project {
+  id               String         @id @default(uuid())
+  studentProfileId String
+  studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  title            String
+  description      String?        @db.Text
+  technologies     String[]       // e.g. ["React", "Node.js", "PostgreSQL"]
+  projectUrl       String?
+  repoUrl          String?
+  startDate        DateTime?
+  endDate          DateTime?
+  isOngoing        Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 }
 
 // ---------------------------------------------------------

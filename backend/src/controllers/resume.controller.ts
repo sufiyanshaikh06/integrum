@@ -66,3 +66,24 @@ export const deleteResume = asyncHandler(async (req: Request, res: Response) => 
   
   ApiResponse.success(res, 'Resume deleted successfully', null, HTTP_STATUS.OK);
 });
+
+// C-2: Resume PDF Export — returns structured data for PDF generation
+export const getResumePdfData = asyncHandler(async (req: Request, res: Response) => {
+  const studentProfileId = req.user?.studentProfile?.id;
+  if (!studentProfileId) throw ApiError.forbidden('Only students can export resumes');
+
+  const pdfData = await resumeService.getResumePdfData(studentProfileId, req.params.id as string);
+  ApiResponse.success(res, 'Resume PDF data ready', pdfData, HTTP_STATUS.OK);
+});
+
+// C-1: List supported templates
+export const getResumeTemplates = asyncHandler(async (_req: Request, res: Response) => {
+  const templates = [
+    { id: 'classic',   label: 'Classic',   description: 'Traditional professional layout' },
+    { id: 'modern',    label: 'Modern',    description: 'Clean contemporary design' },
+    { id: 'minimal',   label: 'Minimal',   description: 'Simple and elegant' },
+    { id: 'executive', label: 'Executive', description: 'Senior-level formal format' },
+    { id: 'compact',   label: 'Compact',   description: 'Space-efficient single page' },
+  ];
+  ApiResponse.success(res, 'Resume templates retrieved', templates, HTTP_STATUS.OK);
+});

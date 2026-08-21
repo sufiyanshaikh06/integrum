@@ -21,6 +21,8 @@ import calendarRoutes from './routes/calendar.routes.js';
 import resumeRoutes from './routes/resume.routes.js';
 import skillRoutes from './routes/skill.routes.js';
 import jobApplicationRoutes from './routes/jobapplication.routes.js';
+import certificationRoutes from './routes/certification.routes.js';
+import projectRoutes from './routes/project.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
 import aiRoutes from './routes/ai.routes.js';
 
@@ -60,6 +62,8 @@ app.use('/api/v1/calendar', calendarRoutes);
 app.use('/api/v1/resumes', resumeRoutes);
 app.use('/api/v1/skills', skillRoutes);
 app.use('/api/v1/job-applications', jobApplicationRoutes);
+app.use('/api/v1/certifications', certificationRoutes);
+app.use('/api/v1/projects', projectRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/ai', aiRoutes);
 

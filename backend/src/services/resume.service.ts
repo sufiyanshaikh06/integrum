@@ -12,6 +12,7 @@ export const resumeService = {
         versions: {
           create: {
             content: data.content,
+            templateId: data.templateId ?? 'classic', // C-1: default template
           },
         },
       },
@@ -23,54 +24,47 @@ export const resumeService = {
 
   async getResumes(studentProfileId: string) {
     return prisma.resume.findMany({
-      where: {
-        studentProfileId,
-      },
+      where: { studentProfileId },
       include: {
         versions: {
           orderBy: { createdAt: 'desc' },
-          take: 1, // Only fetch the most recent version by default for listing
+          take: 1,
         },
       },
-      orderBy: {
-        updatedAt: 'desc',
-      },
+      orderBy: { updatedAt: 'desc' },
     });
   },
 
   async getResumeById(studentProfileId: string, resumeId: string) {
     const resume = await prisma.resume.findFirst({
-      where: {
-        id: resumeId,
-        studentProfileId,
-      },
+      where: { id: resumeId, studentProfileId },
       include: {
-        versions: {
-          orderBy: { createdAt: 'desc' },
-        },
+        versions: { orderBy: { createdAt: 'desc' } },
       },
     });
-
-    if (!resume) {
-      throw ApiError.notFound('Resume not found or does not belong to you');
-    }
-
+    if (!resume) throw ApiError.notFound('Resume not found or does not belong to you');
     return resume;
   },
 
   async updateResume(studentProfileId: string, resumeId: string, data: UpdateResumeInput) {
-    // Verify ownership
     await this.getResumeById(studentProfileId, resumeId);
 
     const updateData: any = {};
     if (data.title !== undefined) updateData.title = data.title;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
-    // If new content is provided, create a new version
-    if (data.content) {
+    // C-1: If content or template changes, create a new version
+    if (data.content || data.templateId) {
+      // Get the latest version for content if only templateId is changing
+      const current = await prisma.resumeVersion.findFirst({
+        where: { resumeId },
+        orderBy: { createdAt: 'desc' },
+      });
+
       updateData.versions = {
         create: {
-          content: data.content,
+          content: data.content ?? current?.content ?? {},
+          templateId: data.templateId ?? current?.templateId ?? 'classic',
         },
       };
     }
@@ -88,11 +82,28 @@ export const resumeService = {
   },
 
   async deleteResume(studentProfileId: string, resumeId: string) {
-    // Verify ownership
     await this.getResumeById(studentProfileId, resumeId);
+    await prisma.resume.delete({ where: { id: resumeId } });
+  },
 
-    await prisma.resume.delete({
-      where: { id: resumeId },
-    });
+  // C-2: Generate PDF-ready data from the latest resume version
+  async getResumePdfData(studentProfileId: string, resumeId: string) {
+    const resume = await this.getResumeById(studentProfileId, resumeId);
+
+    const latestVersion = resume.versions[0];
+    if (!latestVersion) {
+      throw ApiError.badRequest('Resume has no versions to export');
+    }
+
+    // Return structured data — the client/PDF library renders this
+    return {
+      resumeId: resume.id,
+      title: resume.title,
+      templateId: latestVersion.templateId ?? 'classic',
+      versionId: latestVersion.id,
+      content: latestVersion.content,
+      atsScore: latestVersion.atsScore,
+      generatedAt: new Date().toISOString(),
+    };
   },
 };
