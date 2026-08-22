@@ -18,11 +18,11 @@ export interface GeneratedStudyPlan {
 }
 
 export interface ResumeContent {
-  personalInfo?: any;
-  education?: any[];
-  experience?: any[];
+  personalInfo?: Record<string, unknown>;
+  education?: Record<string, unknown>[];
+  experience?: Record<string, unknown>[];
   skills?: string[];
-  projects?: any[];
+  projects?: Record<string, unknown>[];
 }
 
 export interface GeneratedResumeAnalysis {
@@ -33,7 +33,39 @@ export interface GeneratedResumeAnalysis {
   improvementFeedback: string;
 }
 
+// ─── AI Notes Assistant types ─────────────────────────────────────────────────
+
+export interface NoteContent {
+  title: string;
+  content: string;
+  subjectName: string;
+  tags: string[];
+}
+
+export interface GeneratedNoteSummary {
+  summary: string;
+  keyPoints: string[];
+}
+
+export interface GeneratedKeyPoints {
+  keyPoints: { point: string; importance: 'HIGH' | 'MEDIUM' | 'LOW' }[];
+}
+
+export interface GeneratedQuestions {
+  questions: { question: string; answer: string; difficulty: 'EASY' | 'MEDIUM' | 'HARD' }[];
+}
+
+export interface GeneratedFlashcards {
+  flashcards: { front: string; back: string }[];
+}
+
+// ─── Provider contract ────────────────────────────────────────────────────────
+
 export interface IAIProvider {
   generateStudyPlan(context: StudyPlanContext): Promise<GeneratedStudyPlan>;
   analyzeResume(content: ResumeContent): Promise<GeneratedResumeAnalysis>;
+  summarizeNote(content: NoteContent): Promise<GeneratedNoteSummary>;
+  extractKeyPoints(content: NoteContent): Promise<GeneratedKeyPoints>;
+  generateQuestions(content: NoteContent): Promise<GeneratedQuestions>;
+  generateFlashcards(content: NoteContent): Promise<GeneratedFlashcards>;
 }

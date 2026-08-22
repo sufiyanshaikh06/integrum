@@ -28,3 +28,31 @@ export const generatedResumeAnalysisOutputSchema = z.object({
   improvementFeedback: z.string(),
 });
 
+// ─── AI Notes Assistant output schemas ───────────────────────────────────────
+
+export const generatedNoteSummaryOutputSchema = z.object({
+  summary: z.string().min(1),
+  keyPoints: z.array(z.string()),
+});
+
+export const generatedKeyPointsOutputSchema = z.object({
+  keyPoints: z.array(z.object({
+    point: z.string(),
+    importance: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+  })),
+});
+
+export const generatedQuestionsOutputSchema = z.object({
+  questions: z.array(z.object({
+    question: z.string(),
+    answer: z.string(),
+    difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']),
+  })),
+});
+
+export const generatedFlashcardsOutputSchema = z.object({
+  flashcards: z.array(z.object({
+    front: z.string(),
+    back: z.string(),
+  })),
+});
