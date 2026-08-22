@@ -508,10 +508,80 @@ P5 Regression + Push         ✅ done
 
         ↓
 
-AI Notes Assistant           ← next (POST /ai/notes/:id/summarize)
-Analytics gaps               ← AN-1, AN-2, AN-3
-Administration Portal        ← after core gaps fully closed
+AI Notes Assistant           ✅ done (see 6.8 below)
+Analytics gaps               ✅ done (see 6.9 below)
+Administration Portal        ← next major module
 Frontend Integration         ← major final phase
 ```
 
 The Administration Portal is intentionally deferred because it consumes data produced by the rest of the platform. Building it before the student-facing domain is complete would mean repeatedly changing its statistics endpoints and management screens as underlying data evolves.
+
+---
+
+### 6.8 AI Notes Assistant — N1 through N5 (commit `45c21b9`)
+
+**What was built:** Four AI-powered capabilities operating on a student's existing note content.
+
+| Capability | Endpoint | Output |
+|---|---|---|
+| N1 Content extraction | Internal helper | `NoteContent` struct with ownership verification |
+| N2 Summarization | `POST /ai/notes/:id/summarize` | `{ summary, keyPoints: string[] }` |
+| N3 Key Point Extraction | `POST /ai/notes/:id/key-points` | `{ keyPoints: [{ point, importance: HIGH\|MEDIUM\|LOW }] }` |
+| N4 Question Generation | `POST /ai/notes/:id/questions` | `{ questions: [{ question, answer, difficulty: EASY\|MEDIUM\|HARD }] }` |
+| N5 Flashcard Generation | `POST /ai/notes/:id/flashcards` | `{ flashcards: [{ front, back }] }` |
+
+**Architecture decisions made:**
+- `AIModule.NOTES` already existed in schema — no migration needed
+- Shared `executeNoteAI<T>()` helper eliminates RUNNING→provider→Zod→SUCCESS/FAILED repetition across all four capabilities
+- File-only notes (no textual `content`) return 400 — document extraction deferred to future slice
+- All error handling uses `catch (error: unknown)` — no `any` types anywhere in AI layer
+- MockProvider is deterministic (test-only); GeminiProvider is production
+
+**Bugfix included:** `note.controller.ts` was using `req.user?.studentProfileId` (always `undefined`) — same pattern as the `attendance.controller.ts` bug fixed in P2. Fixed to `req.user?.studentProfile?.id` via `getProfileId()` helper.
+
+**Verification:** `scripts/test-ai-notes.ts` — 10 assertions covering all four capabilities, file-only 400 edge case, cross-user isolation (404), unauthenticated rejection (401). All pass with mock provider. Manual Gemini verification step documented in test output.
+
+---
+
+### 6.9 Analytics Gaps (AN-1, AN-2, AN-3) (commit `036fd5e`)
+
+**What was built:** Three new analytics endpoints extending the existing dashboard.
+
+| Gap | Endpoint | What it returns |
+|---|---|---|
+| AN-1 Skills Progress | `GET /analytics/skills-progress` | `totalSkills`, `averageProficiency`, `byCategory` (count, avgProficiency, skills[]) |
+| AN-2 Placement Readiness | `GET /analytics/placement-readiness` | Heuristic score 0–100 with breakdown and recommendations |
+| AN-3 Activity Breakdown | `GET /analytics/activity?period=daily\|weekly\|custom` | Tasks completed + attendance stats for time window |
+
+**Design notes:**
+- **AN-2 is documented as a heuristic**, not a validated employability metric. Weights (Skills 25%, Resume ATS 25%, Applications 20%, Certs 15%, Projects 15%) are product-defined and disclosed to API consumers via a `note` field in the response.
+- **AN-3 custom range is validated by Zod `superRefine`**: `period=custom` requires both `startDate` and `endDate`, and `startDate` must be ≤ `endDate`. Invalid ranges return 400 instead of silently defaulting.
+- **AN-3 tasks use `updatedAt` as a proxy for completion time** — documented as a known limitation in code comments. A future `Task.completedAt` migration would remove the ambiguity.
+- No `req.query as any` anywhere — activity query is typed via `ActivityQuery` from `analytics.schema.ts`.
+
+**Verification:** `scripts/test-analytics.ts` — dashboard regression + AN-1/AN-2/AN-3 assertions including custom range validation (missing endDate → 400, inverted range → 400). All pass.
+
+### 6.10 Full Regression Summary (post AI Notes + Analytics)
+
+```text
+test-p1-p2.ts    ✅  Identity & Access + Academic gaps
+test-p3-p4.ts    ✅  Career Hub + Productivity verification
+test-ai-notes.ts ✅  AI Notes Assistant (N2–N5)
+test-analytics.ts ✅  Dashboard regression + AN-1, AN-2, AN-3
+```
+
+All four suites pass with zero failures. Working tree clean. Pushed to `main`.
+
+### 6.11 What comes next (post 6.9)
+
+```text
+AI Notes Assistant           ✅ done
+Analytics gaps (AN-1–AN-3)   ✅ done
+
+        ↓
+
+Administration Portal        ← next (User Mgmt, Academic Mgmt, Content, Platform, Reporting)
+Frontend Integration         ← major final phase after admin portal
+```
+
+The backend is now at V1 gap-closure checkpoint. All originally promised 26-feature / 105-functionality scope items that belong to the backend have been implemented. Administration Portal is the final major backend module before frontend integration begins.
