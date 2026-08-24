@@ -1,0 +1,22 @@
+import { Router } from 'express';
+import { catalogController } from '../controllers/catalog.controller.js';
+import { authenticate } from '../middleware/authenticate.js';
+
+const router = Router();
+
+// Catalog feeds are authenticated read-only feeds accessible to all authenticated users (STUDENT and ADMIN)
+router.use(authenticate);
+
+// GET /api/v1/catalog/departments — list departments
+router.get('/departments', catalogController.getDepartments);
+
+// GET /api/v1/catalog/courses — list courses
+router.get('/courses', catalogController.getCourses);
+
+// GET /api/v1/catalog/subjects — list master subjects
+router.get('/subjects', catalogController.getSubjects);
+
+// GET /api/v1/catalog/terms — list academic terms
+router.get('/terms', catalogController.getTerms);
+
+export default router;

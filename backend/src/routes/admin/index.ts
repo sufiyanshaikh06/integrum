@@ -3,6 +3,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
 import userRoutes from './user.routes.js';
+import academicRoutes from './academic.routes.js';
 
 const router = Router();
 
@@ -22,5 +23,8 @@ router.get('/ping', (req, res) => {
 
 // User Management Subsystem
 router.use('/users', userRoutes);
+
+// Academic Catalog Subsystem
+router.use('/academics', academicRoutes);
 
 export default router;
