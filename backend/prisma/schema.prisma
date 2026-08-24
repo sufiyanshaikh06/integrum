@@ -27,6 +27,13 @@ enum Priority {
   HIGH
 }
 
+enum ContentPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 enum TaskStatus {
   TODO
   IN_PROGRESS
@@ -84,33 +91,94 @@ enum CalendarEventType {
   CLASS
 }
 
+enum AnnouncementType {
+  ANNOUNCEMENT
+  NOTICE
+}
+
+enum ContentTargetScope {
+  ALL
+  DEPARTMENT
+  COURSE
+}
+
+enum InstitutionalEventCategory {
+  EXAM
+  HOLIDAY
+  COLLEGE_EVENT
+  SEMINAR
+  WORKSHOP
+}
+
+enum ResourceCategory {
+  SYLLABUS
+  PREVIOUS_PAPER
+  STUDY_GUIDE
+  TEMPLATE
+  OTHER
+}
+
+enum FeedbackCategory {
+  BUG_REPORT
+  FEATURE_REQUEST
+  ACADEMIC_QUERY
+  GENERAL
+}
+
+enum FeedbackStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum AcademicTermType {
+  ODD
+  EVEN
+  SUMMER
+}
+
+enum SystemSettingKey {
+  MAINTENANCE_MODE
+  ALLOW_STUDENT_REGISTRATION
+  AI_FEATURES_ENABLED
+}
+
 // ---------------------------------------------------------
 // 1. IDENTITY, ACCESS & SETTINGS
 // ---------------------------------------------------------
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
+  id           String    @id @default(uuid())
+  email        String    @unique
   passwordHash String
   role         Role
-  isVerified   Boolean  @default(false)
-  isActive     Boolean  @default(true)
+  isVerified   Boolean   @default(false)
+  isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   // Password reset (hashed token stored, not plaintext)
   passwordResetTokenHash String?
   passwordResetExpires   DateTime?
 
   // Email verification
-  verificationTokenHash  String?
-  verificationExpires    DateTime?
+  verificationTokenHash String?
+  verificationExpires   DateTime?
 
   studentProfile StudentProfile?
   adminProfile   AdminProfile?
   settings       StudentSettings?
   notifications  Notification[]
+
+  // Admin authoring, resolution & audit relations
+  authoredAnnouncements Announcement[]
+  createdEvents         InstitutionalEvent[]
+  uploadedResources     AcademicResource[]
+  adminAuditLogs        AdminAuditLog[]
+  resolvedFeedbacks     Feedback[]           @relation("ResolvedFeedbacks")
+  updatedSettings       SystemSetting[]
 }
 
 model StudentProfile {
@@ -124,6 +192,11 @@ model StudentProfile {
   graduationYear Int?
   careerGoals    String?  @db.Text
   socialLinks    Json?    // { linkedin, github, portfolio, twitter }
+
+  // Optional link to institutional program catalog
+  courseId       String?
+  course         Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -139,18 +212,21 @@ model StudentProfile {
   studentAnalytics StudentAnalytics?
   aiExecutionLogs  AIExecutionLog[]
   jobApplications  JobApplication[]
+  feedbacks        Feedback[]
 }
 
 model AdminProfile {
-  id               String   @id @default(uuid())
-  userId           String   @unique
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String      @id @default(uuid())
+  userId           String      @unique
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   firstName        String
   lastName         String
-  department       String?
-  permissionsLevel Int      @default(1)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  department       String?     // Legacy raw text preserved
+  departmentId     String?
+  departmentRef    Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  permissionsLevel Int         @default(1)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 }
 
 model StudentSettings {
@@ -178,7 +254,76 @@ model Notification {
 }
 
 // ---------------------------------------------------------
-// 2. ACADEMIC HUB (Ownership Hierarchy)
+// 2. ACADEMIC CATALOG (Institutional Master Data — Admin Owned)
+// ---------------------------------------------------------
+
+model Department {
+  id               String              @id @default(uuid())
+  name             String              @unique
+  code             String              @unique // e.g. "CSE", "ECE", "MECH"
+  description      String?             @db.Text
+  headOfDepartment String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  courses          Course[]
+  adminProfiles    AdminProfile[]
+  announcements    Announcement[]
+  resources        AcademicResource[]
+  events           InstitutionalEvent[]
+}
+
+model Course {
+  id             String              @id @default(uuid())
+  departmentId   String
+  department     Department          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  name           String
+  code           String              @unique // e.g. "BTECH_CSE", "BCA"
+  durationYears  Int                 @default(4)
+  totalSemesters Int                 @default(8)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  masterSubjects MasterSubject[]
+  students       StudentProfile[]
+  announcements  Announcement[]
+  resources      AcademicResource[]
+  events         InstitutionalEvent[]
+}
+
+model MasterSubject {
+  id             String    @id @default(uuid())
+  courseId       String
+  course         Course    @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  name           String
+  code           String    // e.g. "CS401"
+  credits        Int       @default(3)
+  semesterNumber Int       @default(1)
+  description    String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  studentSubjects Subject[]
+
+  @@unique([courseId, code])
+}
+
+model AcademicTerm {
+  id           String           @id @default(uuid())
+  name         String           // e.g. "Fall 2026", "Spring 2027"
+  academicYear Int              // e.g. 2026
+  termType     AcademicTermType @default(ODD)
+  startDate    DateTime
+  endDate      DateTime
+  isActive     Boolean          @default(true)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  semesters    Semester[]
+}
+
+// ---------------------------------------------------------
+// 3. ACADEMIC HUB (Operational Data — Student Owned)
 // ---------------------------------------------------------
 
 model Semester {
@@ -188,6 +333,11 @@ model Semester {
   name             String
   startDate        DateTime
   endDate          DateTime
+
+  // Optional link to institutional term calendar
+  academicTermId   String?
+  academicTerm     AcademicTerm?  @relation(fields: [academicTermId], references: [id], onDelete: SetNull)
+
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
@@ -196,18 +346,23 @@ model Semester {
 }
 
 model Subject {
-  id              String     @id @default(uuid())
+  id              String         @id @default(uuid())
   semesterId      String
-  semester        Semester   @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  semester        Semester       @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   name            String
   code            String?
   credits         Int?
   targetGrade     Float?
-  totalClasses    Int        @default(0)
-  attendedClasses Int        @default(0)
-  attendanceGoal  Float?     // e.g. 75.0 = 75% target attendance
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  totalClasses    Int            @default(0)
+  attendedClasses Int            @default(0)
+  attendanceGoal  Float?         // e.g. 75.0 = 75% target attendance
+
+  // Optional link to master syllabus catalog
+  masterSubjectId String?
+  masterSubject   MasterSubject? @relation(fields: [masterSubjectId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   assignments       Assignment[]
   notes             Note[]
@@ -240,16 +395,16 @@ model Note {
 }
 
 model StudyPlan {
-  id               String         @id @default(uuid())
+  id               String          @id @default(uuid())
   studentProfileId String
-  studentProfile   StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  studentProfile   StudentProfile  @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
   title            String
   targetDate       DateTime?
-  goals            String?        @db.Text
+  goals            String?         @db.Text
   status           StudyPlanStatus @default(ACTIVE)
-  progressPercentage Float        @default(0.0)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  progressPercentage Float         @default(0.0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   tasks Task[]
 }
@@ -279,7 +434,110 @@ model CalendarEvent {
 }
 
 // ---------------------------------------------------------
-// 3. PRODUCTIVITY & ANALYTICS HUB
+// 4. CONTENT MANAGEMENT (Institutional Broadcasts)
+// ---------------------------------------------------------
+
+model Announcement {
+  id             String             @id @default(uuid())
+  type           AnnouncementType   @default(ANNOUNCEMENT)
+  title          String
+  content        String             @db.Text
+  priority       ContentPriority    @default(MEDIUM)
+  targetScope    ContentTargetScope @default(ALL)
+  departmentId   String?
+  department     Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  courseId       String?
+  course         Course?            @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  isPublished    Boolean            @default(false)
+  publishedAt    DateTime?
+  expiresAt      DateTime?
+  authorUserId   String
+  author         User               @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+model InstitutionalEvent {
+  id              String                     @id @default(uuid())
+  title           String
+  description     String?                    @db.Text
+  category        InstitutionalEventCategory @default(COLLEGE_EVENT)
+  startDate       DateTime
+  endDate         DateTime?
+  location        String?
+  targetScope     ContentTargetScope         @default(ALL)
+  departmentId    String?
+  department      Department?                @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  courseId        String?
+  course          Course?                    @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  isPublished     Boolean                    @default(true)
+  createdByUserId String
+  createdByUser   User                       @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+}
+
+model AcademicResource {
+  id               String           @id @default(uuid())
+  title            String
+  description      String?          @db.Text
+  fileUrl          String
+  fileType         String           // e.g. "PDF", "DOCX", "ZIP"
+  category         ResourceCategory @default(SYLLABUS)
+  departmentId     String?
+  department       Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  courseId         String?
+  course           Course?          @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  uploadedByUserId String
+  uploadedByUser   User             @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+// ---------------------------------------------------------
+// 5. PLATFORM MANAGEMENT & AUDITING
+// ---------------------------------------------------------
+
+model Feedback {
+  id               String           @id @default(uuid())
+  studentProfileId String
+  studentProfile   StudentProfile   @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  category         FeedbackCategory @default(GENERAL)
+  subject          String
+  message          String           @db.Text
+  status           FeedbackStatus   @default(PENDING)
+  adminNotes       String?          @db.Text
+  resolvedByUserId String?
+  resolvedByUser   User?            @relation("ResolvedFeedbacks", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+  resolvedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model AdminAuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String
+  actorUser   User     @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  action      String   // e.g. "USER_ROLE_UPDATED", "USER_STATUS_TOGGLED", "SETTING_UPDATED"
+  targetType  String   // e.g. "User", "Department", "SystemSetting"
+  targetId    String?
+  details     Json?    // { previousValue, newValue, reason }
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+}
+
+model SystemSetting {
+  id              String           @id @default(uuid())
+  key             SystemSettingKey @unique
+  value           Json             // Typed JSON value (boolean or string)
+  description     String?
+  updatedByUserId String
+  updatedByUser   User             @relation(fields: [updatedByUserId], references: [id], onDelete: Restrict)
+  updatedAt       DateTime         @updatedAt
+}
+
+// ---------------------------------------------------------
+// 6. PRODUCTIVITY & ANALYTICS HUB
 // ---------------------------------------------------------
 
 model Task {
@@ -323,7 +581,7 @@ model StudentAnalytics {
 }
 
 // ---------------------------------------------------------
-// 4. CAREER HUB
+// 7. CAREER HUB
 // ---------------------------------------------------------
 
 model Resume {
@@ -382,10 +640,6 @@ model JobApplication {
   updatedAt        DateTime          @updatedAt
 }
 
-// ---------------------------------------------------------
-// C-3: CERTIFICATIONS
-// ---------------------------------------------------------
-
 model Certification {
   id               String         @id @default(uuid())
   studentProfileId String
@@ -399,10 +653,6 @@ model Certification {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 }
-
-// ---------------------------------------------------------
-// C-4: PERSONAL PROJECTS
-// ---------------------------------------------------------
 
 model Project {
   id               String         @id @default(uuid())
@@ -421,7 +671,7 @@ model Project {
 }
 
 // ---------------------------------------------------------
-// 5. AI EXECUTION HISTORY
+// 8. AI EXECUTION HISTORY
 // ---------------------------------------------------------
 
 model AIExecutionLog {

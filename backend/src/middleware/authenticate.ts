@@ -4,11 +4,18 @@ import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
-// Extend the Express Request interface
+// Extend the Express Request interface with typed user
 declare global {
   namespace Express {
     interface Request {
-      user?: any;
+      user?: {
+        id: string;
+        email: string;
+        role: 'STUDENT' | 'ADMIN';
+        isActive: boolean;
+        studentProfile?: { id: string; courseId?: string | null } | null;
+        adminProfile?: { id: string; permissionsLevel: number; departmentId?: string | null } | null;
+      };
     }
   }
 }
@@ -29,7 +36,7 @@ export const authenticate = asyncHandler(async (req: Request, res: Response, nex
   try {
     const payload = verifyAccessToken(token);
 
-    // Verify user actually exists in the database
+    // Verify user actually exists in the database with profile context
     const user = await prisma.user.findUnique({
       where: { id: payload.sub as string },
       select: {
@@ -38,7 +45,10 @@ export const authenticate = asyncHandler(async (req: Request, res: Response, nex
         role: true,
         isActive: true,
         studentProfile: {
-          select: { id: true },
+          select: { id: true, courseId: true },
+        },
+        adminProfile: {
+          select: { id: true, permissionsLevel: true, departmentId: true },
         },
       },
     });
@@ -53,7 +63,8 @@ export const authenticate = asyncHandler(async (req: Request, res: Response, nex
 
     req.user = user;
     next();
-  } catch (error) {
+  } catch (error: unknown) {
+    if (error instanceof ApiError) throw error;
     throw ApiError.unauthorized('Access token is invalid or expired');
   }
 });

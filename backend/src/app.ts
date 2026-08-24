@@ -25,6 +25,7 @@ import certificationRoutes from './routes/certification.routes.js';
 import projectRoutes from './routes/project.routes.js';
 import analyticsRoutes from './routes/analytics.routes.js';
 import aiRoutes from './routes/ai.routes.js';
+import adminRoutes from './routes/admin/index.js';
 
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
@@ -66,6 +67,7 @@ app.use('/api/v1/certifications', certificationRoutes);
 app.use('/api/v1/projects', projectRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/ai', aiRoutes);
+app.use('/api/v1/admin', adminRoutes);
 
 // Error Handling
 app.use(notFound);
