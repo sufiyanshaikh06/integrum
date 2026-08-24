@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
+import { ensureStudentBaseline } from './admin/user.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // Token helpers
@@ -64,40 +65,10 @@ export const authService = {
         },
       });
 
-      // 2. Create StudentProfile
-      const profile = await tx.studentProfile.create({
-        data: {
-          userId: user.id,
-          firstName: data.firstName,
-          lastName: data.lastName,
-        },
-      });
-
-      // 3. Create initial default Semester
-      const now = new Date();
-      const semesterEnd = new Date();
-      semesterEnd.setMonth(now.getMonth() + 4);
-
-      const semester = await tx.semester.create({
-        data: {
-          studentProfileId: profile.id,
-          name: 'Semester 1',
-          startDate: now,
-          endDate: semesterEnd,
-        },
-      });
-
-      // 4. Create StudentSettings
-      await tx.studentSettings.create({
-        data: {
-          userId: user.id,
-          defaultSemesterId: semester.id,
-        },
-      });
-
-      // 5. Create StudentAnalytics
-      await tx.studentAnalytics.create({
-        data: { studentProfileId: profile.id },
+      // 2. Create mandatory student baseline records via centralized helper
+      await ensureStudentBaseline(tx, user, {
+        firstName: data.firstName,
+        lastName: data.lastName,
       });
 
       // Send verification email (dev: logs to console)

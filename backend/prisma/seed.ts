@@ -37,11 +37,10 @@ async function main() {
       );
     }
 
-    console.log(`  ℹ️  Admin user "${adminEmail}" already exists. Updating password & ensuring profile...`);
+    console.log(`  ℹ️  Admin user "${adminEmail}" already exists. Preserving credentials & ensuring profile...`);
     adminUser = await prisma.user.update({
       where: { id: existingUser.id },
       data: {
-        passwordHash,
         isVerified: true,
         isActive: true,
       },

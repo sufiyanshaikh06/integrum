@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
+import userRoutes from './user.routes.js';
 
 const router = Router();
 
@@ -18,5 +19,8 @@ router.get('/ping', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// User Management Subsystem
+router.use('/users', userRoutes);
 
 export default router;
