@@ -6,6 +6,7 @@ import userRoutes from './user.routes.js';
 import academicRoutes from './academic.routes.js';
 import contentRoutes from './content.routes.js';
 import platformRoutes from './platform.routes.js';
+import reportRoutes from './report.routes.js';
 
 const router = Router();
 
@@ -34,5 +35,8 @@ router.use('/content', contentRoutes);
 
 // Platform Management & Feedback Subsystem
 router.use('/platform', platformRoutes);
+
+// Reporting & Telemetry Subsystem
+router.use('/reports', reportRoutes);
 
 export default router;
