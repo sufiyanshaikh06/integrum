@@ -1,7 +1,7 @@
 # Administration Portal — V1 Architecture & Implementation Plan (Revised)
 
-> **Scope:** 5 Core Administration Features (17 Functionalities) + Authenticated Catalog/Content Feeds  
-> **Status:** Implementation Planning (Ready for Phase A1 Execution)  
+> **Scope:** 5 Core Administration Features (20 Functionalities) + Authenticated Catalog/Content Feeds  
+> **Status:** Implementation Complete & Verified (Phases A1 – A7.1)  
 > **Target System:** Integrum Backend (`backend/`)  
 > **Prerequisites:** Identity, Academic, Productivity, Career, AI Notes, and Analytics gap-closure verified & passing.  
 
@@ -10,7 +10,7 @@
 ## P1 — Frozen Administration Portal V1 Scope
 
 ```text
-Administration Portal (V1 Backend Scope — 17 Functionalities Across 5 Features)
+Administration Portal (V1 Backend Scope — 20 Functionalities Across 5 Features)
 │
 ├── 1. User Management (4 Functionalities)
 │   ├── 1.1 Student Accounts (Paginated List, Search by name/email, Filter by active/verified/course, Profile View)
@@ -608,7 +608,7 @@ Phase A7 — Full Regression & Documentation
 
 - **Files to Create:** `backend/scripts/test-admin.ts`
 - **Testing Suite:**
-  - 30+ assertions covering all 17 admin functionalities, safety guards, role transitions, audit trail emission, student feeds, and maintenance mode gating.
+  - 30+ assertions covering all 20 admin functionalities, safety guards, role transitions, audit trail emission, student feeds, and maintenance mode gating.
 - **Full 5-Suite Regression:**
   - `test-p1-p2.ts` ✅
   - `test-p3-p4.ts` ✅
@@ -648,4 +648,4 @@ Phase A7 — Full Regression & Documentation
 | **Phase A6** | Reporting & Telemetry Subsystem | ✅ **COMPLETE** | `740d2de` |
 | **Phase A7** | Verification, Stabilization & Documentation | ✅ **COMPLETE** | `247bf01` |
 
-> **Administration Portal V1 backend implementation is complete and verified against its 17 promised Administration functionalities.**
+> **Administration Portal V1 backend implementation is complete and verified against its 20 promised Administration functionalities.**

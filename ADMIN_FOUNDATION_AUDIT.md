@@ -2,7 +2,7 @@
 
 > **Document Status:** P0 Architectural & Foundation Audit (Reconciled & Architecture-Frozen)  
 > **Target System:** Integrum Backend (Node.js / Express / Prisma / PostgreSQL)  
-> **Scope Alignment:** 17 Promised Functionalities Across 5 Administration Features (Original Synopsis)  
+> **Scope Alignment:** 20 Promised Functionalities Across 5 Administration Features (4 per feature)  
 > **Date:** August 24, 2026  
 
 ---
@@ -41,7 +41,7 @@ Before introducing the Administration Portal into the codebase, we audited the e
 
 ---
 
-## 3. Functionality Classification Matrix (17 Promised Functionalities Across 5 Features)
+## 3. Functionality Classification Matrix (20 Promised Functionalities Across 5 Features)
 
 Each functionality is classified using one of the standard classifications:
 - **`REUSE`**: Leverages existing models/services with query-level extensions.
@@ -280,6 +280,6 @@ AdminAuditLog (Append-only record: actorUserId = req.user.id)
 
 ## 8. Final Audit & Implementation Status
 
-All 17 promised Administration functionalities across the 5 features have been successfully implemented, integrated, and verified against real PostgreSQL persistence with 100% test coverage.
+All 20 promised Administration functionalities across the 5 features have been successfully implemented, integrated, and verified against real PostgreSQL persistence with all 11 planned Administration and regression test suites passing (100% test pass rate).
 
-> **Administration Portal V1 backend implementation is complete and verified against its 17 promised Administration functionalities.**
+> **Administration Portal V1 backend implementation is complete and verified against its 20 promised Administration functionalities.**
