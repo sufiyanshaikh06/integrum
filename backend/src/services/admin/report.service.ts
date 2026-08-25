@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { performance } from 'perf_hooks';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
@@ -370,7 +369,7 @@ export const adminReportService = {
       const gte = query.startDate ? new Date(query.startDate) : undefined;
       const lte = query.endDate ? new Date(query.endDate) : undefined;
 
-      aiDateFilter.createdAt = {
+      aiDateFilter.startedAt = {
         ...(gte ? { gte } : {}),
         ...(lte ? { lte } : {}),
       };
@@ -418,11 +417,7 @@ export const adminReportService = {
     let completedDurationCount = 0;
 
     for (const log of aiLogs) {
-      if (log.module in byModule) {
-        byModule[log.module] += 1;
-      } else {
-        byModule[log.module] = 1;
-      }
+      byModule[log.module] = (byModule[log.module] ?? 0) + 1;
 
       byOperation[log.operation] = (byOperation[log.operation] || 0) + 1;
 

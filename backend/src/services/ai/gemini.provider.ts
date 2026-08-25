@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import {
   IAIProvider,
@@ -224,7 +223,7 @@ Return a valid JSON object matching the requested schema.
                 type: SchemaType.OBJECT,
                 properties: {
                   point: { type: SchemaType.STRING },
-                  importance: { type: SchemaType.STRING, enum: ['HIGH', 'MEDIUM', 'LOW'] },
+                  importance: { type: SchemaType.STRING, format: 'enum', enum: ['HIGH', 'MEDIUM', 'LOW'] },
                 },
                 required: ['point', 'importance'],
               },
@@ -272,7 +271,7 @@ Return a valid JSON object matching the requested schema.
                 properties: {
                   question: { type: SchemaType.STRING },
                   answer: { type: SchemaType.STRING },
-                  difficulty: { type: SchemaType.STRING, enum: ['EASY', 'MEDIUM', 'HARD'] },
+                  difficulty: { type: SchemaType.STRING, format: 'enum', enum: ['EASY', 'MEDIUM', 'HARD'] },
                 },
                 required: ['question', 'answer', 'difficulty'],
               },

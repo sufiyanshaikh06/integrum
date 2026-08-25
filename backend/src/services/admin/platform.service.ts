@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Prisma, SystemSettingKey, FeedbackStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { ApiError } from '../../utils/ApiError.js';
@@ -283,7 +282,7 @@ export const adminPlatformService = {
         details: {
           previousStatus: existing.status,
           newStatus: data.status,
-          adminNotes: data.adminNotes,
+          adminNotes: data.adminNotes ?? null,
         },
         ipAddress,
       });
@@ -379,7 +378,7 @@ export const adminPlatformService = {
         targetId: updated.id,
         details: {
           key,
-          previousValue: previous?.value,
+          previousValue: previous?.value !== undefined ? previous.value : null,
           newValue: data.value,
         },
         ipAddress,

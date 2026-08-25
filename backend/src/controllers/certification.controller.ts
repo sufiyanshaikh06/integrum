@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
 import { certificationService } from '../services/certification.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -25,18 +24,18 @@ export const getCertifications = asyncHandler(async (req: Request, res: Response
 });
 
 export const getCertificationById = asyncHandler(async (req: Request, res: Response) => {
-  const cert = await certificationService.getCertificationById(getProfileId(req), req.params.id);
+  const cert = await certificationService.getCertificationById(getProfileId(req), req.params.id as string);
   ApiResponse.success(res, 'Certification retrieved successfully', cert);
 });
 
 export const updateCertification = asyncHandler(async (req: Request, res: Response) => {
   const data: UpdateCertificationInput = req.body;
-  const cert = await certificationService.updateCertification(getProfileId(req), req.params.id, data);
+  const cert = await certificationService.updateCertification(getProfileId(req), req.params.id as string, data);
   ApiResponse.success(res, 'Certification updated successfully', cert);
 });
 
 export const deleteCertification = asyncHandler(async (req: Request, res: Response) => {
-  await certificationService.deleteCertification(getProfileId(req), req.params.id);
+  await certificationService.deleteCertification(getProfileId(req), req.params.id as string);
   ApiResponse.success(res, 'Certification deleted successfully', null);
 });
 

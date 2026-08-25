@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { z } from 'zod';
 
 export const listStudentsQuerySchema = z.object({
@@ -40,17 +39,17 @@ export const createAdminSchema = z.object({
 
 export const updateUserStatusSchema = z.object({
   body: z.object({
-    isActive: z.boolean({ invalid_type_error: 'isActive boolean is required' }),
+    isActive: z.boolean({ message: 'isActive boolean is required' }),
   }),
 });
 
 export const updateUserRoleSchema = z.object({
   body: z.object({
-    role: z.enum(['', ''], {
-      errorMap: () => ({ message: 'Role must be either STUDENT or ADMIN' }),
+    role: z.enum(['STUDENT', 'ADMIN'], {
+      message: 'Role must be either STUDENT or ADMIN',
     }),
     permissionsLevel: z.number().int().min(1).max(5).optional(),
-    departmentId: z.string().uuid('Invalid department ID format').optional(),
+    departmentId: z.string().uuid('Invalid department ID format').optional().nullable(),
   }),
 });
 

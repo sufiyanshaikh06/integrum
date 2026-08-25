@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { z } from 'zod';
 
 // ─── SYSTEM SETTING ENUM & SCHEMAS ──────────────────────────────────────────
@@ -11,8 +10,8 @@ export const ALLOWED_SETTING_KEYS = [
 
 export const updateSystemSettingSchema = z.object({
   body: z.object({
-    value: z.boolean({ invalid_type_error: 'Boolean value required' }),
-    description: z.string().optional(),
+    value: z.boolean({ message: 'Setting value must be a boolean' }),
+    description: z.string().trim().optional(),
   }),
 });
 
@@ -20,8 +19,8 @@ export const updateSystemSettingSchema = z.object({
 
 export const submitFeedbackSchema = z.object({
   body: z.object({
-    category: z.enum(['', '', '', ''] as [string, ...string[]], {
-      errorMap: () => ({ message: 'Invalid feedback category' }),
+    category: z.enum(['BUG_REPORT', 'FEATURE_REQUEST', 'ACADEMIC_QUERY', 'GENERAL'], {
+      message: 'Invalid feedback category',
     }),
     subject: z.string().trim().min(1, 'Subject is required'),
     message: z.string().trim().min(1, 'Message is required'),
@@ -30,8 +29,8 @@ export const submitFeedbackSchema = z.object({
 
 export const updateFeedbackAdminSchema = z.object({
   body: z.object({
-    status: z.enum(['', '', '', ''] as [string, ...string[]], {
-      errorMap: () => ({ message: 'Invalid feedback status' }),
+    status: z.enum(['PENDING', 'UNDER_REVIEW', 'RESOLVED', 'DISMISSED'], {
+      message: 'Invalid feedback status',
     }),
     adminNotes: z.string().trim().optional().nullable(),
   }),
@@ -41,8 +40,8 @@ export const listFeedbackQuerySchema = z.object({
   query: z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
-    status: z.enum(['', '', '', ''] as [string, ...string[]]).optional(),
-    category: z.enum(['', '', '', ''] as [string, ...string[]]).optional(),
+    status: z.enum(['PENDING', 'UNDER_REVIEW', 'RESOLVED', 'DISMISSED']).optional(),
+    category: z.enum(['BUG_REPORT', 'FEATURE_REQUEST', 'ACADEMIC_QUERY', 'GENERAL']).optional(),
     studentProfileId: z.string().uuid().optional(),
     startDate: z.string().datetime().optional(),
     endDate: z.string().datetime().optional(),

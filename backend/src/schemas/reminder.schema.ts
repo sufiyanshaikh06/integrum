@@ -1,14 +1,13 @@
-// @ts-nocheck
 import { z } from 'zod';
 
 export const createReminderSchema = z.object({
   body: z.object({
     title: z.string({
-      required_error: 'Title is required',
+      message: 'Title is required',
     }).min(1, 'Title cannot be empty').max(255, 'Title is too long'),
     description: z.string().optional(),
     triggerAt: z.string({
-      required_error: 'triggerAt is required',
+      message: 'triggerAt is required',
     }).datetime({ message: 'Invalid datetime format for triggerAt' }),
     isCompleted: z.boolean().optional(),
   }),

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
 import { noteService } from '../services/note.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -36,19 +35,19 @@ export const getNotes = asyncHandler(async (req: Request, res: Response) => {
 
 export const getNoteById = asyncHandler(async (req: Request, res: Response) => {
   const studentProfileId = getProfileId(req);
-  const note = await noteService.getNoteById(studentProfileId, req.params.id);
+  const note = await noteService.getNoteById(studentProfileId, req.params.id as string);
   ApiResponse.success(res, 'Note retrieved successfully', note);
 });
 
 export const updateNote = asyncHandler(async (req: Request, res: Response) => {
   const studentProfileId = getProfileId(req);
   const data: UpdateNoteInput = req.body;
-  const note = await noteService.updateNote(studentProfileId, req.params.id, data);
+  const note = await noteService.updateNote(studentProfileId, req.params.id as string, data);
   ApiResponse.success(res, 'Note updated successfully', note);
 });
 
 export const deleteNote = asyncHandler(async (req: Request, res: Response) => {
   const studentProfileId = getProfileId(req);
-  await noteService.deleteNote(studentProfileId, req.params.id);
+  await noteService.deleteNote(studentProfileId, req.params.id as string);
   ApiResponse.success(res, 'Note deleted successfully', null, 204);
 });

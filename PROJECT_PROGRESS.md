@@ -294,17 +294,35 @@ graph TD
 
 ### 4.8 Administration Portal
 
-**Status:** ⏳ Planned
+**Status:** ✅ Complete
 
-The Administration Portal will allow administrators to manage global settings, announcements, and university-level configurations.
+The Administration Portal allows administrators to manage global settings, institutional catalogs, announcements, content, platform oversight, and university-level reporting.
 
-#### Planned Components
+#### Implemented Components
 
 | Component | Status | Key functionality |
 |---|---|---|
-| Admin Profile Management | ⏳ | Comprehensive department alignment and multi-tiered permissions tracking to ensure staff can safely access and configure specific segments of the university ecosystem. |
-| Global Announcements | ⏳ | Broadcasting system notifications and urgent administrative alerts globally to all enrolled student profiles. |
+| Admin User Management | ✅ | Search/filter users, direct admin provisioning, activate/deactivate accounts, bidirectional role transitions (STUDENT ↔ ADMIN) with profile preservation. |
+| Academic Catalog Management | ✅ | CRUD for Departments, Courses, Master Subjects, and Academic Terms with restrictive deletion safety guards and student catalog feeds (`/api/v1/catalog/*`). |
+| Institutional Content Management | ✅ | Announcements & Notices, Institutional Events, and Academic Resources with granular targeting (ALL, DEPARTMENT, COURSE) and student feeds (`/api/v1/content/*`). |
+| Platform Oversight & Feedback | ✅ | Admin dashboard metrics, immutable append-only audit trail (`AdminAuditLog`), two-sided feedback lifecycle, and dynamic system settings (`MAINTENANCE_MODE`, `ALLOW_STUDENT_REGISTRATION`, `AI_FEATURES_ENABLED`). |
+| Reporting & Telemetry | ✅ | Institutional analytics, user distributions, academic breakdowns, AI & career usage analytics, and platform health telemetry. |
 
+#### Working Software
+- [x] Admin User Management with profile preservation across role transitions
+- [x] Academic Catalog management with restrictive deletion safeguards
+- [x] Institutional Announcements, Events, and Academic Resources targeting
+- [x] Append-only audit logging for all administrative mutations
+- [x] Dynamic system settings with real-time middleware enforcement
+- [x] Institutional Reporting & Telemetry endpoints
+
+#### Verification
+- [x] Unit, schema validation, and security testing
+- [x] Complete cross-module integration test suite (`test-admin.ts`)
+- [x] Subsystem integration test suites (`test-admin-foundation.ts`, `test-admin-users.ts`, `test-admin-academics.ts`, `test-admin-content.ts`, `test-admin-platform.ts`, `test-admin-reports.ts`)
+- [x] Static type integrity with zero suppressions and strict compiler flags
+
+---
 
 ## 5. Development Methodology
 
@@ -321,12 +339,13 @@ flowchart TD
     I --> J[Career Hub Implementation]
     J --> K[Analytics Hub Implementation]
     K --> L[AI Intelligence Hub Implementation]
-    L --> M[Administration Portal Implementation - Next]
+    L --> M[Administration Portal Implementation]
+    M --> N[Frontend Integration - Next]
 ```
 
 ### What Comes Next?
 
-The **Academic Hub**, **Productivity Hub**, **Career Hub**, **Analytics Hub**, and **AI Intelligence Hub** are fully implemented and verified. The next milestone is the **Administration Portal**, which will allow administrators to manage global settings and announcements.
+All backend core hubs, gap closures, and the **Administration Portal** are fully implemented and verified. The next major milestone is **Frontend Integration**.
 
 ### Current Status
 | Area | Status |
@@ -341,11 +360,10 @@ The **Academic Hub**, **Productivity Hub**, **Career Hub**, **Analytics Hub**, a
 | **Career Hub** | ✅ Complete |
 | **Analytics Hub** | ✅ Complete |
 | **AI Intelligence Hub** | ✅ Complete |
-| **Administration Portal** | ⏳ Planned |
+| **Administration Portal** | ✅ Complete |
+| **Frontend Integration** | ⏳ Next |
 
 ### Project Roadmap
-
-Rather than a strict linear flow, the development focuses on the current priority hub, with remaining modules mapped as upcoming development.
 
 ```mermaid
 flowchart TD
@@ -354,16 +372,15 @@ flowchart TD
     C --> D[Career Hub]
     D --> E[Analytics Hub]
     E --> F[AI Intelligence Hub]
-    F --> I[Upcoming]
+    F --> G[Administration Portal]
+    G --> I[Upcoming]
 
     subgraph UpcomingDevelopment["Upcoming Development"]
         direction TD
-        G[Administration Portal]
         H[Frontend Integration]
     end
 
-    %% Force Upcoming Development below the completed flow
-    I ~~~ G
+    I ~~~ H
 
     style A fill:#10b981,stroke:#047857,color:#fff
     style B fill:#10b981,stroke:#047857,color:#fff
@@ -371,12 +388,10 @@ flowchart TD
     style D fill:#10b981,stroke:#047857,color:#fff
     style E fill:#10b981,stroke:#047857,color:#fff
     style F fill:#10b981,stroke:#047857,color:#fff
+    style G fill:#10b981,stroke:#047857,color:#fff
 
     style I fill:#1f1f1f,stroke:#888,color:#fff
-
-    style G fill:#1f1f1f,stroke:#888,color:#fff
     style H fill:#1f1f1f,stroke:#888,color:#fff
-
     style UpcomingDevelopment fill:#1f1f1f,stroke:#888,color:#fff
 ```
 
@@ -572,44 +587,76 @@ test-analytics.ts ✅  Dashboard regression + AN-1, AN-2, AN-3
 
 All four suites pass with zero failures. Working tree clean. Pushed to `main`.
 
-### 6.11 What comes next (post 6.9)
+### 6.11 Transition to Administration Portal
 
 ```text
 AI Notes Assistant           ✅ done
 Analytics gaps (AN-1–AN-3)   ✅ done
+Administration Portal        ✅ done (see Section 7)
 
         ↓
 
-Administration Portal        ← next (User Mgmt, Academic Mgmt, Content, Platform, Reporting)
-Frontend Integration         ← major final phase after admin portal
+Frontend Integration         ← major next phase
 ```
 
-The backend is now at V1 gap-closure checkpoint. All originally promised 26-feature / 105-functionality scope items that belong to the backend have been implemented. Administration Portal is the final major backend module before frontend integration begins.
-  
----  
-  
-## 7. Administration Portal Implementation (Phase A7)  
-  
-**Administration Portal V1 backend implementation is complete and verified against its 17 promised Administration functionalities.**  
-  
-**What was built:** A completely distinct administrative subsystem that manages the institutional side of Integrum, sitting parallel to the student operational side.  
-  
-### 7.1 Architecture & Schema (A1)  
-- Separated institutional catalog (Department -> Course -> MasterSubject) from student operational data.  
-- Added scoped InstitutionalEvent and AcademicResource tables.  
-- Built atomic, append-only AdminAuditLog system.  
-- Designed system settings table with dynamic toggles.  
-- Migration: 20260824093648_add_admin_portal_schema.  
-  
-### 7.2 Core Administration Modules (A2-A6)  
-- **User Management:** Secure role transitions (student <-> admin) that preserve historical profile data.  
-- **Academic Catalog:** Management of Departments, Courses, Master Subjects, and Academic Terms.  
-- **Content Management:** Announcements, Events, and Resources.  
-- **Platform Management:** Append-only audit logs view, Feedback lifecycle tracking, and runtime system settings toggles.  
-- **Reporting & Telemetry:** Read-only analytics endpoints.  
-  
-### 7.3 Verification & Documentation (A7)  
-- [x] **Integration Suite:** test-admin.ts (end-to-end cross-module flow including role preservation).  
-- [x] **Regression Passing:** All prior test suites pass seamlessly.  
-- [x] **Static Integrity:** Zero TypeScript compilation errors and clean Prisma migrations.  
-- [x] **Security Enforced:** Maintenance mode tested, audit logs atomic, AI toggles block requests at 403, no secret leaks. 
+The backend is now fully complete across all core student hubs, AI integrations, analytics capabilities, and the complete institutional administration portal.
+
+---
+
+## 7. Administration Portal Implementation (Phases A1 – A7.1)
+
+**Status:** ✅ Complete & Verified
+
+The Administration Portal provides institutional oversight, academic catalog governance, content broadcasting, platform monitoring, and telemetry. It operates parallel to the student platform with strict role separation and complete auditability.
+
+### 7.1 Architecture & Schema Foundation (A1)
+- **Catalog Separation:** Separated institutional master catalog (`Department` → `Course` → `MasterSubject`, `AcademicTerm`) from student personal operational entities (`Semester`, `Subject`).
+- **Targeted Content Models:** Scoped `Announcement`, `InstitutionalEvent`, and `AcademicResource` supporting `ALL`, `DEPARTMENT`, and `COURSE` scopes.
+- **Audit & Governance:** Append-only, tamper-evident `AdminAuditLog` recording actor, action, target, JSON metadata diffs, and IP addresses.
+- **Dynamic Configuration:** `SystemSetting` table for runtime feature toggling without service redeployment.
+- **Schema Migration:** `20260824093648_add_admin_portal_schema` (10 new models, clean rollback compatibility).
+
+### 7.2 Core Administration Subsystems (A2 – A6)
+1. **User Management (A2):**
+   - Paginated student and administrator directory with query filtering (`isActive`, `isVerified`, search) and zero password/token hash exposure.
+   - Account status lifecycle (Ban / Reactivation) with self-lockout prevention and last-admin protection.
+   - Bidirectional role transitions (`STUDENT` ↔ `ADMIN`) with guaranteed data preservation (demoted admins retain baseline student entities; promoted students keep existing student records).
+2. **Academic Catalog Management (A3):**
+   - Hierarchical CRUD for Departments, Courses, Master Subjects, and Academic Terms.
+   - Restrictive deletion safety guards (cannot delete departments with courses, courses with subjects/enrolled students, or master subjects with student references).
+   - Public authenticated student catalog feeds (`/api/v1/catalog/*`).
+3. **Institutional Content Management (A4):**
+   - Announcements & Notices draft/publish lifecycle with expiry auto-hiding.
+   - Institutional Event scheduling and Academic Resource distribution.
+   - Scoped Student Content Feeds (`/api/v1/content/*`) delivering targeted materials based on department and course enrollment.
+4. **Platform Oversight & Feedback (A5):**
+   - Admin Dashboard real-time KPI aggregations.
+   - Searchable, paginated append-only audit trail viewer.
+   - Two-sided feedback resolution workflow (`PENDING` → `UNDER_REVIEW` → `RESOLVED` / `DISMISSED`).
+   - Dynamic system setting enforcement: `MAINTENANCE_MODE` (HTTP 503 for students, admins bypassed), `ALLOW_STUDENT_REGISTRATION` (HTTP 403 on signup), `AI_FEATURES_ENABLED` (HTTP 403 on AI endpoints).
+5. **Reporting & Telemetry (A6):**
+   - User growth and active rates by period (daily, weekly, monthly).
+   - Academic attendance and performance distributions.
+   - AI execution metrics and career application pipelines.
+   - Platform health, runtime memory, and database latency telemetry.
+   - Strict read-only guarantee (zero audit log pollution on report access).
+
+### 7.3 Verification & Test Coverage (A7)
+All 11 test suites pass with 100% green status:
+- [x] `test-admin-foundation.ts` — Auth, RBAC, ping, schema checks
+- [x] `test-admin-users.ts` — User directory, status toggling, role transitions, audit logs
+- [x] `test-admin-academics.ts` — Academic CRUD, deletion guards, catalog feeds, student hub autonomy
+- [x] `test-admin-content.ts` — Announcement lifecycle, scoping, events, resources, student feeds
+- [x] `test-admin-platform.ts` — Dashboard metrics, audit log search, feedback loop, system setting toggles
+- [x] `test-admin-reports.ts` — User, academic, usage reports, platform health telemetry
+- [x] `test-admin.ts` — Full cross-module administration E2E suite
+- [x] `test-p1-p2.ts` — Identity & Access + Academic gap regressions
+- [x] `test-p3-p4.ts` — Career Hub + Productivity regressions
+- [x] `test-ai-notes.ts` — AI Notes assistant regressions
+- [x] `test-analytics.ts` — Multi-dimensional analytics regressions
+
+### 7.4 Type Safety & Documentation Stabilization Checkpoint (A7.1)
+- [x] **Zero TypeScript Suppressions:** All `@ts-nocheck`, `@ts-ignore`, and `@ts-expect-error` comments completely eliminated across the entire backend.
+- [x] **Strict Compiler Compliance:** Full strictness preserved in `backend/tsconfig.json` (`exactOptionalPropertyTypes: true`, `noUncheckedIndexedAccess: true`, `strict: true`).
+- [x] **Clean Static Type Check:** `npx prisma validate && npx prisma generate && npx tsc --noEmit` exits with **0 errors**.
+- [x] **Clean Repository State:** Zero temporary test artifacts or untracked secret files. Ready for frontend integration.

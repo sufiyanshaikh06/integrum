@@ -1,4 +1,3 @@
-// @ts-nocheck
 import bcrypt from 'bcrypt';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
@@ -18,7 +17,7 @@ import {
 export async function ensureStudentBaseline(
   tx: Prisma.TransactionClient,
   user: { id: string; email: string },
-  nameData?: { firstName?: string; lastName?: string }
+  nameData?: { firstName?: string | undefined; lastName?: string | undefined }
 ) {
   let profile = await tx.studentProfile.findUnique({ where: { userId: user.id } });
   if (!profile) {
@@ -269,7 +268,7 @@ export const adminUserService = {
               firstName: data.firstName,
               lastName: data.lastName,
               permissionsLevel: data.permissionsLevel || 1,
-              departmentId: data.departmentId,
+              departmentId: data.departmentId ?? null,
             },
           },
         },
@@ -302,9 +301,9 @@ export const adminUserService = {
           details: {
             email: data.email,
             permissionsLevel: data.permissionsLevel || 1,
-            departmentId: data.departmentId || null,
+            departmentId: data.departmentId ?? null,
           },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -381,7 +380,7 @@ export const adminUserService = {
             newStatus: data.isActive,
             role: targetUser.role,
           },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -450,7 +449,7 @@ export const adminUserService = {
               firstName: targetUser.studentProfile?.firstName || 'Admin',
               lastName: targetUser.studentProfile?.lastName || 'User',
               permissionsLevel: data.permissionsLevel || 1,
-              departmentId: data.departmentId,
+              departmentId: data.departmentId ?? null,
             },
           });
         }
@@ -468,7 +467,7 @@ export const adminUserService = {
               newRole: 'ADMIN',
               permissionsLevel: data.permissionsLevel || 1,
             },
-            ipAddress,
+            ipAddress: ipAddress ?? null,
           },
         });
       }
@@ -511,7 +510,7 @@ export const adminUserService = {
               previousRole: 'ADMIN',
               newRole: 'STUDENT',
             },
-            ipAddress,
+            ipAddress: ipAddress ?? null,
           },
         });
       }

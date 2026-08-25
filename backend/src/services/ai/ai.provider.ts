@@ -1,7 +1,7 @@
 export interface StudyPlanContext {
   topic: string;
-  targetDate?: string;
-  goals?: string;
+  targetDate?: string | undefined;
+  goals?: string | undefined;
   attendancePercentage: number;
   subjects: { name: string; targetGrade: number | null }[];
 }

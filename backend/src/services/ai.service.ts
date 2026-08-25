@@ -130,7 +130,7 @@ export class AIService {
 
   static async generateStudyPlanRecommendation(
     studentProfileId: string,
-    input: { topic: string; targetDate?: string; goals?: string }
+    input: { topic: string; targetDate?: string | undefined; goals?: string | undefined }
   ) {
     const executionLog = await this.logExecutionStart(
       studentProfileId, AIModule.STUDY_PLAN, 'generateStudyPlanRecommendation'

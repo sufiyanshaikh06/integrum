@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
 import { adminContentService } from '../../services/admin/content.service.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
@@ -40,7 +39,7 @@ export const adminContentController = {
   }),
 
   getAnnouncementById: asyncHandler(async (req: Request, res: Response) => {
-    const announcement = await adminContentService.getAnnouncementById(req.params.id);
+    const announcement = await adminContentService.getAnnouncementById(req.params.id as string);
     ApiResponse.success(res, 'Announcement retrieved successfully', announcement, HTTP_STATUS.OK);
   }),
 
@@ -49,7 +48,7 @@ export const adminContentController = {
     const data = req.body as UpdateAnnouncementInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const updated = await adminContentService.updateAnnouncement(actorUserId, req.params.id, data, ipAddress);
+    const updated = await adminContentService.updateAnnouncement(actorUserId, req.params.id as string, data, ipAddress);
     ApiResponse.success(res, 'Announcement updated successfully', updated, HTTP_STATUS.OK);
   }),
 
@@ -57,7 +56,7 @@ export const adminContentController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const published = await adminContentService.publishAnnouncement(actorUserId, req.params.id, ipAddress);
+    const published = await adminContentService.publishAnnouncement(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Announcement published successfully', published, HTTP_STATUS.OK);
   }),
 
@@ -65,7 +64,7 @@ export const adminContentController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const unpublished = await adminContentService.unpublishAnnouncement(actorUserId, req.params.id, ipAddress);
+    const unpublished = await adminContentService.unpublishAnnouncement(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Announcement unpublished successfully', unpublished, HTTP_STATUS.OK);
   }),
 
@@ -73,7 +72,7 @@ export const adminContentController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const deleted = await adminContentService.deleteAnnouncement(actorUserId, req.params.id, ipAddress);
+    const deleted = await adminContentService.deleteAnnouncement(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Announcement deleted successfully', deleted, HTTP_STATUS.OK);
   }),
 
@@ -95,7 +94,7 @@ export const adminContentController = {
   }),
 
   getEventById: asyncHandler(async (req: Request, res: Response) => {
-    const event = await adminContentService.getEventById(req.params.id);
+    const event = await adminContentService.getEventById(req.params.id as string);
     ApiResponse.success(res, 'Institutional event retrieved successfully', event, HTTP_STATUS.OK);
   }),
 
@@ -104,7 +103,7 @@ export const adminContentController = {
     const data = req.body as UpdateInstitutionalEventInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const updated = await adminContentService.updateEvent(actorUserId, req.params.id, data, ipAddress);
+    const updated = await adminContentService.updateEvent(actorUserId, req.params.id as string, data, ipAddress);
     ApiResponse.success(res, 'Institutional event updated successfully', updated, HTTP_STATUS.OK);
   }),
 
@@ -112,7 +111,7 @@ export const adminContentController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const deleted = await adminContentService.deleteEvent(actorUserId, req.params.id, ipAddress);
+    const deleted = await adminContentService.deleteEvent(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Institutional event deleted successfully', deleted, HTTP_STATUS.OK);
   }),
 
@@ -134,7 +133,7 @@ export const adminContentController = {
   }),
 
   getResourceById: asyncHandler(async (req: Request, res: Response) => {
-    const resource = await adminContentService.getResourceById(req.params.id);
+    const resource = await adminContentService.getResourceById(req.params.id as string);
     ApiResponse.success(res, 'Academic resource retrieved successfully', resource, HTTP_STATUS.OK);
   }),
 
@@ -143,7 +142,7 @@ export const adminContentController = {
     const data = req.body as UpdateAcademicResourceInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const updated = await adminContentService.updateResource(actorUserId, req.params.id, data, ipAddress);
+    const updated = await adminContentService.updateResource(actorUserId, req.params.id as string, data, ipAddress);
     ApiResponse.success(res, 'Academic resource updated successfully', updated, HTTP_STATUS.OK);
   }),
 
@@ -151,7 +150,7 @@ export const adminContentController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const deleted = await adminContentService.deleteResource(actorUserId, req.params.id, ipAddress);
+    const deleted = await adminContentService.deleteResource(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Academic resource deleted successfully', deleted, HTTP_STATUS.OK);
   }),
 };

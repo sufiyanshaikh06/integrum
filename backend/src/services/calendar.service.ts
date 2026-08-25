@@ -8,9 +8,9 @@ export const calendarService = {
       data: {
         studentProfileId,
         title: data.title,
-        description: data.description,
+        description: data.description ?? null,
         date: new Date(data.date),
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
+        endDate: data.endDate ? new Date(data.endDate) : null,
         eventType: data.eventType,
       },
     });
@@ -38,13 +38,22 @@ export const calendarService = {
   async updateCalendarEvent(studentProfileId: string, eventId: string, data: UpdateCalendarEventInput) {
     await this.getCalendarEventById(studentProfileId, eventId); // verify ownership
 
+    const updateData: {
+      title?: string;
+      description?: string | null;
+      date?: Date;
+      endDate?: Date | null;
+      eventType?: 'CLASS' | 'EXAM' | 'HOLIDAY' | 'COLLEGE_EVENT';
+    } = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.description !== undefined) updateData.description = data.description ?? null;
+    if (data.date !== undefined) updateData.date = new Date(data.date);
+    if (data.endDate !== undefined) updateData.endDate = data.endDate ? new Date(data.endDate) : null;
+    if (data.eventType !== undefined) updateData.eventType = data.eventType;
+
     return prisma.calendarEvent.update({
       where: { id: eventId },
-      data: {
-        ...data,
-        date: data.date ? new Date(data.date) : undefined,
-        endDate: data.endDate ? new Date(data.endDate) : undefined,
-      },
+      data: updateData,
     });
   },
 

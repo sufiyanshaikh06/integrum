@@ -8,8 +8,8 @@ export const studyPlanService = {
       data: {
         studentProfileId,
         title: data.title,
-        targetDate: data.targetDate ? new Date(data.targetDate) : undefined,
-        goals: data.goals,
+        targetDate: data.targetDate ? new Date(data.targetDate) : null,
+        goals: data.goals ?? null,
         status: data.status ?? 'ACTIVE',
         progressPercentage: data.progressPercentage ?? 0,
       },
@@ -38,12 +38,22 @@ export const studyPlanService = {
   async updateStudyPlan(studentProfileId: string, studyPlanId: string, data: UpdateStudyPlanInput) {
     await this.getStudyPlanById(studentProfileId, studyPlanId); // verify ownership
 
+    const updateData: {
+      title?: string;
+      goals?: string | null;
+      status?: 'ACTIVE' | 'COMPLETED';
+      progressPercentage?: number;
+      targetDate?: Date | null;
+    } = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.goals !== undefined) updateData.goals = data.goals ?? null;
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.progressPercentage !== undefined) updateData.progressPercentage = data.progressPercentage;
+    if (data.targetDate !== undefined) updateData.targetDate = data.targetDate ? new Date(data.targetDate) : null;
+
     return prisma.studyPlan.update({
       where: { id: studyPlanId },
-      data: {
-        ...data,
-        targetDate: data.targetDate ? new Date(data.targetDate) : undefined,
-      },
+      data: updateData,
     });
   },
 

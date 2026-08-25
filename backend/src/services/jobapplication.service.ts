@@ -9,15 +9,15 @@ export const jobApplicationService = {
         studentProfileId,
         companyName: data.companyName,
         role: data.role,
-        applicationUrl: data.applicationUrl,
-        notes: data.notes,
+        applicationUrl: data.applicationUrl ?? null,
+        notes: data.notes ?? null,
         appliedDate: data.appliedDate ? new Date(data.appliedDate) : null,
         status: data.status ?? 'APPLIED',
         // C-5: Interview
         interviewDate: data.interviewDate ? new Date(data.interviewDate) : null,
-        interviewRound: data.interviewRound,
+        interviewRound: data.interviewRound ?? null,
         // C-6: Offer
-        offerDetails: data.offerDetails ?? undefined,
+        offerDetails: (data.offerDetails as any) ?? null,
       },
     });
   },

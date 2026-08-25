@@ -1,4 +1,4 @@
-// @ts-nocheck
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { CreateResumeInput, UpdateResumeInput } from '../schemas/resume.schema.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -12,7 +12,7 @@ export const resumeService = {
         isActive: data.isActive ?? false,
         versions: {
           create: {
-            content: data.content,
+            content: data.content as Prisma.InputJsonObject,
             templateId: data.templateId ?? 'classic', // C-1: default template
           },
         },

@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -37,7 +37,7 @@ export const catalogController = {
   getCourses: asyncHandler(async (req: Request, res: Response) => {
     const { departmentId, search } = req.query;
 
-    const where: any = {};
+    const where: Prisma.CourseWhereInput = {};
     if (departmentId) where.departmentId = departmentId as string;
     if (search) {
       where.OR = [
@@ -69,7 +69,7 @@ export const catalogController = {
   getSubjects: asyncHandler(async (req: Request, res: Response) => {
     const { courseId, semesterNumber, search } = req.query;
 
-    const where: any = {};
+    const where: Prisma.MasterSubjectWhereInput = {};
     if (courseId) where.courseId = courseId as string;
     if (semesterNumber) where.semesterNumber = Number(semesterNumber);
     if (search) {
@@ -104,9 +104,9 @@ export const catalogController = {
   getTerms: asyncHandler(async (req: Request, res: Response) => {
     const { isActive } = req.query;
 
-    const where: any = {};
+    const where: Prisma.AcademicTermWhereInput = {};
     if (isActive !== undefined) {
-      where.isActive = isActive === 'true' || isActive === true;
+      where.isActive = isActive === 'true';
     }
 
     const terms = await prisma.academicTerm.findMany({

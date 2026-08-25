@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
 import { calendarService } from '../services/calendar.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -27,7 +26,7 @@ export const getCalendarEventById = asyncHandler(async (req: Request, res: Respo
   const studentProfileId = req.user?.studentProfile?.id;
   if (!studentProfileId) throw ApiError.unauthorized('Student profile not found');
 
-  const event = await calendarService.getCalendarEventById(studentProfileId, req.params.id);
+  const event = await calendarService.getCalendarEventById(studentProfileId, req.params.id as string);
   ApiResponse.success(res, 'Calendar event retrieved successfully', event);
 });
 
@@ -36,7 +35,7 @@ export const updateCalendarEvent = asyncHandler(async (req: Request, res: Respon
   if (!studentProfileId) throw ApiError.unauthorized('Student profile not found');
 
   const data: UpdateCalendarEventInput = req.body;
-  const event = await calendarService.updateCalendarEvent(studentProfileId, req.params.id, data);
+  const event = await calendarService.updateCalendarEvent(studentProfileId, req.params.id as string, data);
   ApiResponse.success(res, 'Calendar event updated successfully', event);
 });
 
@@ -44,6 +43,6 @@ export const deleteCalendarEvent = asyncHandler(async (req: Request, res: Respon
   const studentProfileId = req.user?.studentProfile?.id;
   if (!studentProfileId) throw ApiError.unauthorized('Student profile not found');
 
-  await calendarService.deleteCalendarEvent(studentProfileId, req.params.id);
+  await calendarService.deleteCalendarEvent(studentProfileId, req.params.id as string);
   ApiResponse.success(res, 'Calendar event deleted successfully', null, 204);
 });

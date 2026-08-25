@@ -22,8 +22,8 @@ export const noteService = {
       data: {
         subjectId: data.subjectId,
         title: data.title,
-        content: data.content,
-        fileUrl: data.fileUrl,
+        content: data.content ?? null,
+        fileUrl: data.fileUrl ?? null,
         tags: data.tags ?? [],
       },
     });
@@ -69,9 +69,20 @@ export const noteService = {
   async updateNote(studentProfileId: string, noteId: string, data: UpdateNoteInput) {
     await this.getNoteById(studentProfileId, noteId); // verify ownership
 
+    const updateData: {
+      title?: string;
+      content?: string | null;
+      fileUrl?: string | null;
+      tags?: string[];
+    } = {};
+    if (data.title !== undefined) updateData.title = data.title;
+    if (data.content !== undefined) updateData.content = data.content ?? null;
+    if (data.fileUrl !== undefined) updateData.fileUrl = data.fileUrl ?? null;
+    if (data.tags !== undefined) updateData.tags = data.tags;
+
     return prisma.note.update({
       where: { id: noteId },
-      data,
+      data: updateData,
     });
   },
 

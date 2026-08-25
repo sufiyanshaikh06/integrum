@@ -6,9 +6,9 @@ export interface CreateAuditLogParams {
   actorUserId: string;
   action: string;
   targetType: string;
-  targetId?: string | null;
-  details?: Record<string, unknown> | null;
-  ipAddress?: string;
+  targetId?: string | null | undefined;
+  details?: Record<string, unknown> | null | undefined;
+  ipAddress?: string | null | undefined;
 }
 
 export const auditService = {
@@ -25,9 +25,9 @@ export const auditService = {
         actorUserId: params.actorUserId,
         action: params.action,
         targetType: params.targetType,
-        targetId: params.targetId || null,
-        details: params.details as Prisma.InputJsonValue | undefined,
-        ipAddress: params.ipAddress || null,
+        targetId: params.targetId ?? null,
+        details: (params.details as Prisma.InputJsonValue) ?? Prisma.DbNull,
+        ipAddress: params.ipAddress ?? null,
       },
     });
   },

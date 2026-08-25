@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { z } from 'zod';
 import { SkillCategory } from '@prisma/client';
 
@@ -6,7 +5,7 @@ export const createSkillSchema = z.object({
   body: z.object({
     name: z.string().min(1, 'Skill name is required'),
     category: z.nativeEnum(SkillCategory, {
-      errorMap: () => ({ message: 'Category must be TECHNICAL or SOFT' }),
+      message: 'Category must be TECHNICAL or SOFT',
     }),
     proficiencyLevel: z.number().int().min(1).max(5).optional(),
   }),

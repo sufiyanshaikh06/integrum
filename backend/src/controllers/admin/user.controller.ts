@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
 import { adminUserService } from '../../services/admin/user.service.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
@@ -48,7 +47,7 @@ export const adminUserController = {
    */
   updateUserStatus: asyncHandler(async (req: Request, res: Response) => {
     const actorUserId = req.user!.id;
-    const targetUserId = req.params.id;
+    const targetUserId = req.params.id as string;
     const data = req.body as UpdateUserStatusInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
@@ -66,7 +65,7 @@ export const adminUserController = {
    */
   updateUserRole: asyncHandler(async (req: Request, res: Response) => {
     const actorUserId = req.user!.id;
-    const targetUserId = req.params.id;
+    const targetUserId = req.params.id as string;
     const data = req.body as UpdateUserRoleInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 

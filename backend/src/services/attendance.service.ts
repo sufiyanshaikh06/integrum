@@ -22,7 +22,7 @@ export const attendanceService = {
         subjectId: data.subjectId,
         date: new Date(data.date),
         status: data.status,
-        notes: data.notes,
+        notes: data.notes ?? null,
       },
     });
 
@@ -59,12 +59,18 @@ export const attendanceService = {
   async updateAttendanceRecord(studentProfileId: string, recordId: string, data: UpdateAttendanceRecordInput) {
     const record = await this.getAttendanceRecordById(studentProfileId, recordId);
 
+    const updateData: {
+      status?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+      notes?: string | null;
+      date?: Date;
+    } = {};
+    if (data.status !== undefined) updateData.status = data.status;
+    if (data.notes !== undefined) updateData.notes = data.notes ?? null;
+    if (data.date !== undefined) updateData.date = new Date(data.date);
+
     const updated = await prisma.attendanceRecord.update({
       where: { id: recordId },
-      data: {
-        ...data,
-        date: data.date ? new Date(data.date) : undefined,
-      },
+      data: updateData,
     });
 
     if (data.status) {

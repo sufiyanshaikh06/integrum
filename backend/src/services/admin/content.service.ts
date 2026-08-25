@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Prisma, ContentTargetScope } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { ApiError } from '../../utils/ApiError.js';
@@ -145,7 +144,7 @@ export const adminContentService = {
             type: announcement.type,
             targetScope: announcement.targetScope,
           },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -298,7 +297,7 @@ export const adminContentService = {
           targetType: 'Announcement',
           targetId: id,
           details: { previous: existing, updated: data },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -326,7 +325,7 @@ export const adminContentService = {
           targetType: 'Announcement',
           targetId: id,
           details: { title: existing.title, publishedAt: published.publishedAt },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -353,7 +352,7 @@ export const adminContentService = {
           targetType: 'Announcement',
           targetId: id,
           details: { title: existing.title },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -375,7 +374,7 @@ export const adminContentService = {
           targetType: 'Announcement',
           targetId: id,
           details: { title: existing.title, type: existing.type },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -409,11 +408,11 @@ export const adminContentService = {
       const event = await tx.institutionalEvent.create({
         data: {
           title: data.title,
-          description: data.description,
+          description: data.description ?? null,
           category: data.category || 'COLLEGE_EVENT',
           startDate,
-          endDate,
-          location: data.location,
+          endDate: endDate ?? null,
+          location: data.location ?? null,
           targetScope: data.targetScope || 'ALL',
           departmentId: scopeData.departmentId,
           courseId: scopeData.courseId,
@@ -433,7 +432,7 @@ export const adminContentService = {
           targetType: 'InstitutionalEvent',
           targetId: event.id,
           details: { title: event.title, category: event.category, targetScope: event.targetScope },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -591,7 +590,7 @@ export const adminContentService = {
           targetType: 'InstitutionalEvent',
           targetId: id,
           details: { previous: existing, updated: data },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -613,7 +612,7 @@ export const adminContentService = {
           targetType: 'InstitutionalEvent',
           targetId: id,
           details: { title: existing.title, category: existing.category },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -636,7 +635,7 @@ export const adminContentService = {
       const resource = await tx.academicResource.create({
         data: {
           title: data.title,
-          description: data.description,
+          description: data.description ?? null,
           fileUrl: data.fileUrl,
           fileType: data.fileType,
           category: data.category || 'SYLLABUS',
@@ -657,7 +656,7 @@ export const adminContentService = {
           targetType: 'AcademicResource',
           targetId: resource.id,
           details: { title: resource.title, category: resource.category, fileUrl: resource.fileUrl },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -774,7 +773,7 @@ export const adminContentService = {
           targetType: 'AcademicResource',
           targetId: id,
           details: { previous: existing, updated: data },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -796,7 +795,7 @@ export const adminContentService = {
           targetType: 'AcademicResource',
           targetId: id,
           details: { title: existing.title, fileUrl: existing.fileUrl },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 

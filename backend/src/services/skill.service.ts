@@ -46,9 +46,18 @@ export const skillService = {
     // Verify ownership via getSkillById to prevent direct update info leakage
     await this.getSkillById(studentProfileId, skillId);
 
+    const updateData: {
+      name?: string;
+      category?: 'TECHNICAL' | 'SOFT';
+      proficiencyLevel?: number;
+    } = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.category !== undefined) updateData.category = data.category;
+    if (data.proficiencyLevel !== undefined) updateData.proficiencyLevel = data.proficiencyLevel;
+
     return prisma.skill.update({
       where: { id: skillId },
-      data,
+      data: updateData,
     });
   },
 

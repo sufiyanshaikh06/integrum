@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
 import { attendanceService } from '../services/attendance.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -29,20 +28,20 @@ export const getAttendanceRecords = asyncHandler(async (req: Request, res: Respo
 
 export const getAttendanceRecordById = asyncHandler(async (req: Request, res: Response) => {
   const studentProfileId = getProfileId(req);
-  const record = await attendanceService.getAttendanceRecordById(studentProfileId, req.params.id);
+  const record = await attendanceService.getAttendanceRecordById(studentProfileId, req.params.id as string);
   ApiResponse.success(res, 'Attendance record retrieved successfully', record);
 });
 
 export const updateAttendanceRecord = asyncHandler(async (req: Request, res: Response) => {
   const studentProfileId = getProfileId(req);
   const data: UpdateAttendanceRecordInput = req.body;
-  const record = await attendanceService.updateAttendanceRecord(studentProfileId, req.params.id, data);
+  const record = await attendanceService.updateAttendanceRecord(studentProfileId, req.params.id as string, data);
   ApiResponse.success(res, 'Attendance record updated successfully', record);
 });
 
 export const deleteAttendanceRecord = asyncHandler(async (req: Request, res: Response) => {
   const studentProfileId = getProfileId(req);
-  await attendanceService.deleteAttendanceRecord(studentProfileId, req.params.id);
+  await attendanceService.deleteAttendanceRecord(studentProfileId, req.params.id as string);
   ApiResponse.success(res, 'Attendance record deleted successfully', null, 204);
 });
 

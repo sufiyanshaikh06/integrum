@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { ApiError } from '../../utils/ApiError.js';
@@ -60,8 +59,8 @@ export const adminAcademicService = {
         data: {
           name: data.name,
           code: data.code,
-          description: data.description,
-          headOfDepartment: data.headOfDepartment,
+          description: data.description ?? null,
+          headOfDepartment: data.headOfDepartment ?? null,
         },
       });
 
@@ -72,7 +71,7 @@ export const adminAcademicService = {
           targetType: 'Department',
           targetId: department.id,
           details: { name: department.name, code: department.code },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -176,7 +175,7 @@ export const adminAcademicService = {
           targetType: 'Department',
           targetId: id,
           details: { previous: existing, updated: data },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -209,7 +208,7 @@ export const adminAcademicService = {
           targetType: 'Department',
           targetId: id,
           details: { name: department.name, code: department.code },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -259,7 +258,7 @@ export const adminAcademicService = {
           targetType: 'Course',
           targetId: course.id,
           details: { name: course.name, code: course.code, departmentId: course.departmentId },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -369,7 +368,7 @@ export const adminAcademicService = {
           targetType: 'Course',
           targetId: id,
           details: { previous: existing, updated: data },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -411,7 +410,7 @@ export const adminAcademicService = {
           targetType: 'Course',
           targetId: id,
           details: { name: course.name, code: course.code },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -436,7 +435,7 @@ export const adminAcademicService = {
     }
 
     // Invariant: semesterNumber <= course.totalSemesters
-    if (data.semesterNumber > course.totalSemesters) {
+    if (data.semesterNumber && data.semesterNumber > course.totalSemesters) {
       throw ApiError.badRequest(
         `Semester number (${data.semesterNumber}) cannot exceed the course total semesters (${course.totalSemesters})`
       );
@@ -462,7 +461,7 @@ export const adminAcademicService = {
           code: data.code,
           credits: data.credits || 3,
           semesterNumber: data.semesterNumber || 1,
-          description: data.description,
+          description: data.description ?? null,
         },
         include: {
           course: {
@@ -478,7 +477,7 @@ export const adminAcademicService = {
           targetType: 'MasterSubject',
           targetId: masterSubject.id,
           details: { name: masterSubject.name, code: masterSubject.code, courseId: masterSubject.courseId },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -619,7 +618,7 @@ export const adminAcademicService = {
           targetType: 'MasterSubject',
           targetId: id,
           details: { previous: existing, updated: data },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -652,7 +651,7 @@ export const adminAcademicService = {
           targetType: 'MasterSubject',
           targetId: id,
           details: { name: masterSubject.name, code: masterSubject.code },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -695,7 +694,7 @@ export const adminAcademicService = {
           targetType: 'AcademicTerm',
           targetId: term.id,
           details: { name: term.name, academicYear: term.academicYear, termType: term.termType },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -797,7 +796,7 @@ export const adminAcademicService = {
           targetType: 'AcademicTerm',
           targetId: id,
           details: { previous: existing, updated: data },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 
@@ -830,7 +829,7 @@ export const adminAcademicService = {
           targetType: 'AcademicTerm',
           targetId: id,
           details: { name: term.name, academicYear: term.academicYear },
-          ipAddress,
+          ipAddress: ipAddress ?? null,
         },
       });
 

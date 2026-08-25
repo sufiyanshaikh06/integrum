@@ -11,8 +11,8 @@ export const certificationService = {
         issuer: data.issuer,
         dateObtained: data.dateObtained ? new Date(data.dateObtained) : null,
         expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-        credentialId: data.credentialId,
-        credentialUrl: data.credentialUrl,
+        credentialId: data.credentialId ?? null,
+        credentialUrl: data.credentialUrl ?? null,
       },
     });
   },

@@ -8,7 +8,7 @@ export const reminderService = {
       data: {
         studentProfileId,
         title: data.title,
-        description: data.description,
+        description: data.description ?? null,
         triggerAt: new Date(data.triggerAt),
         isCompleted: data.isCompleted ?? false,
       },

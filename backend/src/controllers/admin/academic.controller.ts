@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
 import { adminAcademicService } from '../../services/admin/academic.service.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
@@ -38,7 +37,7 @@ export const adminAcademicController = {
   }),
 
   getDepartmentById: asyncHandler(async (req: Request, res: Response) => {
-    const department = await adminAcademicService.getDepartmentById(req.params.id);
+    const department = await adminAcademicService.getDepartmentById(req.params.id as string);
     ApiResponse.success(res, 'Department retrieved successfully', department, HTTP_STATUS.OK);
   }),
 
@@ -47,7 +46,7 @@ export const adminAcademicController = {
     const data = req.body as UpdateDepartmentInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const updated = await adminAcademicService.updateDepartment(actorUserId, req.params.id, data, ipAddress);
+    const updated = await adminAcademicService.updateDepartment(actorUserId, req.params.id as string, data, ipAddress);
     ApiResponse.success(res, 'Department updated successfully', updated, HTTP_STATUS.OK);
   }),
 
@@ -55,7 +54,7 @@ export const adminAcademicController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const deleted = await adminAcademicService.deleteDepartment(actorUserId, req.params.id, ipAddress);
+    const deleted = await adminAcademicService.deleteDepartment(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Department deleted successfully', deleted, HTTP_STATUS.OK);
   }),
 
@@ -77,7 +76,7 @@ export const adminAcademicController = {
   }),
 
   getCourseById: asyncHandler(async (req: Request, res: Response) => {
-    const course = await adminAcademicService.getCourseById(req.params.id);
+    const course = await adminAcademicService.getCourseById(req.params.id as string);
     ApiResponse.success(res, 'Course retrieved successfully', course, HTTP_STATUS.OK);
   }),
 
@@ -86,7 +85,7 @@ export const adminAcademicController = {
     const data = req.body as UpdateCourseInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const updated = await adminAcademicService.updateCourse(actorUserId, req.params.id, data, ipAddress);
+    const updated = await adminAcademicService.updateCourse(actorUserId, req.params.id as string, data, ipAddress);
     ApiResponse.success(res, 'Course updated successfully', updated, HTTP_STATUS.OK);
   }),
 
@@ -94,7 +93,7 @@ export const adminAcademicController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const deleted = await adminAcademicService.deleteCourse(actorUserId, req.params.id, ipAddress);
+    const deleted = await adminAcademicService.deleteCourse(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Course deleted successfully', deleted, HTTP_STATUS.OK);
   }),
 
@@ -116,7 +115,7 @@ export const adminAcademicController = {
   }),
 
   getMasterSubjectById: asyncHandler(async (req: Request, res: Response) => {
-    const masterSubject = await adminAcademicService.getMasterSubjectById(req.params.id);
+    const masterSubject = await adminAcademicService.getMasterSubjectById(req.params.id as string);
     ApiResponse.success(res, 'Master subject retrieved successfully', masterSubject, HTTP_STATUS.OK);
   }),
 
@@ -125,7 +124,7 @@ export const adminAcademicController = {
     const data = req.body as UpdateMasterSubjectInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const updated = await adminAcademicService.updateMasterSubject(actorUserId, req.params.id, data, ipAddress);
+    const updated = await adminAcademicService.updateMasterSubject(actorUserId, req.params.id as string, data, ipAddress);
     ApiResponse.success(res, 'Master subject updated successfully', updated, HTTP_STATUS.OK);
   }),
 
@@ -133,7 +132,7 @@ export const adminAcademicController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const deleted = await adminAcademicService.deleteMasterSubject(actorUserId, req.params.id, ipAddress);
+    const deleted = await adminAcademicService.deleteMasterSubject(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Master subject deleted successfully', deleted, HTTP_STATUS.OK);
   }),
 
@@ -155,7 +154,7 @@ export const adminAcademicController = {
   }),
 
   getAcademicTermById: asyncHandler(async (req: Request, res: Response) => {
-    const term = await adminAcademicService.getAcademicTermById(req.params.id);
+    const term = await adminAcademicService.getAcademicTermById(req.params.id as string);
     ApiResponse.success(res, 'Academic term retrieved successfully', term, HTTP_STATUS.OK);
   }),
 
@@ -164,7 +163,7 @@ export const adminAcademicController = {
     const data = req.body as UpdateAcademicTermInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const updated = await adminAcademicService.updateAcademicTerm(actorUserId, req.params.id, data, ipAddress);
+    const updated = await adminAcademicService.updateAcademicTerm(actorUserId, req.params.id as string, data, ipAddress);
     ApiResponse.success(res, 'Academic term updated successfully', updated, HTTP_STATUS.OK);
   }),
 
@@ -172,7 +171,7 @@ export const adminAcademicController = {
     const actorUserId = req.user!.id;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const deleted = await adminAcademicService.deleteAcademicTerm(actorUserId, req.params.id, ipAddress);
+    const deleted = await adminAcademicService.deleteAcademicTerm(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Academic term deleted successfully', deleted, HTTP_STATUS.OK);
   }),
 };

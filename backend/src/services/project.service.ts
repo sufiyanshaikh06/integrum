@@ -8,10 +8,10 @@ export const projectService = {
       data: {
         studentProfileId,
         title: data.title,
-        description: data.description,
+        description: data.description ?? null,
         technologies: data.technologies ?? [],
-        projectUrl: data.projectUrl,
-        repoUrl: data.repoUrl,
+        projectUrl: data.projectUrl ?? null,
+        repoUrl: data.repoUrl ?? null,
         startDate: data.startDate ? new Date(data.startDate) : null,
         endDate: data.endDate ? new Date(data.endDate) : null,
         isOngoing: data.isOngoing ?? false,

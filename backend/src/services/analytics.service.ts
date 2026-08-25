@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { prisma } from '../config/prisma.js';
 
 export const analyticsService = {
@@ -181,16 +180,20 @@ export const analyticsService = {
     const byCategory: Record<string, CategoryStats> = {};
 
     for (const skill of skills) {
-      if (!byCategory[skill.category]) {
-        byCategory[skill.category] = { count: 0, avgProficiency: 0, skills: [] };
+      let entry = byCategory[skill.category];
+      if (!entry) {
+        entry = { count: 0, avgProficiency: 0, skills: [] };
+        byCategory[skill.category] = entry;
       }
-      byCategory[skill.category].count++;
-      byCategory[skill.category].skills.push(skill.name);
+      entry.count++;
+      entry.skills.push(skill.name);
     }
 
     for (const cat of Object.keys(byCategory)) {
+      const entry = byCategory[cat];
+      if (!entry) continue;
       const catSkills = skills.filter(s => s.category === cat);
-      byCategory[cat].avgProficiency =
+      entry.avgProficiency =
         Math.round(
           (catSkills.reduce((sum, s) => sum + s.proficiencyLevel, 0) / catSkills.length) * 100,
         ) / 100;

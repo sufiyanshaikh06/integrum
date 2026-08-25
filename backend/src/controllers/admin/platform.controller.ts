@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Request, Response } from 'express';
 import { adminPlatformService } from '../../services/admin/platform.service.js';
 import { auditService } from '../../services/admin/audit.service.js';
@@ -43,7 +42,7 @@ export const adminPlatformController = {
    * GET /api/v1/admin/platform/feedback/:id
    */
   getFeedbackById: asyncHandler(async (req: Request, res: Response) => {
-    const feedback = await adminPlatformService.getFeedbackById(req.params.id);
+    const feedback = await adminPlatformService.getFeedbackById(req.params.id as string);
     ApiResponse.success(res, 'Feedback details retrieved successfully', feedback, HTTP_STATUS.OK);
   }),
 
@@ -55,7 +54,7 @@ export const adminPlatformController = {
     const data = req.body as UpdateFeedbackAdminInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const updated = await adminPlatformService.updateFeedback(actorUserId, req.params.id, data, ipAddress);
+    const updated = await adminPlatformService.updateFeedback(actorUserId, req.params.id as string, data, ipAddress);
     ApiResponse.success(res, 'Feedback status updated successfully', updated, HTTP_STATUS.OK);
   }),
 
@@ -72,7 +71,7 @@ export const adminPlatformController = {
    */
   updateSetting: asyncHandler(async (req: Request, res: Response) => {
     const actorUserId = req.user!.id;
-    const rawKey = req.params.key;
+    const rawKey = req.params.key as string;
     const data = req.body as UpdateSystemSettingInput;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
