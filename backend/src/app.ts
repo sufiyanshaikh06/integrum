@@ -28,7 +28,9 @@ import aiRoutes from './routes/ai.routes.js';
 import adminRoutes from './routes/admin/index.js';
 import catalogRoutes from './routes/catalog.routes.js';
 import contentRoutes from './routes/content.routes.js';
+import feedbackRoutes from './routes/feedback.routes.js';
 
+import { maintenanceMode } from './middleware/maintenanceMode.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 
@@ -48,6 +50,9 @@ if (env.NODE_ENV === 'development') {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Maintenance Mode Enforcement (bypasses /health, /admin, login/refresh, and admin tokens)
+app.use(maintenanceMode);
 
 // Routes
 app.use('/api/v1/health', healthRoutes);
@@ -71,6 +76,7 @@ app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/ai', aiRoutes);
 app.use('/api/v1/catalog', catalogRoutes);
 app.use('/api/v1/content', contentRoutes);
+app.use('/api/v1/feedback', feedbackRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 // Error Handling

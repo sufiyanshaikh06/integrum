@@ -4,6 +4,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import { ensureStudentBaseline } from './admin/user.service.js';
+import { adminPlatformService } from './admin/platform.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // Token helpers
@@ -39,6 +40,11 @@ function sendDevelopmentEmail(to: string, subject: string, body: string) {
 
 export const authService = {
   async register(data: any) {
+    const allowRegistration = await adminPlatformService.getSettingValue('ALLOW_STUDENT_REGISTRATION');
+    if (!allowRegistration) {
+      throw ApiError.forbidden('Student registration is currently disabled by administrator');
+    }
+
     const existingUser = await prisma.user.findUnique({
       where: { email: data.email },
     });

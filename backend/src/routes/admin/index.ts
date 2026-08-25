@@ -5,6 +5,7 @@ import { ApiResponse } from '../../utils/ApiResponse.js';
 import userRoutes from './user.routes.js';
 import academicRoutes from './academic.routes.js';
 import contentRoutes from './content.routes.js';
+import platformRoutes from './platform.routes.js';
 
 const router = Router();
 
@@ -30,5 +31,8 @@ router.use('/academics', academicRoutes);
 
 // Content Management Subsystem
 router.use('/content', contentRoutes);
+
+// Platform Management & Feedback Subsystem
+router.use('/platform', platformRoutes);
 
 export default router;
