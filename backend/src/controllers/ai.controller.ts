@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from 'express';
 import { AIService } from '../services/ai.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';

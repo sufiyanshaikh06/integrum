@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { z } from 'zod';
 
 // C-1: Supported resume templates

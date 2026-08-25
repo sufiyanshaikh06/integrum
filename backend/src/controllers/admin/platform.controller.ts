@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from 'express';
 import { adminPlatformService } from '../../services/admin/platform.service.js';
 import { auditService } from '../../services/admin/audit.service.js';

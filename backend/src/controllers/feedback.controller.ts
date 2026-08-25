@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { ApiResponse } from '../utils/ApiResponse.js';

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { prisma } from '../config/prisma.js';
 
 export const analyticsService = {

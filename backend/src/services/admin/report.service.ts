@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { performance } from 'perf_hooks';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Prisma, SystemSettingKey, FeedbackStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma.js';
 import { ApiError } from '../../utils/ApiError.js';

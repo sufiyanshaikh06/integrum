@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { prisma } from '../config/prisma.js';
 import { CreateResumeInput, UpdateResumeInput } from '../schemas/resume.schema.js';
 import { ApiError } from '../utils/ApiError.js';

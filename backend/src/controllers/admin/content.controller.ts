@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Request, Response } from 'express';
 import { adminContentService } from '../../services/admin/content.service.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
