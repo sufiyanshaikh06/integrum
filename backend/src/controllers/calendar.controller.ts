@@ -6,7 +6,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { CreateCalendarEventInput, UpdateCalendarEventInput } from '../schemas/calendar.schema.js';
 
 export const createCalendarEvent = asyncHandler(async (req: Request, res: Response) => {
-  const studentProfileId = req.user?.studentProfileId;
+  const studentProfileId = req.user?.studentProfile?.id;
   if (!studentProfileId) throw ApiError.unauthorized('Student profile not found');
 
   const data: CreateCalendarEventInput = req.body;
@@ -15,7 +15,7 @@ export const createCalendarEvent = asyncHandler(async (req: Request, res: Respon
 });
 
 export const getCalendarEvents = asyncHandler(async (req: Request, res: Response) => {
-  const studentProfileId = req.user?.studentProfileId;
+  const studentProfileId = req.user?.studentProfile?.id;
   if (!studentProfileId) throw ApiError.unauthorized('Student profile not found');
 
   const events = await calendarService.getCalendarEvents(studentProfileId);
@@ -23,7 +23,7 @@ export const getCalendarEvents = asyncHandler(async (req: Request, res: Response
 });
 
 export const getCalendarEventById = asyncHandler(async (req: Request, res: Response) => {
-  const studentProfileId = req.user?.studentProfileId;
+  const studentProfileId = req.user?.studentProfile?.id;
   if (!studentProfileId) throw ApiError.unauthorized('Student profile not found');
 
   const event = await calendarService.getCalendarEventById(studentProfileId, req.params.id);
@@ -31,7 +31,7 @@ export const getCalendarEventById = asyncHandler(async (req: Request, res: Respo
 });
 
 export const updateCalendarEvent = asyncHandler(async (req: Request, res: Response) => {
-  const studentProfileId = req.user?.studentProfileId;
+  const studentProfileId = req.user?.studentProfile?.id;
   if (!studentProfileId) throw ApiError.unauthorized('Student profile not found');
 
   const data: UpdateCalendarEventInput = req.body;
@@ -40,7 +40,7 @@ export const updateCalendarEvent = asyncHandler(async (req: Request, res: Respon
 });
 
 export const deleteCalendarEvent = asyncHandler(async (req: Request, res: Response) => {
-  const studentProfileId = req.user?.studentProfileId;
+  const studentProfileId = req.user?.studentProfile?.id;
   if (!studentProfileId) throw ApiError.unauthorized('Student profile not found');
 
   await calendarService.deleteCalendarEvent(studentProfileId, req.params.id);

@@ -4,6 +4,7 @@ import { authorize } from '../../middleware/authorize.js';
 import { ApiResponse } from '../../utils/ApiResponse.js';
 import userRoutes from './user.routes.js';
 import academicRoutes from './academic.routes.js';
+import contentRoutes from './content.routes.js';
 
 const router = Router();
 
@@ -26,5 +27,8 @@ router.use('/users', userRoutes);
 
 // Academic Catalog Subsystem
 router.use('/academics', academicRoutes);
+
+// Content Management Subsystem
+router.use('/content', contentRoutes);
 
 export default router;
