@@ -16,6 +16,9 @@ const envSchema = z.object({
   AI_PROVIDER: z.enum(['mock', 'gemini']).default('mock'),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),
+  STORAGE_PROVIDER: z.enum(['local', 'supabase']).default('local'),
+  SUPABASE_URL: z.string().optional(),
+  SUPABASE_SERVICE_KEY: z.string().optional(),
 });
 
 const _env = envSchema.safeParse(process.env);
