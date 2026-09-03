@@ -3,6 +3,8 @@ import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
+import { rateLimit } from 'express-rate-limit';
 import { env } from './config/env.js';
 
 // Route imports
@@ -34,9 +36,39 @@ import { maintenanceMode } from './middleware/maintenanceMode.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
 
+// ─── Rate Limiters ────────────────────────────────────────────────────────────
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: { success: false, message: 'Too many requests. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { success: false, message: 'Too many authentication attempts. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { success: false, message: 'Too many upload requests. Please try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
 const app = express();
 
-// Middleware
+app.set('trust proxy', 1);
+
+// Security headers
 app.use(helmet());
 app.use(
   cors({
@@ -44,12 +76,30 @@ app.use(
     credentials: true,
   })
 );
+
+// Logging
 if (env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Global rate limiting (production only — avoid disrupting dev/test workflows)
+if (env.NODE_ENV === 'production') {
+  app.use(globalLimiter);
+
+  // Auth-specific rate limits
+  app.use('/api/v1/auth/login', authLimiter);
+  app.use('/api/v1/auth/register', authLimiter);
+  app.use('/api/v1/auth/forgot-password', authLimiter);
+  app.use('/api/v1/auth/reset-password', authLimiter);
+}
+
+// Body parsing with limits
+app.use(express.json({ limit: '256kb' }));
+app.use(express.urlencoded({ extended: true, limit: '256kb' }));
 app.use(cookieParser());
+
+// Compression
+app.use(compression());
 
 // Maintenance Mode Enforcement (bypasses /health, /admin, login/refresh, and admin tokens)
 app.use(maintenanceMode);

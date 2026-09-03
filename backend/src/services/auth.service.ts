@@ -5,6 +5,7 @@ import { hashPassword, comparePassword } from '../utils/password.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import { ensureStudentBaseline } from './admin/user.service.js';
 import { adminPlatformService } from './admin/platform.service.js';
+import { emailService } from './email.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // Token helpers
@@ -21,18 +22,6 @@ function generateSecureToken(): [string, string] {
 }
 
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
-
-// ─────────────────────────────────────────────────────────────
-// Development-mode "email" transport
-// In production, swap this for a real email provider (Resend, SES, etc.)
-// ─────────────────────────────────────────────────────────────
-function sendDevelopmentEmail(to: string, subject: string, body: string) {
-  console.log('\n📧 [DEV EMAIL]');
-  console.log(`  To: ${to}`);
-  console.log(`  Subject: ${subject}`);
-  console.log(`  Body:\n  ${body}`);
-  console.log('─'.repeat(60));
-}
 
 // ─────────────────────────────────────────────────────────────
 // Auth Service
@@ -77,8 +66,8 @@ export const authService = {
         lastName: data.lastName,
       });
 
-      // Send verification email (dev: logs to console)
-      sendDevelopmentEmail(
+      // Send verification email
+      await emailService.send(
         user.email,
         'Verify your Integrum account',
         `Your verification token is: ${rawVerificationToken}\n\nUse POST /api/v1/auth/verify-email with this token.\nExpires in 1 hour.`
@@ -185,7 +174,7 @@ export const authService = {
       },
     });
 
-    sendDevelopmentEmail(
+    await emailService.send(
       email,
       'Reset your Integrum password',
       `Your password-reset token is: ${rawToken}\n\nUse POST /api/v1/auth/reset-password with this token.\nExpires in 1 hour. This token is single-use.`
@@ -281,7 +270,7 @@ export const authService = {
       },
     });
 
-    sendDevelopmentEmail(
+    await emailService.send(
       user.email,
       'Verify your Integrum account',
       `Your new verification token is: ${rawToken}\n\nUse POST /api/v1/auth/verify-email with this token.\nExpires in 1 hour.`

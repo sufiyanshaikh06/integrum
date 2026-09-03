@@ -19,6 +19,8 @@ const envSchema = z.object({
   STORAGE_PROVIDER: z.enum(['local', 'supabase']).default('local'),
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_KEY: z.string().optional(),
+  EMAIL_PROVIDER: z.enum(['console', 'resend']).default('console'),
+  RESEND_API_KEY: z.string().optional(),
 });
 
 const _env = envSchema.safeParse(process.env);

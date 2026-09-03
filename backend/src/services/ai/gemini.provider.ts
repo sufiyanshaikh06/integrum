@@ -14,6 +14,18 @@ import {
 import { env } from '../../config/env.js';
 import { ApiError } from '../../utils/ApiError.js';
 
+function withTimeout<T>(ms: number, promise: Promise<T>): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(Object.assign(new Error('AI request timed out'), { statusCode: 503 })),
+        ms
+      )
+    ),
+  ]);
+}
+
 export class GeminiProvider implements IAIProvider {
   private genAI: GoogleGenerativeAI;
   public modelName: string;
@@ -100,7 +112,7 @@ Return a valid JSON object matching the requested schema.
     `;
 
     try {
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(30_000, model.generateContent(prompt));
       const responseText = result.response.text();
       const parsedData = JSON.parse(responseText);
 
@@ -152,7 +164,7 @@ Provide your analysis strictly matching the requested JSON schema.
     `;
 
     try {
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(30_000, model.generateContent(prompt));
       const responseText = result.response.text();
       const parsedData = JSON.parse(responseText);
 
@@ -201,7 +213,7 @@ Return a valid JSON object matching the requested schema.
     `;
 
     try {
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(30_000, model.generateContent(prompt));
       const parsed = JSON.parse(result.response.text());
       return { summary: parsed.summary, keyPoints: parsed.keyPoints };
     } catch (error: unknown) {
@@ -248,7 +260,7 @@ Return a valid JSON object matching the requested schema.
     `;
 
     try {
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(30_000, model.generateContent(prompt));
       const parsed = JSON.parse(result.response.text());
       return { keyPoints: parsed.keyPoints };
     } catch (error: unknown) {
@@ -296,7 +308,7 @@ Return a valid JSON object matching the requested schema.
     `;
 
     try {
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(30_000, model.generateContent(prompt));
       const parsed = JSON.parse(result.response.text());
       return { questions: parsed.questions };
     } catch (error: unknown) {
@@ -343,7 +355,7 @@ Return a valid JSON object matching the requested schema.
     `;
 
     try {
-      const result = await model.generateContent(prompt);
+      const result = await withTimeout(30_000, model.generateContent(prompt));
       const parsed = JSON.parse(result.response.text());
       return { flashcards: parsed.flashcards };
     } catch (error: unknown) {

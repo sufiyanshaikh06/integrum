@@ -3,3 +3,4 @@
 Baseline commit: c176d31
 Worktree: backend/v1-closure
 
+Task 1: complete (commits c176d31..b42d73c, review clean)
