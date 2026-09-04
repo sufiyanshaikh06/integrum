@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { CreateResumeInput, UpdateResumeInput } from '../schemas/resume.schema.js';
 import { ApiError } from '../utils/ApiError.js';
+import { renderResumeToPdf } from '../utils/pdf/pdf.renderer.js';
 
 export const resumeService = {
   async createResume(studentProfileId: string, data: CreateResumeInput) {
@@ -106,5 +107,25 @@ export const resumeService = {
       atsScore: latestVersion.atsScore,
       generatedAt: new Date().toISOString(),
     };
+  },
+
+  // G3: Server-side PDF binary export using PDFKit
+  async generateResumePdf(studentProfileId: string, resumeId: string): Promise<Buffer> {
+    const resume = await this.getResumeById(studentProfileId, resumeId);
+
+    const latestVersion = await prisma.resumeVersion.findFirst({
+      where: { resumeId: resume.id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!latestVersion) {
+      throw ApiError.badRequest('Resume has no versions — add content before exporting to PDF');
+    }
+
+    return renderResumeToPdf({
+      title: resume.title,
+      templateId: latestVersion.templateId ?? null,
+      content: (latestVersion.content ?? {}) as Record<string, any>,
+    });
   },
 };
