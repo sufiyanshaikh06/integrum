@@ -74,4 +74,24 @@ export const userService = {
 
     return updated;
   },
+
+  // G2: Attach resume file to student profile
+  async attachResume(userId: string, fileId: string) {
+    return prisma.studentProfile.update({
+      where: { userId },
+      data: { uploadedResumeFileId: fileId },
+    });
+  },
+
+  // G2: Get resume fileId for student profile
+  async getResumeFileId(userId: string): Promise<string> {
+    const profile = await prisma.studentProfile.findUnique({
+      where: { userId },
+      select: { uploadedResumeFileId: true },
+    });
+    if (!profile?.uploadedResumeFileId) {
+      throw ApiError.notFound('No resume file uploaded');
+    }
+    return profile.uploadedResumeFileId;
+  },
 };
