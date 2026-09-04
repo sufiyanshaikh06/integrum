@@ -93,4 +93,20 @@ export const noteService = {
       where: { id: noteId },
     });
   },
+
+  async attachFile(studentProfileId: string, noteId: string, fileId: string) {
+    await this.getNoteById(studentProfileId, noteId); // ownership check
+    return prisma.note.update({
+      where: { id: noteId },
+      data: { fileId },
+    });
+  },
+
+  async getFileId(studentProfileId: string, noteId: string): Promise<string> {
+    const note = await this.getNoteById(studentProfileId, noteId);
+    if (!note.fileId) {
+      throw ApiError.notFound('No file attached to this note');
+    }
+    return note.fileId;
+  },
 };
