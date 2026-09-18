@@ -5,6 +5,7 @@ import { ApiResponse } from '../utils/ApiResponse.js';
 import { env } from '../config/env.js';
 
 export const errorHandler = (err: any, _req: Request, res: Response, _next: NextFunction): void => {
+  if (res.headersSent) return _next(err);
   let statusCode = 500;
   let message = 'Internal Server Error';
   let errors: any[] = [];

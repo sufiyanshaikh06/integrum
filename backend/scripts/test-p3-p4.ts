@@ -83,15 +83,22 @@ async function testC1ResumeTemplates() {
 async function testC2PdfExport() {
   console.log('\nC-2: Resume PDF Export...');
 
-  const res = await req('GET', `/resumes/${resumeId}/pdf`, undefined, accessToken);
-  assert(res.status === 200, `PDF export failed: ${JSON.stringify(res.json)}`);
-  const data = res.json.data;
-  assert(data.resumeId === resumeId, 'resumeId mismatch');
-  assert(data.templateId === 'minimal', 'templateId not carried into PDF data');
-  assert(data.content !== undefined, 'content missing from PDF data');
-  assert(data.versionId !== undefined, 'versionId missing');
-  assert(data.generatedAt !== undefined, 'generatedAt missing');
-  console.log(`  ✅ PDF data returned (template: ${data.templateId}, versionId: ${data.versionId})`);
+  const res = await fetch(`${BASE}/resumes/${resumeId}/pdf`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  assert(res.status === 200, `PDF export failed: HTTP ${res.status}`);
+  assert(res.headers.get('content-type')?.includes('application/pdf'), 'Expected PDF Content-Type');
+  assert(res.headers.get('content-disposition')?.includes('attachment'), 'Expected attachment disposition');
+  const bytes = Buffer.from(await res.arrayBuffer());
+  assert(bytes.subarray(0, 5).toString() === '%PDF-', 'Expected PDF binary signature');
+  assert(bytes.length > 100, 'PDF document must not be empty');
+  // Template/version metadata now belongs to the resource endpoint, not the binary response.
+  const resource = await req('GET', `/resumes/${resumeId}`, undefined, accessToken);
+  assert(resource.status === 200, 'Resume metadata lookup failed');
+  assert(resource.json.data.id === resumeId, 'resumeId mismatch');
+  assert(resource.json.data.versions[0].templateId === 'minimal', 'Latest template was not preserved');
+  assert(resource.json.data.versions[0].content !== undefined, 'Version content missing');
+  console.log('  ✅ PDF binary and latest template/version metadata verified');
 
   // Cross-user access blocked
   const badRes = await req('GET', `/resumes/${resumeId}/pdf`, undefined, token2);

@@ -24,6 +24,7 @@ export const userService = {
             graduationYear: true,
             careerGoals: true,
             socialLinks: true,
+            uploadedResumeFileId: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -76,11 +77,12 @@ export const userService = {
   },
 
   // G2: Attach resume file to student profile
-  async attachResume(userId: string, fileId: string) {
-    return prisma.studentProfile.update({
-      where: { userId },
+  async attachResume(userId: string, fileId: string, expectedFileId: string | null) {
+    const result = await prisma.studentProfile.updateMany({
+      where: { userId, uploadedResumeFileId: expectedFileId },
       data: { uploadedResumeFileId: fileId },
     });
+    if (result.count !== 1) throw ApiError.conflict('Profile changed during upload; retry');
   },
 
   // G2: Get resume fileId for student profile

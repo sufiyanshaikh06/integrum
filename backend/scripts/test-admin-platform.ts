@@ -18,6 +18,10 @@
 import 'dotenv/config';
 import { prisma } from '../src/config/prisma.js';
 
+if (process.env.NODE_ENV !== 'test' || !new URL(process.env.DATABASE_URL!).pathname.endsWith('_test')) {
+  throw new Error('Platform regression requires NODE_ENV=test and a database ending in _test');
+}
+
 const BASE = 'http://localhost:5000/api/v1';
 const ts = Date.now();
 
@@ -107,6 +111,14 @@ async function testAuditLogs() {
   const studentAudit = await req('GET', '/admin/platform/audit-logs', undefined, studentToken);
   assert(studentAudit.status === 403, `Expected 403 for student accessing audit logs, got ${studentAudit.status}`);
   console.log('  ✅ Student access to audit logs rejected with 403.');
+
+  // Generate our own audit record; a fresh seeded DB has no prior mutations.
+  const settings = await req('GET', '/admin/platform/settings', undefined, adminToken);
+  assert(settings.status === 200, 'Failed to read audit fixture setting');
+  const existing = settings.json.data.find((setting: any) => setting.key === 'ALLOW_STUDENT_REGISTRATION');
+  assert(existing !== undefined, 'Seed registration setting is missing');
+  const mutation = await req('PATCH', '/admin/platform/settings/ALLOW_STUDENT_REGISTRATION', { value: existing.value }, adminToken);
+  assert(mutation.status === 200, 'Failed to create audit fixture');
 
   // 2. Admin audit logs list with pagination
   const adminAudit = await req('GET', '/admin/platform/audit-logs?page=1&limit=10', undefined, adminToken);

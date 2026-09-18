@@ -2,7 +2,16 @@ import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
 
 export const taskService = {
+  async verifyStudyPlanOwnership(studentProfileId: string, studyPlanId?: string) {
+    if (studyPlanId === undefined) return;
+    const plan = await prisma.studyPlan.findFirst({
+      where: { id: studyPlanId, studentProfileId }, select: { id: true },
+    });
+    if (!plan) throw ApiError.notFound('Study plan not found or does not belong to you');
+  },
+
   async createTask(studentProfileId: string, data: any) {
+    await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
     return prisma.task.create({
       data: {
         studentProfileId,
@@ -51,6 +60,8 @@ export const taskService = {
 
   async updateTask(studentProfileId: string, taskId: string, data: any) {
     await this.getTaskById(studentProfileId, taskId);
+
+    await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
 
     const updateData: any = {};
     if (data.title !== undefined) updateData.title = data.title;

@@ -1,3 +1,5 @@
+import { getStorageProvider } from './storage/index.js';
+import { cleanupFile } from './storage/file-transfer.js';
 import { prisma } from '../config/prisma.js';
 import { CreateNoteInput, UpdateNoteInput } from '../schemas/note.schema.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -89,17 +91,17 @@ export const noteService = {
   async deleteNote(studentProfileId: string, noteId: string) {
     await this.getNoteById(studentProfileId, noteId); // verify ownership
 
-    await prisma.note.delete({
-      where: { id: noteId },
-    });
+    const deleted = await prisma.note.delete({ where: { id: noteId } });
+    if (deleted.fileId) await cleanupFile(getStorageProvider(), deleted.fileId);
   },
 
-  async attachFile(studentProfileId: string, noteId: string, fileId: string) {
+  async attachFile(studentProfileId: string, noteId: string, fileId: string, expectedFileId: string | null) {
     await this.getNoteById(studentProfileId, noteId); // ownership check
-    return prisma.note.update({
-      where: { id: noteId },
+    const result = await prisma.note.updateMany({
+      where: { id: noteId, fileId: expectedFileId },
       data: { fileId },
     });
+    if (result.count !== 1) throw ApiError.conflict('Note changed during upload; retry');
   },
 
   async getFileId(studentProfileId: string, noteId: string): Promise<string> {

@@ -41,10 +41,7 @@ export class SupabaseStorageProvider implements StorageProvider {
   }
 
   async delete(fileId: string): Promise<void> {
-    try {
-      await this.storageClient.from(BUCKET).remove([fileId]);
-    } catch {
-      // Silently ignore errors
-    }
+    const { error } = await this.storageClient.from(BUCKET).remove([fileId]);
+    if (error) throw ApiError.internal('Storage deletion failed');
   }
 }

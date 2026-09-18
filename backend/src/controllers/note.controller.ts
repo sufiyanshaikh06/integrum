@@ -1,4 +1,5 @@
 import path from 'path';
+import { cleanupFile, sendPrivateFile } from '../services/storage/file-transfer.js';
 import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { noteService } from '../services/note.service.js';
@@ -61,6 +62,8 @@ export const uploadNoteFile = asyncHandler(async (req: Request, res: Response) =
   if (!studentProfileId) throw ApiError.forbidden('Only students can upload files');
   if (!req.file) throw ApiError.badRequest('No file provided');
 
+  const note = await noteService.getNoteById(studentProfileId, req.params.noteId as string);
+
   // Magic-byte validation
   const { fileTypeFromBuffer } = await import('file-type');
   const fileTypeResult = await fileTypeFromBuffer(req.file.buffer);
@@ -80,7 +83,13 @@ export const uploadNoteFile = asyncHandler(async (req: Request, res: Response) =
 
   const provider = getStorageProvider();
   const fileId = await provider.upload(storagePath, req.file.buffer, fileTypeResult.mime);
-  await noteService.attachFile(studentProfileId, req.params.noteId as string, fileId);
+  try {
+    await noteService.attachFile(studentProfileId, req.params.noteId as string, fileId, note.fileId);
+  } catch (error) {
+    await cleanupFile(provider, fileId);
+    throw error;
+  }
+  await cleanupFile(provider, note.fileId);
 
   return ApiResponse.success(res, 'File uploaded successfully', { fileId }, HTTP_STATUS.OK);
 });
@@ -91,6 +100,5 @@ export const streamNoteFile = asyncHandler(async (req: Request, res: Response) =
 
   const fileId = await noteService.getFileId(studentProfileId, req.params.noteId as string);
   const provider = getStorageProvider();
-  const signedUrl = await provider.getSignedUrl(fileId, 60);
-  res.redirect(302, signedUrl);
+  await sendPrivateFile(res, provider, fileId);
 });

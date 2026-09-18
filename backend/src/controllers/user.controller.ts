@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { cleanupFile, sendPrivateFile } from '../services/storage/file-transfer.js';
 import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -30,7 +32,7 @@ export const uploadResume = asyncHandler(async (req: Request, res: Response) => 
   if (!req.file) throw ApiError.badRequest('No file provided');
 
   // Ownership/profile existence check BEFORE storage
-  const profile = await prisma.studentProfile.findUnique({ where: { userId }, select: { id: true } });
+  const profile = await prisma.studentProfile.findUnique({ where: { userId }, select: { id: true, uploadedResumeFileId: true } });
   if (!profile) throw ApiError.notFound('Student profile not found');
 
   // Magic-byte validation — PDF only
@@ -40,11 +42,17 @@ export const uploadResume = asyncHandler(async (req: Request, res: Response) => 
     throw ApiError.badRequest('Only PDF files are allowed for resume upload');
   }
 
-  const storagePath = `profiles/${profile.id}/resume-${Date.now()}.pdf`;
+  const storagePath = `profiles/${profile.id}/resume-${randomUUID()}.pdf`;
   const provider = getStorageProvider();
   const fileId = await provider.upload(storagePath, req.file.buffer, fileTypeResult.mime);
 
-  await userService.attachResume(userId, fileId);
+  try {
+    await userService.attachResume(userId, fileId, profile.uploadedResumeFileId);
+  } catch (error) {
+    await cleanupFile(provider, fileId);
+    throw error;
+  }
+  await cleanupFile(provider, profile.uploadedResumeFileId);
 
   return ApiResponse.success(res, 'Resume uploaded successfully', { fileId }, HTTP_STATUS.OK);
 });
@@ -56,6 +64,5 @@ export const streamResume = asyncHandler(async (req: Request, res: Response) => 
 
   const fileId = await userService.getResumeFileId(userId);
   const provider = getStorageProvider();
-  const signedUrl = await provider.getSignedUrl(fileId, 60);
-  res.redirect(302, signedUrl);
+  await sendPrivateFile(res, provider, fileId);
 });

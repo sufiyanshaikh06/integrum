@@ -14,17 +14,7 @@ import {
 import { env } from '../../config/env.js';
 import { ApiError } from '../../utils/ApiError.js';
 
-function withTimeout<T>(ms: number, promise: Promise<T>): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(Object.assign(new Error('AI request timed out'), { statusCode: 503 })),
-        ms
-      )
-    ),
-  ]);
-}
+import { withTimeout } from '../../utils/withTimeout.js';
 
 export class GeminiProvider implements IAIProvider {
   private genAI: GoogleGenerativeAI;
@@ -42,6 +32,7 @@ export class GeminiProvider implements IAIProvider {
    * Defensive error mapper for Gemini SDK — typed to avoid catch (error: any)
    */
   private handleGeminiError(error: unknown): never {
+    if (error instanceof ApiError) throw error;
     console.error('Gemini Provider Error:', error);
 
     const err = error as { message?: string; status?: number; name?: string };
