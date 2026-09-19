@@ -623,6 +623,9 @@ model Skill {
 }
 
 model JobApplication {
+  applicationType ApplicationType @default(INTERNSHIP)
+  eligibilityStatus EligibilityStatus @default(UNKNOWN)
+  interviewHistory Json?
   id               String            @id @default(uuid())
   studentProfileId String
   studentProfile   StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
@@ -688,4 +691,15 @@ model AIExecutionLog {
   startedAt        DateTime          @default(now())
   completedAt      DateTime?
   errorMessage     String?           @db.Text
+}
+
+enum ApplicationType {
+  INTERNSHIP
+  PLACEMENT
+}
+
+enum EligibilityStatus {
+  UNKNOWN
+  ELIGIBLE
+  NOT_ELIGIBLE
 }

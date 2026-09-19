@@ -62,3 +62,18 @@ The backend's existing `npm test` placeholder has not been relabeled as a passin
 - Report-filter correctness and remaining session/security findings remain in the research handoff; backend final freeze has not been declared.
 
 No frontend work, production migration, live AI request or main/closure-branch merge was performed in this checkpoint.
+
+## Continuation — 19 September 2026: T6 career classification
+
+Implemented the next closure task on the same working branch:
+
+- Added ApplicationType (INTERNSHIP / PLACEMENT), EligibilityStatus (UNKNOWN / ELIGIBLE / NOT_ELIGIBLE), and nullable interviewHistory JSON, with a checked-in additive migration. Existing rows receive INTERNSHIP and UNKNOWN defaults; no historical category is inferred.
+- Create and patch accept validated category, eligibility and interview history. History entries require an ISO datetime and nonempty round; optional notes/outcome are bounded. Sending [] clears history. Existing interviewDate/interviewRound and offerDetails remain supported.
+- GET /api/v1/job-applications accepts applicationType. The /internships and /placements subroutes apply fixed category filters before the /:id route. All queries remain scoped to the authenticated student.
+- Removed untyped Prisma update construction from the application service.
+
+Verification: backend build and strict test compilation passed. The closure suite now passes 12 tests (including the parent), exercising defaults, filters, history persistence/clearing, invalid payloads, anonymous access, and cross-student read/update/delete rejection. Existing test-career-hub-job-applications and test-p3-p4 also passed, each with a fresh isolated database. All ten migration SQL files were applied by the PGlite runner; native PostgreSQL migration-engine and production verification remain pending.
+
+The authorized push of 60c60bf was attempted, but Git failed because no HTTPS GitHub credential was available (could not read Username). No remote branch, main merge, pruning, or deployment was performed. The new migration has not been applied to a user database.
+
+Next: T7 analytics, T8 expanded AI study plans, then T9 and the remaining security/lifecycle gates above. Backend closure is not declared complete.

@@ -1,3 +1,4 @@
+import { ApplicationType, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { CreateJobApplicationInput, UpdateJobApplicationInput } from '../schemas/jobapplication.schema.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -7,6 +8,9 @@ export const jobApplicationService = {
     return prisma.jobApplication.create({
       data: {
         studentProfileId,
+        applicationType: data.applicationType ?? 'INTERNSHIP',
+        eligibilityStatus: data.eligibilityStatus ?? 'UNKNOWN',
+        interviewHistory: data.interviewHistory ?? Prisma.DbNull,
         companyName: data.companyName,
         role: data.role,
         applicationUrl: data.applicationUrl ?? null,
@@ -17,14 +21,14 @@ export const jobApplicationService = {
         interviewDate: data.interviewDate ? new Date(data.interviewDate) : null,
         interviewRound: data.interviewRound ?? null,
         // C-6: Offer
-        offerDetails: (data.offerDetails as any) ?? null,
+        offerDetails: data.offerDetails ?? Prisma.DbNull,
       },
     });
   },
 
-  async getApplications(studentProfileId: string) {
+  async getApplications(studentProfileId: string, applicationType?: ApplicationType) {
     return prisma.jobApplication.findMany({
-      where: { studentProfileId },
+      where: { studentProfileId, ...(applicationType ? { applicationType } : {}) },
       orderBy: [
         { appliedDate: 'desc' },
         { createdAt: 'desc' },
@@ -45,7 +49,10 @@ export const jobApplicationService = {
   async updateApplication(studentProfileId: string, applicationId: string, data: UpdateJobApplicationInput) {
     await this.getApplicationById(studentProfileId, applicationId);
 
-    const updateData: any = {};
+    const updateData: Prisma.JobApplicationUpdateInput = {};
+    if (data.applicationType !== undefined) updateData.applicationType = data.applicationType;
+    if (data.eligibilityStatus !== undefined) updateData.eligibilityStatus = data.eligibilityStatus;
+    if (data.interviewHistory !== undefined) updateData.interviewHistory = data.interviewHistory;
     if (data.companyName !== undefined) updateData.companyName = data.companyName;
     if (data.role !== undefined) updateData.role = data.role;
     if (data.applicationUrl !== undefined) updateData.applicationUrl = data.applicationUrl;

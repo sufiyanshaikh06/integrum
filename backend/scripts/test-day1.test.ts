@@ -53,6 +53,39 @@ test('day-one HTTP and persistence regressions', async t => {
     const note = await create('/notes', a.token, { subjectId: subject.id, title: 'Private document' });
     const own = await create('/study-plans', a.token, { title: 'Own plan' });
     const other = await create('/study-plans', b.token, { title: 'Other plan' });
+    await t.test('career classification, history, validation and ownership', async () => {
+      const route = '/job-applications';
+      const internship = await create(route, a.token, { companyName: 'Legacy', role: 'Intern' });
+      assert.equal(internship.applicationType, 'INTERNSHIP');
+      assert.equal(internship.eligibilityStatus, 'UNKNOWN');
+      const history = [{ date: '2026-09-19T10:00:00Z', round: 'Technical', outcome: 'Passed' }];
+      const placement = await create(route, a.token, { companyName: 'Graduate', role: 'Engineer', applicationType: 'PLACEMENT', eligibilityStatus: 'ELIGIBLE', interviewHistory: history, interviewRound: 'HR' });
+      await create(route, b.token, { companyName: 'Foreign', role: 'Engineer', applicationType: 'PLACEMENT' });
+      for (const suffix of ['/placements', '?applicationType=PLACEMENT']) {
+        const r = await req('GET', route + suffix, a.token);
+        assert.equal(r.status, 200);
+        assert.deepEqual((await r.json() as any).data.map((v: any) => v.id), [placement.id]);
+      }
+      const list = await req('GET', route + '/internships', a.token);
+      assert.deepEqual((await list.json() as any).data.map((v: any) => v.id), [internship.id]);
+      assert.deepEqual(placement.interviewHistory, history);
+      assert.equal(placement.interviewRound, 'HR');
+      for (const method of ['GET', 'PATCH', 'DELETE']) {
+        assert.equal((await req(method, `${route}/${placement.id}`, b.token, method === 'PATCH' ? { eligibilityStatus: 'NOT_ELIGIBLE' } : undefined)).status, 404);
+      }
+      assert.equal((await req('GET', route + '/placements')).status, 401);
+      assert.equal((await req('GET', route + '?applicationType=INVALID', a.token)).status, 400);
+      for (const payload of [{ applicationType: 'INVALID' }, { eligibilityStatus: 'INVALID' }, { interviewHistory: [{ date: 'bad', round: '' }] }]) {
+        assert.equal((await req('PATCH', `${route}/${placement.id}`, a.token, payload)).status, 400);
+      }
+      const updated = await req('PATCH', `${route}/${placement.id}`, a.token, { applicationType: 'INTERNSHIP', eligibilityStatus: 'NOT_ELIGIBLE', interviewHistory: [] });
+      assert.equal(updated.status, 200);
+      const saved = await prisma.jobApplication.findUniqueOrThrow({ where: { id: placement.id } });
+      assert.equal(saved.applicationType, 'INTERNSHIP');
+      assert.equal(saved.eligibilityStatus, 'NOT_ELIGIBLE');
+      assert.deepEqual(saved.interviewHistory, []);
+      assert.equal(saved.interviewRound, 'HR');
+    });
     await t.test('real department endpoint persists normalized values', async () => {
       const login = await req('POST', '/auth/login', '', {
         email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD,
