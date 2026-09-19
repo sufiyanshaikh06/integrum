@@ -77,3 +77,19 @@ Verification: backend build and strict test compilation passed. The closure suit
 The authorized push of 60c60bf was attempted, but Git failed because no HTTPS GitHub credential was available (could not read Username). No remote branch, main merge, pruning, or deployment was performed. The new migration has not been applied to a user database.
 
 Next: T7 analytics, T8 expanded AI study plans, then T9 and the remaining security/lifecycle gates above. Backend closure is not declared complete.
+
+## Continuation — T7 analytics
+
+Added authenticated student endpoints GET /api/v1/analytics/subject-performance and GET /api/v1/analytics/internship-stats. Dashboard now includes academic.completedStudyPlans, academic.studyPlanGoalAchievementRate, career.resumeCompletionScore, and career.resumeCompletion (selected resume ID plus completed/missing sections).
+
+Calculation contract:
+- Subject performance reports attendance and assignment completion only; no grade is invented. SUBMITTED/GRADED assignments count as completed. Dashboard and subject performance share the same computation. Existing attendance semantics are preserved: use subject totals, falling back to records when totalClasses is zero; PRESENT/LATE count as attended, all records count in the denominator. Attendance write consistency and EXCUSED policy review remain a separate closure gate.
+- Resume completion is populated sections / five * 100: personalInfo, education, experience, skills, projects. Active resume takes precedence, followed by most recently updated resume and a stable ID tie-breaker. Only its latest version counts. Empty/whitespace placeholders do not count. This is content presence, not quality or ATS analysis. A profile-uploaded PDF alone does not fill builder sections.
+- Internship statistics include only the authenticated student's INTERNSHIP rows. Status counts are current states, not lifetime interview events. Offer rate is OFFERED / total * 100.
+- Study-plan goal achievement is COMPLETED plans / all plans * 100, distinct from average progress. Empty denominators return zero.
+
+Verification: backend build and strict test compilation passed; all 13 closure tests passed, including known-value formulas, empty accounts, resume selection/version behavior, category exclusion, authentication, and cross-student isolation. Both existing analytics scripts (test-analytics, test-analytics-hub) passed on fresh isolated PGlite databases. Native PostgreSQL verification remains pending.
+
+Workflow instruction: user has deferred all publishing until remaining security checks finish. After an approved merge into main, retain the old branches without further commits; do not prune or delete them. No publishing, merging or branch deletion was attempted in this continuation.
+
+Next scheduled task: T8 expanded study-plan output, followed by T9/security and environment verification. T7 completion is not a declaration of complete backend closure.

@@ -1,6 +1,73 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 
+const percentage = (part: number, total: number) => total > 0 ? part / total * 100 : 0;
+
+// A completion indicator, not an ATS/quality score. Empty placeholders do not count.
+function hasContent(value: Prisma.JsonValue | undefined): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.some(hasContent);
+  if (value && typeof value === 'object') return Object.values(value).some(hasContent);
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 export const analyticsService = {
+  async getSubjectPerformance(studentProfileId: string) {
+    const subjects = await prisma.subject.findMany({
+      where: { semester: { studentProfileId } },
+      include: { assignments: { select: { status: true } }, attendanceRecords: { select: { status: true } } },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+    return subjects.map(subject => {
+      // Preserve the existing attendance policy: PRESENT/LATE count as attended;
+      // all records (including EXCUSED) count in the denominator.
+      const useRecords = subject.totalClasses === 0 && subject.attendanceRecords.length > 0;
+      const totalClasses = useRecords ? subject.attendanceRecords.length : subject.totalClasses;
+      const attendedClasses = useRecords
+        ? subject.attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length
+        : subject.attendedClasses;
+      const totalAssignments = subject.assignments.length;
+      const completedAssignments = subject.assignments.filter(a => a.status === 'SUBMITTED' || a.status === 'GRADED').length;
+      return {
+        subjectId: subject.id, subjectName: subject.name, semesterId: subject.semesterId,
+        totalClasses, attendedClasses, attendancePercentage: percentage(attendedClasses, totalClasses),
+        totalAssignments, completedAssignments,
+        assignmentCompletionRate: percentage(completedAssignments, totalAssignments),
+      };
+    });
+  },
+
+  async getResumeCompletion(studentProfileId: string) {
+    // Prefer the active resume, then most recently updated; stable ID breaks ties.
+    const resume = await prisma.resume.findFirst({
+      where: { studentProfileId },
+      orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+      include: { versions: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1 } },
+    });
+    const raw = resume?.versions[0]?.content;
+    const content = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const sections = ['personalInfo', 'education', 'experience', 'skills', 'projects'] as const;
+    const completedSections = sections.filter(key => {
+      const value = content[key];
+      return key === 'personalInfo'
+        ? !!value && typeof value === 'object' && !Array.isArray(value) && hasContent(value)
+        : Array.isArray(value) && hasContent(value);
+    });
+    return { resumeId: resume?.id ?? null, completedSections,
+      missingSections: sections.filter(key => !completedSections.includes(key)),
+      score: percentage(completedSections.length, sections.length) };
+  },
+
+  async getInternshipStats(studentProfileId: string) {
+    const applications = await prisma.jobApplication.findMany({
+      where: { studentProfileId, applicationType: 'INTERNSHIP' }, select: { status: true },
+    });
+    const applicationsByStatus = { APPLIED: 0, INTERVIEWING: 0, OFFERED: 0, REJECTED: 0 };
+    for (const application of applications) applicationsByStatus[application.status]++;
+    return { totalApplications: applications.length, applicationsByStatus,
+      interviewCount: applicationsByStatus.INTERVIEWING, offerCount: applicationsByStatus.OFFERED,
+      offerRate: percentage(applicationsByStatus.OFFERED, applications.length) };
+  },
   async getStudentDashboard(studentProfileId: string) {
     // ---------------------------------------------------------
     // 1. Productivity Metrics
@@ -39,39 +106,11 @@ export const analyticsService = {
     // ---------------------------------------------------------
     // 3. Academic Metrics
     // ---------------------------------------------------------
-    // Need to fetch semesters to get subjects and assignments
-    const semesters = await prisma.semester.findMany({
-      where: { studentProfileId },
-      include: {
-        subjects: {
-          include: {
-            assignments: true,
-            attendanceRecords: true,
-          }
-        }
-      }
-    });
-
-    let totalClasses = 0;
-    let attendedClasses = 0;
-    let totalAssignments = 0;
-    let completedAssignments = 0;
-
-    for (const semester of semesters) {
-      for (const subject of semester.subjects) {
-        totalClasses += subject.totalClasses;
-        attendedClasses += subject.attendedClasses;
-        
-        // Also fallback to attendance records if manual subject totals aren't used
-        if (subject.totalClasses === 0 && subject.attendanceRecords.length > 0) {
-          totalClasses += subject.attendanceRecords.length;
-          attendedClasses += subject.attendanceRecords.filter(r => ['PRESENT', 'LATE'].includes(r.status)).length;
-        }
-
-        totalAssignments += subject.assignments.length;
-        completedAssignments += subject.assignments.filter(a => ['SUBMITTED', 'GRADED'].includes(a.status)).length;
-      }
-    }
+    const subjects = await this.getSubjectPerformance(studentProfileId);
+    const totalClasses = subjects.reduce((sum, s) => sum + s.totalClasses, 0);
+    const attendedClasses = subjects.reduce((sum, s) => sum + s.attendedClasses, 0);
+    const totalAssignments = subjects.reduce((sum, s) => sum + s.totalAssignments, 0);
+    const completedAssignments = subjects.reduce((sum, s) => sum + s.completedAssignments, 0);
 
     const attendancePercentage = totalClasses > 0 ? (attendedClasses / totalClasses) * 100 : 0;
     const assignmentCompletionRate = totalAssignments > 0 ? (completedAssignments / totalAssignments) * 100 : 0;
@@ -81,6 +120,9 @@ export const analyticsService = {
       select: { progressPercentage: true, status: true },
     });
     const totalStudyPlans = studyPlans.length;
+    const completedStudyPlans = studyPlans.filter(p => p.status === 'COMPLETED').length;
+    const studyPlanGoalAchievementRate = percentage(completedStudyPlans, totalStudyPlans);
+    const resumeCompletion = await this.getResumeCompletion(studentProfileId);
     const averageStudyPlanProgress = totalStudyPlans > 0 
       ? studyPlans.reduce((sum, p) => sum + p.progressPercentage, 0) / totalStudyPlans 
       : 0;
@@ -141,6 +183,8 @@ export const analyticsService = {
         assignmentCompletionRate,
         totalStudyPlans,
         averageStudyPlanProgress,
+        completedStudyPlans,
+        studyPlanGoalAchievementRate,
       },
       productivity: {
         totalTasks,
@@ -151,6 +195,8 @@ export const analyticsService = {
         completedReminders,
       },
       career: {
+        resumeCompletionScore: resumeCompletion.score,
+        resumeCompletion,
         totalApplications,
         applicationsByStatus,
         interviewCount,

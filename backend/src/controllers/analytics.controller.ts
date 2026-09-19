@@ -45,3 +45,11 @@ export const getActivityBreakdown = asyncHandler(async (req: Request, res: Respo
   );
   ApiResponse.success(res, 'Activity breakdown retrieved', data, HTTP_STATUS.OK);
 });
+
+export const getSubjectPerformance = asyncHandler(async (req: Request, res: Response) => {
+  ApiResponse.success(res, 'Subject performance retrieved', await analyticsService.getSubjectPerformance(getProfileId(req)), HTTP_STATUS.OK);
+});
+
+export const getInternshipStats = asyncHandler(async (req: Request, res: Response) => {
+  ApiResponse.success(res, 'Internship statistics retrieved', await analyticsService.getInternshipStats(getProfileId(req)), HTTP_STATUS.OK);
+});

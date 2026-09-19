@@ -86,6 +86,58 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.deepEqual(saved.interviewHistory, []);
       assert.equal(saved.interviewRound, 'HR');
     });
+    await t.test('analytics formulas, empty accounts and student isolation', async () => {
+      const empty = await student('Empty');
+      async function data(route: string, token: string) {
+        const response = await req('GET', '/analytics/' + route, token);
+        assert.equal(response.status, 200);
+        return (await response.json() as any).data;
+      }
+      const dashboard = await data('dashboard', empty.token);
+      assert.equal(dashboard.career.resumeCompletionScore, 0);
+      assert.equal(dashboard.academic.studyPlanGoalAchievementRate, 0);
+      assert.deepEqual(await data('subject-performance', empty.token), []);
+      assert.equal((await data('internship-stats', empty.token)).totalApplications, 0);
+      for (const route of ['subject-performance', 'internship-stats']) {
+        assert.equal((await req('GET', '/analytics/' + route)).status, 401);
+      }
+      await prisma.subject.update({ where: { id: subject.id }, data: { totalClasses: 4, attendedClasses: 3 } });
+      await prisma.assignment.createMany({ data: [
+        { subjectId: subject.id, title: 'Submitted', status: 'SUBMITTED' },
+        { subjectId: subject.id, title: 'Pending', status: 'PENDING' },
+      ] });
+      await prisma.studyPlan.update({ where: { id: own.id }, data: { status: 'COMPLETED' } });
+      await create('/study-plans', a.token, { title: 'Still active' });
+      const resume = await create('/resumes', a.token, { title: 'Active resume', isActive: true,
+        content: { personalInfo: { name: 'Student' }, education: [{ institution: 'College' }],
+          experience: [{}], skills: ['TypeScript'], projects: [{ title: '   ' }] } });
+      // A newer inactive resume must not silently replace the selected active one.
+      await create('/resumes', a.token, { title: 'Unused draft', content: {} });
+      const subjectStats = await data('subject-performance', a.token);
+      assert.equal(subjectStats.length, 1);
+      assert.equal(subjectStats[0].subjectId, subject.id);
+      assert.equal(subjectStats[0].attendancePercentage, 75);
+      assert.equal(subjectStats[0].assignmentCompletionRate, 50);
+      const populated = await data('dashboard', a.token);
+      assert.equal(populated.academic.attendancePercentage, 75);
+      assert.equal(populated.academic.assignmentCompletionRate, 50);
+      assert.equal(populated.academic.studyPlanGoalAchievementRate, 50);
+      assert.equal(populated.career.resumeCompletionScore, 60);
+      assert.equal(populated.career.resumeCompletion.resumeId, resume.id);
+      assert.deepEqual(populated.career.resumeCompletion.missingSections, ['experience', 'projects']);
+      // Latest version, not any historical complete version, determines completion.
+      assert.equal((await req('PATCH', '/resumes/' + resume.id, a.token, { content: {} })).status, 200);
+      assert.equal((await data('dashboard', a.token)).career.resumeCompletionScore, 0);
+      await create('/job-applications', a.token, { companyName: 'Offer', role: 'Intern', status: 'OFFERED' });
+      await create('/job-applications', a.token, { companyName: 'Placement', role: 'Graduate', status: 'OFFERED', applicationType: 'PLACEMENT' });
+      await create('/job-applications', b.token, { companyName: 'Foreign offer', role: 'Intern', status: 'OFFERED' });
+      const stats = await data('internship-stats', a.token);
+      assert.equal(stats.totalApplications, 3);
+      assert.equal(stats.offerCount, 1);
+      assert(Math.abs(stats.offerRate - 100 / 3) < 1e-9);
+      assert.deepEqual(await data('subject-performance', b.token), []);
+      assert.equal((await data('dashboard', b.token)).career.resumeCompletionScore, 0);
+    });
     await t.test('real department endpoint persists normalized values', async () => {
       const login = await req('POST', '/auth/login', '', {
         email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD,
