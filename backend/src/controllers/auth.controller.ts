@@ -9,7 +9,9 @@ import { ApiError } from '../utils/ApiError.js';
 export const authController = {
   register: asyncHandler(async (req: Request, res: Response) => {
     const user = await authService.register(req.body);
-    ApiResponse.success(res, 'User registered successfully. Check your email to verify your account.', user, HTTP_STATUS.CREATED);
+    ApiResponse.success(res, user.verificationEmailSent
+      ? 'User registered successfully. Check your email to verify your account.'
+      : 'Account created. Verification email could not be sent; sign in and request another verification email.', user, HTTP_STATUS.CREATED);
   }),
 
   login: asyncHandler(async (req: Request, res: Response) => {

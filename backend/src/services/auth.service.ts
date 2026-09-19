@@ -48,7 +48,7 @@ export const authService = {
     const [rawVerificationToken, hashedVerificationToken] = generateSecureToken();
     const verificationExpires = new Date(Date.now() + TOKEN_TTL_MS);
 
-    return prisma.$transaction(async (tx) => {
+    const registered = await prisma.$transaction(async (tx) => {
       // 1. Create User
       const user = await tx.user.create({
         data: {
@@ -66,19 +66,22 @@ export const authService = {
         lastName: data.lastName,
       });
 
-      // Send verification email
-      await emailService.send(
-        user.email,
-        'Verify your Integrum account',
-        `Your verification token is: ${rawVerificationToken}\n\nUse POST /api/v1/auth/verify-email with this token.\nExpires in 1 hour.`
-      );
-
       return {
         id: user.id,
         email: user.email,
         role: user.role,
       };
     });
+    // Commit the account before network I/O; delivery failures do not lose the account.
+    let verificationEmailSent = true;
+    try {
+      await emailService.send(registered.email, 'Verify your Integrum account',
+        `Your verification token is: ${rawVerificationToken}\n\nExpires in 1 hour.`);
+    } catch {
+      verificationEmailSent = false;
+      console.error('Registration verification email delivery failed');
+    }
+    return { ...registered, verificationEmailSent };
   },
 
   async login(data: any) {
@@ -191,11 +194,19 @@ export const authService = {
       },
     });
 
+    try {
     await emailService.send(
       email,
       'Reset your Integrum password',
       `Your password-reset token is: ${rawToken}\n\nUse POST /api/v1/auth/reset-password with this token.\nExpires in 1 hour. This token is single-use.`
     );
+
+    } catch {
+      // Conditional cleanup cannot erase a newer reset request's token.
+      await prisma.user.updateMany({ where: { id: user.id, passwordResetTokenHash: hashedToken },
+        data: { passwordResetTokenHash: null, passwordResetExpires: null } });
+      console.error('Password reset email delivery failed');
+    }
 
     return { message: genericMessage };
   },

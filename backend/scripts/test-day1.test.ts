@@ -217,6 +217,31 @@ test('day-one HTTP and persistence regressions', async t => {
       await assert.rejects(authService.refresh(fresh.refreshToken), { statusCode: 401 });
       await prisma.adminAuditLog.deleteMany({ where: { targetId: account.id } });
     });
+    await t.test('email outage recovery and verification/reset tokens', async () => {
+      const original = emailService.send;
+      let deliveredBody = '';
+      try {
+        emailService.send = async () => { throw new Error('Simulated provider outage'); };
+        const account = await student('EmailOutage');
+        assert.equal(account.verificationEmailSent, false);
+        const known = await authService.forgotPassword(`${prefix}_EmailOutage@integrum.test`);
+        const unknown = await authService.forgotPassword(`${prefix}_Absent@integrum.test`);
+        assert.deepEqual(known, unknown);
+        assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: account.id } })).passwordResetTokenHash, null);
+        emailService.send = async (_to, _subject, body) => { deliveredBody = body; };
+        await authService.resendVerificationEmail(account.id);
+        const verificationToken = deliveredBody.match(/[a-f0-9]{64}/)?.[0];
+        assert(verificationToken);
+        await authService.verifyEmail(verificationToken);
+        assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: account.id } })).isVerified, true);
+        await authService.forgotPassword(`${prefix}_EmailOutage@integrum.test`);
+        const resetToken = deliveredBody.match(/[a-f0-9]{64}/)?.[0];
+        assert(resetToken);
+        await authService.resetPassword(resetToken, 'RecoveredPassword456!');
+        const loggedIn = await authService.login({ email: `${prefix}_EmailOutage@integrum.test`, password: 'RecoveredPassword456!' });
+        assert(loggedIn.accessToken);
+      } finally { emailService.send = original; }
+    });
     await t.test('real department endpoint persists normalized values', async () => {
       const login = await req('POST', '/auth/login', '', {
         email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD,
@@ -355,5 +380,41 @@ test('health fails when the database is unavailable and production email never l
   } finally {
     prisma.$queryRaw = originalQuery; env.NODE_ENV = oldMode; env.EMAIL_PROVIDER = oldEmail;
     await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+test('Resend adapter request and failure sanitization without real delivery', async t => {
+  const previous = { provider: env.EMAIL_PROVIDER, key: env.RESEND_API_KEY, from: env.EMAIL_FROM };
+  env.EMAIL_PROVIDER = 'resend'; env.RESEND_API_KEY = 'test-key'; env.EMAIL_FROM = 'sender@example.com';
+  let status = 200;
+  let result: unknown = { id: 'test-message-id' };
+  let networkFailure = false;
+  t.mock.method(globalThis, 'fetch', async (url: string, options: RequestInit) => {
+    assert.equal(url, 'https://api.resend.com/emails');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.redirect, 'error');
+    assert(options.signal instanceof AbortSignal);
+    assert.deepEqual(JSON.parse(options.body as string), {
+      from: 'sender@example.com', to: ['recipient@example.com'], subject: 'Verify', text: 'private-token',
+    });
+    if (networkFailure) throw new Error('private-provider-detail');
+    return new Response(JSON.stringify(result), { status });
+  });
+  try {
+    await emailService.send('recipient@example.com', 'Verify', 'private-token');
+    for (const code of [401, 429, 500]) {
+      status = code;
+      await assert.rejects(emailService.send('recipient@example.com', 'Verify', 'private-token'), {
+        statusCode: 503, message: 'Email delivery is temporarily unavailable',
+      });
+    }
+    status = 200; result = {};
+    await assert.rejects(emailService.send('recipient@example.com', 'Verify', 'private-token'), { statusCode: 503 });
+    networkFailure = true;
+    await assert.rejects(emailService.send('recipient@example.com', 'Verify', 'private-token'), {
+      statusCode: 503, message: 'Email delivery is temporarily unavailable',
+    });
+  } finally {
+    env.EMAIL_PROVIDER = previous.provider; env.RESEND_API_KEY = previous.key; env.EMAIL_FROM = previous.from;
   }
 });

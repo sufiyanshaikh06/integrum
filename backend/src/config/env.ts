@@ -21,8 +21,12 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().optional(),
   SUPABASE_SERVICE_KEY: z.string().optional(),
   EMAIL_PROVIDER: z.enum(['console', 'resend']).default('console'),
-  RESEND_API_KEY: z.string().optional(),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().email().optional(),
 }).superRefine((value, ctx) => {
+  if (value.EMAIL_PROVIDER === 'resend' && (!value.RESEND_API_KEY || !value.EMAIL_FROM)) {
+    ctx.addIssue({ code: 'custom', path: ['EMAIL_PROVIDER'], message: 'Resend requires RESEND_API_KEY and EMAIL_FROM' });
+  }
   if (value.NODE_ENV === 'production') {
     for (const key of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'] as const) {
       if (value[key].length < 32) ctx.addIssue({ code: 'custom', path: [key], message: 'Production JWT secrets must contain at least 32 characters' });
