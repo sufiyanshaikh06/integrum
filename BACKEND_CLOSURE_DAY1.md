@@ -132,3 +132,15 @@ Remaining blockers before declaring backend closure:
 No publishing, merging, pruning or branch deletion. Retain merged branches without future commits as instructed.
 
 T9 regression result: all 14 baseline regression scripts passed on fresh isolated PGlite databases after the compatible dependency updates. Final production-only dependency audit confirms four high findings and zero critical/moderate findings. No @ts-ignore or @ts-nocheck directives were found in backend/src.
+
+## T9 continuation — database-backed sessions
+
+Implemented AuthSession (user ownership, refresh hash, expiry) and User.authVersion with an additive migration. Login creates a session while conditionally locking the unchanged active user row; reset/deactivation can invalidate issuance. JWTs contain session/version claims, unique token IDs, and are verified with an HS256 allowlist and required claim checks. Existing pre-migration tokens are intentionally rejected; users must sign in again after rollout.
+
+Refresh rotation uses a conditional database update against the previous token hash; only one exchange wins. Replayed/stale tokens receive 401. Rejection does not revoke the successfully rotated session. Logout deletes the current session, invalidating both its access and refresh tokens while retaining other sessions. Password reset conditionally consumes the reset token, increments authVersion and deletes all user sessions atomically. Account deactivation increments authVersion so old tokens stay invalid after reactivation. The maintenance administrator bypass checks the live session and current database role/status.
+
+No plaintext refresh tokens are stored. Expired sessions are denied; a periodic expired-row retention/cleanup policy is not yet implemented. Already-running requests are not cancelled by revocation. Native PostgreSQL concurrency and deployment verification remain outstanding.
+
+Verification: Prisma client generation, backend compilation and strict test compilation passed. The closure suite checks single-use refresh rotation, two simultaneous refresh attempts with one winner, logout rejection for both token types, password-reset token reuse rejection, all-session reset invalidation, old-password rejection and successful new login. The compiled production smoke and four targeted legacy scripts (admin foundation, admin users, admin, productivity/study-plan) passed in isolated PGlite. Final deactivation/reactivation checks are included in the closure suite.
+
+This closes the implemented session-revocation gap locally, subject to native PostgreSQL verification. Remaining T9 blockers still include dependency findings, production email delivery, cascade storage cleanup and the other documented data/environment gates. Nothing has been published or merged.

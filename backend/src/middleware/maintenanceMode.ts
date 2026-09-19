@@ -1,3 +1,4 @@
+import { prisma } from '../config/prisma.js';
 import { Request, Response, NextFunction } from 'express';
 import { adminPlatformService } from '../services/admin/platform.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -32,7 +33,11 @@ export async function maintenanceMode(req: Request, res: Response, next: NextFun
       if (token) {
         try {
           const payload = verifyAccessToken(token);
-          if (payload.role === 'ADMIN') {
+          const session = await prisma.authSession.findFirst({ where: {
+            id: payload.sid!, expiresAt: { gt: new Date() },
+            user: { id: payload.sub, role: 'ADMIN', isActive: true, authVersion: payload.version! },
+          } });
+          if (session) {
             return next();
           }
         } catch {

@@ -30,7 +30,7 @@ export const authController = {
 
   logout: asyncHandler(async (req: Request, res: Response) => {
     if (req.user) {
-      await authService.logout(req.user.id);
+      await authService.logout(req.user.id, req.user.sessionId);
     }
     clearRefreshCookie(res);
     ApiResponse.success(res, 'Logout successful', null, HTTP_STATUS.OK);

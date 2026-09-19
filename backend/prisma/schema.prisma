@@ -149,6 +149,8 @@ enum SystemSettingKey {
 // ---------------------------------------------------------
 
 model User {
+  authVersion Int @default(0)
+  sessions AuthSession[]
   id           String    @id @default(uuid())
   email        String    @unique
   passwordHash String
@@ -702,4 +704,13 @@ enum EligibilityStatus {
   UNKNOWN
   ELIGIBLE
   NOT_ELIGIBLE
+}
+
+model AuthSession {
+  id String @id
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshHash String
+  expiresAt DateTime
+  @@index([userId])
 }

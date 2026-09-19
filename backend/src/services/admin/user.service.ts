@@ -356,7 +356,7 @@ export const adminUserService = {
 
       const updated = await tx.user.update({
         where: { id: targetUserId },
-        data: { isActive: data.isActive },
+        data: { isActive: data.isActive, ...(!data.isActive ? { authVersion: { increment: 1 } } : {}) },
         select: {
           id: true,
           email: true,

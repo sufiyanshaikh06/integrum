@@ -99,14 +99,21 @@ export const authService = {
       throw ApiError.unauthorized('Invalid email or password');
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
-
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const sid = crypto.randomUUID();
+    const payload = { sub: user.id, email: user.email, role: user.role, sid, version: user.authVersion };
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
+    await prisma.$transaction(async tx => {
+      // Serialize login issuance with reset/revocation on the user row.
+      const locked = await tx.user.updateMany({
+        where: { id: user.id, passwordHash: user.passwordHash, authVersion: user.authVersion, isActive: true },
+        data: { lastLoginAt: new Date() },
+      });
+      if (locked.count !== 1) throw ApiError.unauthorized('Account changed; please log in again');
+      await tx.authSession.create({ data: { id: sid, userId: user.id,
+        refreshHash: crypto.createHash('sha256').update(refreshToken).digest('hex'),
+        expiresAt: new Date(verifyRefreshToken(refreshToken).exp! * 1000) } });
+    });
 
     return {
       user: {
@@ -121,7 +128,7 @@ export const authService = {
   },
 
   async refresh(refreshToken: string) {
-    let payload: any;
+    let payload: ReturnType<typeof verifyRefreshToken>;
     try {
       payload = verifyRefreshToken(refreshToken);
     } catch {
@@ -137,14 +144,24 @@ export const authService = {
       throw ApiError.forbidden('User account is inactive');
     }
 
-    const newPayload = { sub: user.id, email: user.email, role: user.role };
+    if (payload.version !== user.authVersion) throw ApiError.unauthorized('Session revoked');
+    const newPayload = { sub: user.id, email: user.email, role: user.role, sid: payload.sid!, version: user.authVersion };
     const newAccessToken = generateAccessToken(newPayload);
     const newRefreshToken = generateRefreshToken(newPayload);
 
+    const rotated = await prisma.authSession.updateMany({
+      where: { id: payload.sid!, userId: user.id,
+        refreshHash: crypto.createHash('sha256').update(refreshToken).digest('hex'),
+        expiresAt: { gt: new Date() } },
+      data: { refreshHash: crypto.createHash('sha256').update(newRefreshToken).digest('hex'),
+        expiresAt: new Date(verifyRefreshToken(newRefreshToken).exp! * 1000) },
+    });
+    if (rotated.count !== 1) throw ApiError.unauthorized('Refresh token already used or session revoked');
     return { accessToken: newAccessToken, refreshToken: newRefreshToken };
   },
 
-  async logout(_userId: string) {
+  async logout(userId: string, sessionId: string) {
+    await prisma.authSession.deleteMany({ where: { id: sessionId, userId } });
     return { success: true };
   },
 
@@ -203,14 +220,14 @@ export const authService = {
 
     const hashedPassword = await hashPassword(newPassword);
 
-    // Update password and invalidate the token (one-time use)
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash: hashedPassword,
-        passwordResetTokenHash: null,
-        passwordResetExpires: null,
-      },
+    await prisma.$transaction(async tx => {
+      const updated = await tx.user.updateMany({
+        where: { id: user.id, passwordResetTokenHash: hashedToken, passwordResetExpires: { gt: new Date() } },
+        data: { passwordHash: hashedPassword, passwordResetTokenHash: null,
+          passwordResetExpires: null, authVersion: { increment: 1 } },
+      });
+      if (updated.count !== 1) throw ApiError.badRequest('Password reset token is invalid or has expired');
+      await tx.authSession.deleteMany({ where: { userId: user.id } });
     });
 
     return { message: 'Password has been reset successfully. Please log in.' };

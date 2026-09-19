@@ -1,3 +1,6 @@
+import { adminUserService } from '../src/services/admin/user.service.js';
+import { authService } from '../src/services/auth.service.js';
+import { createHash } from 'node:crypto';
 import { emailService } from '../src/services/email.service.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GeminiProvider } from '../src/services/ai/gemini.provider.js';
@@ -175,6 +178,44 @@ test('day-one HTTP and persistence regressions', async t => {
         topicPriorities: [{ topic: 'SQL', priority: 'URGENT', reason: 'Test' }] }).success, false);
       assert.equal(generatedStudyPlanOutputSchema.safeParse({ ...plan,
         goalRecommendations: ['   '] }).success, false);
+    });
+    await t.test('refresh rotation, logout and password reset revoke sessions', async () => {
+      const account = await student('Sessions');
+      const credentials = { email: `${prefix}_Sessions@integrum.test`, password: 'ClosurePass123!' };
+      const first = await authService.login(credentials);
+      const rotated = await authService.refresh(first.refreshToken);
+      assert.notEqual(rotated.refreshToken, first.refreshToken);
+      await assert.rejects(authService.refresh(first.refreshToken), { statusCode: 401 });
+      const parallel = await Promise.allSettled([
+        authService.refresh(rotated.refreshToken), authService.refresh(rotated.refreshToken),
+      ]);
+      assert.equal(parallel.filter(r => r.status === 'fulfilled').length, 1);
+      const winner = parallel.find(r => r.status === 'fulfilled');
+      assert(winner?.status === 'fulfilled');
+      assert.equal((await req('POST', '/auth/logout', winner.value.accessToken)).status, 200);
+      assert.equal((await req('GET', '/users/me', winner.value.accessToken)).status, 401);
+      await assert.rejects(authService.refresh(winner.value.refreshToken), { statusCode: 401 });
+      const second = await authService.login(credentials);
+      const resetToken = randomUUID();
+      await prisma.user.update({ where: { id: account.id }, data: {
+        passwordResetTokenHash: createHash('sha256').update(resetToken).digest('hex'),
+        passwordResetExpires: new Date(Date.now() + 60000),
+      } });
+      await authService.resetPassword(resetToken, 'NewClosurePass456!');
+      assert.equal((await req('GET', '/users/me', second.accessToken)).status, 401);
+      assert.equal((await req('GET', '/users/me', account.token)).status, 401);
+      await assert.rejects(authService.refresh(second.refreshToken), { statusCode: 401 });
+      await assert.rejects(authService.resetPassword(resetToken, 'ThirdPassword789!'), { statusCode: 400 });
+      await assert.rejects(authService.login(credentials), { statusCode: 401 });
+      const fresh = await authService.login({ ...credentials, password: 'NewClosurePass456!' });
+      assert.equal((await req('GET', '/users/me', fresh.accessToken)).status, 200);
+      const admin = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      await adminUserService.updateUserStatus(admin.id, account.id, { isActive: false });
+      assert.equal((await req('GET', '/users/me', fresh.accessToken)).status, 403);
+      await adminUserService.updateUserStatus(admin.id, account.id, { isActive: true });
+      assert.equal((await req('GET', '/users/me', fresh.accessToken)).status, 401);
+      await assert.rejects(authService.refresh(fresh.refreshToken), { statusCode: 401 });
+      await prisma.adminAuditLog.deleteMany({ where: { targetId: account.id } });
     });
     await t.test('real department endpoint persists normalized values', async () => {
       const login = await req('POST', '/auth/login', '', {

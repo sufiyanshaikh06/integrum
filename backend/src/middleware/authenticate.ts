@@ -9,6 +9,7 @@ declare global {
   namespace Express {
     interface Request {
       user?: {
+        sessionId: string;
         id: string;
         email: string;
         role: 'STUDENT' | 'ADMIN';
@@ -44,6 +45,7 @@ export const authenticate = asyncHandler(async (req: Request, res: Response, nex
         email: true,
         role: true,
         isActive: true,
+        authVersion: true,
         studentProfile: {
           select: { id: true, courseId: true },
         },
@@ -61,7 +63,11 @@ export const authenticate = asyncHandler(async (req: Request, res: Response, nex
       throw ApiError.forbidden('User account is inactive');
     }
 
-    req.user = user;
+    const session = await prisma.authSession.findFirst({ where: {
+      id: payload.sid!, userId: user.id, expiresAt: { gt: new Date() },
+    } });
+    if (!session || payload.version !== user.authVersion) throw ApiError.unauthorized('Session revoked');
+    req.user = { ...user, sessionId: session.id };
     next();
   } catch (error: unknown) {
     if (error instanceof ApiError) throw error;
