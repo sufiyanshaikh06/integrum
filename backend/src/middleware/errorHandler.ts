@@ -20,6 +20,15 @@ export const errorHandler = (err: any, _req: Request, res: Response, _next: Next
     return;
   }
 
+  if (err?.type === 'entity.too.large' && err?.status === 413) {
+    ApiResponse.error(res, 'Request body exceeds the 256 KB limit', [], 413);
+    return;
+  }
+  if (err instanceof SyntaxError && 'type' in err && err.type === 'entity.parse.failed') {
+    ApiResponse.error(res, 'Invalid JSON body', [], 400);
+    return;
+  }
+
   if (err instanceof ApiError) {
     statusCode = err.statusCode;
     message = err.message;

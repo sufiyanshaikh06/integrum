@@ -727,3 +727,10 @@ gaps:     G1 ?  G2 ?  G3 ?  G4 ?  G5 ?  G6 ?
 ```
 
 **Next session start point:** Execute Task 6 (Career Hub Discriminator) from the `backend/v1-closure` worktree at `d:\ALL_PROJECTS\integrum\.worktrees\backend-v1-closure`. The SDD execution plan is at `docs/superpowers/plans/2026-08-29-backend-v1-closure.md` inside the worktree.
+
+
+## Backend closure continuation — 19 September 2026
+
+Local implementation branch: `fix/backend-closure-day1`. T6 career classification, T7 analytics, and T8 expanded AI study-plan output are implemented with regression checks. T9 is **in progress, not passed**: full workspace build and compiled production-server checks are addressed, but four high dependency findings and remaining session/email/storage/environment gates prevent final backend freeze. See `BACKEND_CLOSURE_DAY1.md` for current evidence, API contracts, and outstanding work; older completion claims above are historical.
+
+Publishing is deferred until remaining security checks complete. After merging into main, retain existing branches without further commits; do not delete or prune them.

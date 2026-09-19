@@ -1,3 +1,4 @@
+import { emailService } from '../src/services/email.service.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GeminiProvider } from '../src/services/ai/gemini.provider.js';
 import { env } from '../src/config/env.js';
@@ -294,4 +295,24 @@ test('Gemini study-plan adapter preserves the expanded contract without network'
     assert.deepEqual(generatedStudyPlanOutputSchema.parse(result), generatedStudyPlanOutputSchema.parse(expected));
     assert(prompt.includes(context.topic) && prompt.includes(context.goals));
   } finally { env.GEMINI_API_KEY = savedKey; }
+});
+
+test('health fails when the database is unavailable and production email never logs tokens', async t => {
+
+  const originalQuery = prisma.$queryRaw;
+  const oldMode = env.NODE_ENV;
+  const oldEmail = env.EMAIL_PROVIDER;
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try {
+    prisma.$queryRaw = () => { throw new Error('Injected database failure'); };
+    const response = await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/v1/health`);
+    assert.equal(response.status, 503);
+    env.NODE_ENV = 'production'; env.EMAIL_PROVIDER = 'console';
+    const log = t.mock.method(console, 'log', () => {});
+    await assert.rejects(emailService.send('test@example.com', 'Verification', 'sensitive-token'), { statusCode: 500 });
+    assert.equal(log.mock.callCount(), 0);
+  } finally {
+    prisma.$queryRaw = originalQuery; env.NODE_ENV = oldMode; env.EMAIL_PROVIDER = oldEmail;
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
 });

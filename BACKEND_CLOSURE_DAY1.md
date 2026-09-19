@@ -108,3 +108,27 @@ The TypeScript GeneratedStudyPlan type is derived from the Zod output schema to 
 Verification: backend build, strict test compilation and all 15 closure tests passed. Tests exercise the mock HTTP response, backward-compatible original fields, invalid output rejection and failure logging, missing fields, empty arrays, invalid priority and whitespace-only recommendations. A stubbed Gemini SDK verifies requested schema fields and adapter preservation without any network call. Existing test-p1-p2 and test-ai-notes also passed on isolated PGlite databases. Initial test-only mistakes (expected HTTP 200 rather than the existing 201, and createdAt rather than execution log startedAt) were corrected before the successful run.
 
 Limitations: no live Gemini request was made; deployed model availability, real output quality and native PostgreSQL remain unverified. A weekly template is not a date-resolved calendar. Further security and T9 verification are still required before backend closure. Publishing remains deferred and branches will be retained after any later approved merge.
+
+## Continuation — T9 build and production hardening (not closed)
+
+Changes:
+- Root build explicitly builds the two executable workspaces. The shared workspace currently contains no source/build target. Removed the obsolete frontend baseUrl setting and made its source alias relative; full workspace build passes without suppressing deprecation checks.
+- TRUST_PROXY_HOPS defaults to zero instead of assuming a single trusted proxy. Configure it only after deployment routing is known. Production startup rejects short (<32 characters) or identical access/refresh signing secrets.
+- Health returns 503 when the database cannot be queried. Malformed JSON returns 400; oversized JSON returns 413 instead of being misreported as internal errors.
+- Production console email refuses delivery before logging message contents. Real Resend integration remains unfinished; production registration/reset email flows cannot be considered ready.
+- Applied compatible dependency updates with npm audit fix (no force). Initial production audit: five high and two moderate findings. Compatible updates leave four high findings in the Prisma/config/deepmerge-ts/mysql2 dependency chain. The proposed forced Prisma downgrade was not applied. The zero-high audit gate is FAILED.
+- Added scripts/test-production-hardening.ts and test:hardening. It requires NODE_ENV=test and a dedicated _test database, then launches the actual dist/server.js child with NODE_ENV=production and temporary strong secrets. It checks weak-secret startup rejection, database-backed health, security headers, missing authentication, JSON errors/size limit, authentication rate limiting and graceful SIGTERM shutdown.
+
+Verification uses isolated PGlite, not native PostgreSQL or production infrastructure. Full workspace build and strict application/test compilation passed. Closure suite: 16 tests passed. Compiled production-mode smoke passed. See subsequent regression result below.
+
+Remaining blockers before declaring backend closure:
+1. Resolve the four high dependency audit findings with a supported dependency change and regression verification.
+2. Implement/test server-side session revocation and refresh replay handling; current logout only clears the cookie and password reset does not revoke issued JWTs.
+3. Complete real email delivery and verification/reset flows. The new console guard prevents disclosure, but does not implement delivery.
+4. Resolve cascade file cleanup and retry/reconciliation behavior; verify private Supabase storage against a dedicated environment.
+5. Finish institutional linkage, report filtering and attendance consistency findings recorded earlier.
+6. Native PostgreSQL migrations/concurrency, live AI, deployment-specific cookies/CORS and proxy topology remain unverified. Hosting setup is deferred by user instruction.
+
+No publishing, merging, pruning or branch deletion. Retain merged branches without future commits as instructed.
+
+T9 regression result: all 14 baseline regression scripts passed on fresh isolated PGlite databases after the compatible dependency updates. Final production-only dependency audit confirms four high findings and zero critical/moderate findings. No @ts-ignore or @ts-nocheck directives were found in backend/src.

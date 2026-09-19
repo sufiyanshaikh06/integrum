@@ -9,6 +9,9 @@ export const emailService = {
       }
       throw ApiError.internal('Resend email provider not yet integrated. Set EMAIL_PROVIDER=console for development.');
     }
+    if (env.NODE_ENV === 'production') {
+      throw ApiError.internal('Console email delivery is disabled in production');
+    }
     console.log('\n📧 [DEV EMAIL]');
     console.log(`  To: ${to}`);
     console.log(`  Subject: ${subject}`);
