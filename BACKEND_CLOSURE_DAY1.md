@@ -93,3 +93,18 @@ Verification: backend build and strict test compilation passed; all 13 closure t
 Workflow instruction: user has deferred all publishing until remaining security checks finish. After an approved merge into main, retain the old branches without further commits; do not prune or delete them. No publishing, merging or branch deletion was attempted in this continuation.
 
 Next scheduled task: T8 expanded study-plan output, followed by T9/security and environment verification. T7 completion is not a declaration of complete backend closure.
+
+## Continuation — T8 expanded AI study plans
+
+The existing POST /api/v1/ai/study-plan response now includes four required fields alongside title, recommendedTargetDate, overview and suggestedTasks:
+
+- weeklySchedule: 1–49 recurring weekly sessions with day (uppercase English weekday), topic, integer durationMinutes (1–1440), and activity.
+- revisionPlan: 1–50 entries with topic, strategy, and frequency.
+- topicPriorities: 1–50 entries with topic, priority (HIGH/MEDIUM/LOW), and reason.
+- goalRecommendations: 1–50 nonempty strings.
+
+The TypeScript GeneratedStudyPlan type is derived from the Zod output schema to avoid type/validation drift. Gemini's requested response schema, prompt and adapter and the deterministic mock provider all include the new fields. Service validation preserves the fields and rejects missing, empty or malformed output; failures are recorded in the existing execution log. This remains a recommendation endpoint, not automatic creation of study plans/tasks or calendar scheduling. No database migration is needed.
+
+Verification: backend build, strict test compilation and all 15 closure tests passed. Tests exercise the mock HTTP response, backward-compatible original fields, invalid output rejection and failure logging, missing fields, empty arrays, invalid priority and whitespace-only recommendations. A stubbed Gemini SDK verifies requested schema fields and adapter preservation without any network call. Existing test-p1-p2 and test-ai-notes also passed on isolated PGlite databases. Initial test-only mistakes (expected HTTP 200 rather than the existing 201, and createdAt rather than execution log startedAt) were corrected before the successful run.
+
+Limitations: no live Gemini request was made; deployed model availability, real output quality and native PostgreSQL remain unverified. A weekly template is not a date-resolved calendar. Further security and T9 verification are still required before backend closure. Publishing remains deferred and branches will be retained after any later approved merge.

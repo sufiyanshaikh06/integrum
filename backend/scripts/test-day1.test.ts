@@ -1,3 +1,8 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GeminiProvider } from '../src/services/ai/gemini.provider.js';
+import { env } from '../src/config/env.js';
+import { MockProvider } from '../src/services/ai/mock.provider.js';
+import { generatedStudyPlanOutputSchema } from '../src/schemas/ai.schema.js';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -138,6 +143,38 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.deepEqual(await data('subject-performance', b.token), []);
       assert.equal((await data('dashboard', b.token)).career.resumeCompletionScore, 0);
     });
+    await t.test('expanded study-plan response and invalid provider output', async () => {
+      const body = { topic: 'Database normalization', goals: 'Practice dependency analysis' };
+      assert.equal((await req('POST', '/ai/study-plan', '', body)).status, 401);
+      const response = await req('POST', '/ai/study-plan', a.token, body);
+      assert.equal(response.status, 201);
+      const plan = (await response.json() as any).data;
+      assert(generatedStudyPlanOutputSchema.safeParse(plan).success);
+      assert.equal(plan.weeklySchedule[0].topic, body.topic);
+      assert.equal(plan.goalRecommendations[0], body.goals);
+      assert(plan.suggestedTasks.length > 0 && plan.title && plan.overview && plan.recommendedTargetDate);
+      const original = MockProvider.prototype.generateStudyPlan;
+      // Deliberately violate the provider contract to exercise the real API boundary.
+      MockProvider.prototype.generateStudyPlan = async () => ({ ...plan, weeklySchedule: [{ ...plan.weeklySchedule[0], durationMinutes: -1 }] });
+      try {
+        const failed = await req('POST', '/ai/study-plan', a.token, body);
+        assert.equal(failed.status, 500);
+        const failure = await prisma.aIExecutionLog.findFirst({
+          where: { studentProfileId: a.profileId, module: 'STUDY_PLAN', status: 'FAILED' },
+          orderBy: { startedAt: 'desc' },
+        });
+        assert.equal(failure?.errorMessage, 'AI generated invalid structure');
+      } finally { MockProvider.prototype.generateStudyPlan = original; }
+      for (const key of ['weeklySchedule', 'revisionPlan', 'topicPriorities', 'goalRecommendations']) {
+        const incomplete = { ...plan }; delete incomplete[key];
+        assert.equal(generatedStudyPlanOutputSchema.safeParse(incomplete).success, false);
+        assert.equal(generatedStudyPlanOutputSchema.safeParse({ ...plan, [key]: [] }).success, false);
+      }
+      assert.equal(generatedStudyPlanOutputSchema.safeParse({ ...plan,
+        topicPriorities: [{ topic: 'SQL', priority: 'URGENT', reason: 'Test' }] }).success, false);
+      assert.equal(generatedStudyPlanOutputSchema.safeParse({ ...plan,
+        goalRecommendations: ['   '] }).success, false);
+    });
     await t.test('real department endpoint persists normalized values', async () => {
       const login = await req('POST', '/auth/login', '', {
         email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD,
@@ -233,4 +270,28 @@ test('timeout maps to 503; success and provider rejection preserved', async () =
   assert.equal(await withTimeout(1000, Promise.resolve('ok')), 'ok');
   await assert.rejects(withTimeout(1000, Promise.reject(new Error('provider failure'))), /provider failure/);
   await assert.rejects(withTimeout(5, new Promise(() => {})), { statusCode: 503 });
+});
+
+test('Gemini study-plan adapter preserves the expanded contract without network', async t => {
+  const context = { topic: 'SQL', goals: 'Practice joins', attendancePercentage: 75, subjects: [] };
+  const expected = await new MockProvider().generateStudyPlan(context);
+  const savedKey = env.GEMINI_API_KEY;
+  let prompt = '';
+  t.mock.method(GoogleGenerativeAI.prototype, 'getGenerativeModel', (params: Parameters<GoogleGenerativeAI['getGenerativeModel']>[0]) => {
+    const schema = params.generationConfig?.responseSchema;
+    assert(schema && 'required' in schema);
+    for (const key of ['weeklySchedule', 'revisionPlan', 'topicPriorities', 'goalRecommendations']) {
+      assert(schema.required?.includes(key));
+    }
+    return { generateContent: async (value: string) => {
+      prompt = value;
+      return { response: { text: () => JSON.stringify(expected) } };
+    } };
+  });
+  try {
+    env.GEMINI_API_KEY = 'test-only-not-a-real-key';
+    const result = await new GeminiProvider().generateStudyPlan(context);
+    assert.deepEqual(generatedStudyPlanOutputSchema.parse(result), generatedStudyPlanOutputSchema.parse(expected));
+    assert(prompt.includes(context.topic) && prompt.includes(context.goals));
+  } finally { env.GEMINI_API_KEY = savedKey; }
 });

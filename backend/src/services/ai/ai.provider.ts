@@ -1,3 +1,6 @@
+import type { z } from 'zod';
+import type { generatedStudyPlanOutputSchema } from '../../schemas/ai.schema.js';
+
 export interface StudyPlanContext {
   topic: string;
   targetDate?: string | undefined;
@@ -6,11 +9,7 @@ export interface StudyPlanContext {
   subjects: { name: string; targetGrade: number | null }[];
 }
 
-export interface GeneratedStudyPlan {
-  title: string;
-  recommendedTargetDate: string;
-  overview: string;
-  suggestedTasks: { title: string; description: string }[];
+export type GeneratedStudyPlan = z.infer<typeof generatedStudyPlanOutputSchema> & {
   contextUsed?: {
     attendancePercentage: number;
     subjectsCount: number;
