@@ -1,3 +1,4 @@
+import { retryStorageCleanup, processCleanup } from '../src/services/storage/cleanup.js';
 import { adminUserService } from '../src/services/admin/user.service.js';
 import { authService } from '../src/services/auth.service.js';
 import { createHash } from 'node:crypto';
@@ -241,6 +242,54 @@ test('day-one HTTP and persistence regressions', async t => {
         const loggedIn = await authService.login({ email: `${prefix}_EmailOutage@integrum.test`, password: 'RecoveredPassword456!' });
         assert(loggedIn.accessToken);
       } finally { emailService.send = original; }
+    });
+    await t.test('cascade cleanup queue, rollback, provider failure and retry', async () => {
+      const local = new LocalStorageProvider();
+      const owner = await student('StorageCascade');
+      async function fixture() {
+        const semester = await create('/semesters', owner.token, { name: 'Cleanup', startDate: '2026-09-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' });
+        const subject = await create('/subjects', owner.token, { semesterId: semester.id, name: 'Cleanup' });
+        const note = await create('/notes', owner.token, { subjectId: subject.id, title: 'Cleanup file' });
+        const result = await upload(`/notes/${note.id}/upload`, owner.token);
+        assert.equal(result.status, 200);
+        return { semester, subject, note, fileId: (await result.json() as any).data.fileId as string };
+      }
+      const first = await fixture();
+      await assert.rejects(prisma.$transaction(async tx => {
+        await tx.subject.delete({ where: { id: first.subject.id } });
+        throw new Error('Rollback fixture');
+      }), /Rollback fixture/);
+      assert.equal(await prisma.storageCleanup.count({ where: { fileId: first.fileId } }), 0);
+      assert.deepEqual(await readFile(local.getLocalPath(first.fileId)), pdf);
+      await prisma.subject.delete({ where: { id: first.subject.id } });
+      assert.equal((await prisma.storageCleanup.findUniqueOrThrow({ where: { fileId: first.fileId } })).provider, 'local');
+      const originalDelete = local.delete;
+      local.delete = async () => { throw new Error('Storage offline'); };
+      assert.equal(await processCleanup(first.fileId, local, 'local'), false);
+      assert.equal((await prisma.storageCleanup.findUniqueOrThrow({ where: { fileId: first.fileId } })).attempts, 1);
+      local.delete = originalDelete;
+      await retryStorageCleanup();
+      await assert.rejects(readFile(local.getLocalPath(first.fileId)), { code: 'ENOENT' });
+      const second = await fixture();
+      await prisma.semester.delete({ where: { id: second.semester.id } });
+      await retryStorageCleanup();
+      await assert.rejects(readFile(local.getLocalPath(second.fileId)), { code: 'ENOENT' });
+      const third = await fixture();
+      const resumeUpload = await upload('/users/me/resume-upload', owner.token);
+      assert.equal(resumeUpload.status, 200);
+      const resumeFile = (await resumeUpload.json() as any).data.fileId as string;
+      await prisma.user.delete({ where: { id: owner.id } });
+      users.splice(users.indexOf(owner), 1);
+      assert.equal(await prisma.storageCleanup.count({ where: { fileId: { in: [third.fileId, resumeFile] } } }), 2);
+      await retryStorageCleanup();
+      for (const file of [third.fileId, resumeFile]) await assert.rejects(readFile(local.getLocalPath(file)), { code: 'ENOENT' });
+      const legacyId = `notes/legacy-${randomUUID()}.pdf`;
+      await local.upload(legacyId, pdf, 'application/pdf');
+      await prisma.storageCleanup.create({ data: { fileId: legacyId, provider: 'unknown' } });
+      await retryStorageCleanup();
+      assert.deepEqual(await readFile(local.getLocalPath(legacyId)), pdf);
+      await local.delete(legacyId);
+      await prisma.storageCleanup.delete({ where: { fileId: legacyId } });
     });
     await t.test('real department endpoint persists normalized values', async () => {
       const login = await req('POST', '/auth/login', '', {

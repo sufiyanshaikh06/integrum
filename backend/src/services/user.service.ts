@@ -1,3 +1,4 @@
+import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
 
@@ -80,7 +81,7 @@ export const userService = {
   async attachResume(userId: string, fileId: string, expectedFileId: string | null) {
     const result = await prisma.studentProfile.updateMany({
       where: { userId, uploadedResumeFileId: expectedFileId },
-      data: { uploadedResumeFileId: fileId },
+      data: { uploadedResumeFileId: fileId, resumeStorageProvider: env.STORAGE_PROVIDER },
     });
     if (result.count !== 1) throw ApiError.conflict('Profile changed during upload; retry');
   },

@@ -1,3 +1,4 @@
+import { env } from '../config/env.js';
 import { getStorageProvider } from './storage/index.js';
 import { cleanupFile } from './storage/file-transfer.js';
 import { prisma } from '../config/prisma.js';
@@ -99,7 +100,7 @@ export const noteService = {
     await this.getNoteById(studentProfileId, noteId); // ownership check
     const result = await prisma.note.updateMany({
       where: { id: noteId, fileId: expectedFileId },
-      data: { fileId },
+      data: { fileId, fileStorageProvider: env.STORAGE_PROVIDER },
     });
     if (result.count !== 1) throw ApiError.conflict('Note changed during upload; retry');
   },

@@ -1,3 +1,4 @@
+import { prisma } from '../../config/prisma.js';
 import type { Response } from 'express';
 import { ApiError } from '../../utils/ApiError.js';
 import { LocalStorageProvider } from './local.storage.js';
@@ -25,9 +26,22 @@ export async function sendPrivateFile(res: Response, provider: StorageProvider, 
 // Provider failures are observable and require operational retry.
 export async function cleanupFile(provider: StorageProvider, fileId: string | null) {
   if (!fileId) return;
+  const providerName = provider instanceof LocalStorageProvider ? 'local' : 'supabase';
   try {
+    const queued = await prisma.storageCleanup.findUnique({ where: { fileId } });
+    if (queued && queued.provider !== providerName) return;
+    // Callers supply either a detached reference (queued by the DB trigger) or
+    // the unique object from a failed attachment. Do not delay compensation
+    // with additional reference queries; the retry worker performs those checks.
     await provider.delete(fileId);
+    await prisma.storageCleanup.deleteMany({ where: { fileId, provider: providerName } });
   } catch {
-    console.error('Storage cleanup failed; retry required for file:', fileId);
+    try {
+      await prisma.storageCleanup.upsert({ where: { fileId },
+        update: { attempts: { increment: 1 } },
+        create: { fileId, provider: providerName, attempts: 1 } });
+    } catch {
+      console.error('Storage cleanup could not be queued; reconciliation required');
+    }
   }
 }

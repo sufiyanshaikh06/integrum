@@ -184,6 +184,7 @@ model User {
 }
 
 model StudentProfile {
+  resumeStorageProvider String?
   id             String   @id @default(uuid())
   userId         String   @unique
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -388,6 +389,7 @@ model Assignment {
 }
 
 model Note {
+  fileStorageProvider String?
   id        String   @id @default(uuid())
   subjectId String
   subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
@@ -713,4 +715,11 @@ model AuthSession {
   refreshHash String
   expiresAt DateTime
   @@index([userId])
+}
+
+model StorageCleanup {
+  fileId String @id
+  provider String
+  createdAt DateTime @default(now())
+  attempts Int @default(0)
 }
