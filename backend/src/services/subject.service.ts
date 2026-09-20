@@ -1,3 +1,4 @@
+import { lockOwnedSubject, validateAttendanceTotals } from './attendance-consistency.js';
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
 import { semesterService } from './semester.service.js';
@@ -7,6 +8,7 @@ export const subjectService = {
     // Enforce ownership boundary
     await semesterService.getSemesterById(studentProfileId, data.semesterId);
 
+    validateAttendanceTotals(data.totalClasses ?? 0, data.attendedClasses ?? 0);
     return prisma.subject.create({
       data: {
         semesterId: data.semesterId,
@@ -54,8 +56,6 @@ export const subjectService = {
   },
 
   async updateSubject(studentProfileId: string, subjectId: string, data: any) {
-    await this.getSubjectById(studentProfileId, subjectId);
-
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.code !== undefined) updateData.code = data.code;
@@ -65,10 +65,16 @@ export const subjectService = {
     if (data.attendedClasses !== undefined) updateData.attendedClasses = data.attendedClasses;
     if (data.attendanceGoal !== undefined) updateData.attendanceGoal = data.attendanceGoal;
 
-    return prisma.subject.update({
-      where: { id: subjectId },
-      data: updateData,
-    });
+    return prisma.$transaction(async tx => {
+      const subject = await lockOwnedSubject(tx, studentProfileId, subjectId);
+      if (data.totalClasses !== undefined || data.attendedClasses !== undefined) {
+        if (await tx.attendanceRecord.count({ where: { subjectId } })) {
+          throw ApiError.conflict('Attendance totals are calculated from individual records; edit those records instead');
+        }
+        validateAttendanceTotals(data.totalClasses ?? subject.totalClasses, data.attendedClasses ?? subject.attendedClasses);
+      }
+      return tx.subject.update({ where: { id: subjectId }, data: updateData });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async deleteSubject(studentProfileId: string, subjectId: string) {

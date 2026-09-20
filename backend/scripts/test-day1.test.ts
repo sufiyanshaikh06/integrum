@@ -63,6 +63,65 @@ test('day-one HTTP and persistence regressions', async t => {
     const note = await create('/notes', a.token, { subjectId: subject.id, title: 'Private document' });
     const own = await create('/study-plans', a.token, { title: 'Own plan' });
     const other = await create('/study-plans', b.token, { title: 'Other plan' });
+    await t.test('attendance totals, mode conflicts, ownership and concurrent writes', async () => {
+      const target = await create('/subjects', a.token, { semesterId: sem.id, name: 'Attendance integrity' });
+      const route = `/subjects/${target.id}`;
+      const recordBody = { subjectId: target.id, date: '2026-09-20T10:00:00Z', status: 'PRESENT' };
+      async function totals(total: number, attended: number) {
+        const row = await prisma.subject.findUniqueOrThrow({ where: { id: target.id } });
+        assert.equal(row.totalClasses, total); assert.equal(row.attendedClasses, attended);
+      }
+      try {
+        assert.equal((await req('POST', '/subjects', a.token, { semesterId: sem.id, name: 'Invalid attendance', attendedClasses: 1 })).status, 400);
+        assert.equal((await req('PATCH', route, a.token, { totalClasses: 5, attendedClasses: 3 })).status, 200);
+        assert.equal((await req('PATCH', route, a.token, { totalClasses: 2 })).status, 400);
+        assert.equal((await req('PATCH', route, a.token, { attendedClasses: 6 })).status, 400);
+        assert.equal((await req('POST', '/attendance', a.token, recordBody)).status, 409);
+        await totals(5, 3);
+        assert.equal(await prisma.attendanceRecord.count({ where: { subjectId: target.id } }), 0);
+        assert.equal((await req('PATCH', route, a.token, { totalClasses: 0, attendedClasses: 0 })).status, 200);
+        const records = await Promise.all(['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'].map(status => create('/attendance', a.token, { ...recordBody, status })));
+        await totals(4, 2);
+        assert.equal((await req('PATCH', route, a.token, { attendedClasses: 4 })).status, 409);
+        assert.equal((await req('PATCH', route, a.token, { attendanceGoal: 80 })).status, 200);
+        assert.equal((await req('POST', '/attendance', b.token, recordBody)).status, 404);
+        for (const method of ['PATCH', 'DELETE']) {
+          assert.equal((await req(method, `/attendance/${records[0].id}`, b.token, method === 'PATCH' ? { status: 'ABSENT' } : undefined)).status, 404);
+        }
+        const changed = await Promise.all([
+          req('PATCH', `/attendance/${records[1].id}`, a.token, { status: 'PRESENT' }),
+          req('DELETE', `/attendance/${records[0].id}`, a.token),
+        ]);
+        assert.equal(changed[0]!.status, 200); assert.equal(changed[1]!.status, 204);
+        await totals(3, 2);
+        for (const record of records.slice(1)) assert.equal((await req('DELETE', `/attendance/${record.id}`, a.token)).status, 204);
+        await totals(0, 0);
+        assert.equal((await req('PATCH', route, a.token, { totalClasses: 2, attendedClasses: 1 })).status, 200);
+        await totals(2, 1);
+      } finally { await prisma.subject.delete({ where: { id: target.id } }); }
+    });
+    await t.test('attendance create, update and delete roll back when aggregate persistence fails', async () => {
+      const target = await create('/subjects', a.token, { semesterId: sem.id, name: 'Attendance rollback' });
+      const body = { subjectId: target.id, date: '2026-09-20T10:00:00Z', status: 'PRESENT' };
+      const record = await create('/attendance', a.token, body);
+      // Test-only fault injection on this disposable database and this UUID fixture.
+      assert.match(target.id, /^[0-9a-f-]{36}$/);
+      await prisma.$executeRawUnsafe(`CREATE FUNCTION closure_attendance_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected attendance persistence failure'; END $$`);
+      try {
+        await prisma.$executeRawUnsafe(`CREATE TRIGGER closure_attendance_failure BEFORE UPDATE ON "Subject" FOR EACH ROW WHEN (OLD.id = '${target.id}') EXECUTE FUNCTION closure_attendance_failure()`);
+        assert.equal((await req('POST', '/attendance', a.token, body)).status, 500);
+        assert.equal((await req('PATCH', `/attendance/${record.id}`, a.token, { status: 'ABSENT' })).status, 500);
+        assert.equal((await req('DELETE', `/attendance/${record.id}`, a.token)).status, 500);
+        const rows = await prisma.attendanceRecord.findMany({ where: { subjectId: target.id } });
+        assert.equal(rows.length, 1); assert.equal(rows[0]!.status, 'PRESENT'); assert.equal(rows[0]!.id, record.id);
+        const row = await prisma.subject.findUniqueOrThrow({ where: { id: target.id } });
+        assert.equal(row.totalClasses, 1); assert.equal(row.attendedClasses, 1);
+      } finally {
+        await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS closure_attendance_failure ON "Subject"');
+        await prisma.$executeRawUnsafe('DROP FUNCTION closure_attendance_failure()');
+        await prisma.subject.delete({ where: { id: target.id } });
+      }
+    });
     await t.test('career classification, history, validation and ownership', async () => {
       const route = '/job-applications';
       const internship = await create(route, a.token, { companyName: 'Legacy', role: 'Intern' });
