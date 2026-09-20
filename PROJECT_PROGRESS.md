@@ -734,3 +734,10 @@ gaps:     G1 ?  G2 ?  G3 ?  G4 ?  G5 ?  G6 ?
 Local implementation branch: `fix/backend-closure-day1`. T6 career classification, T7 analytics, and T8 expanded AI study-plan output are implemented with regression checks. T9 is **in progress, not passed**: full workspace build and compiled production-server checks are addressed, but four high dependency findings and remaining session/email/storage/environment gates prevent final backend freeze. See `BACKEND_CLOSURE_DAY1.md` for current evidence, API contracts, and outstanding work; older completion claims above are historical.
 
 Publishing is deferred until remaining security checks complete. After merging into main, retain existing branches without further commits; do not delete or prune them.
+
+
+### Dependency audit checkpoint - 20 September 2026
+
+Production dependency audit now reports zero vulnerabilities after retaining Prisma 7.10.0 at the workspace root and applying documented deepmerge-ts/mysql2 overrides. Clean installation, Prisma configuration/schema/client tooling, full build, 20 closure tests and compiled production smoke passed. See BACKEND_CLOSURE_DAY1.md for evidence and override maintenance requirements. T9 remains open for data-integrity and native PostgreSQL/live-service verification; do not interpret this as final backend freeze.
+
+Dependency remediation final verification: full root build, strict test compilation, 20 closure tests, compiled production smoke and all 14 baseline regression scripts passed. Production dependency audit: zero findings. Database suites used isolated PGlite with all 12 migrations; native PostgreSQL and live-service gates remain open. Changes remain local pending the remaining security checks.

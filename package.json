@@ -17,5 +17,12 @@
     "@types/compression": "^1.8.1",
     "eslint": "^8.50.0",
     "prettier": "^3.0.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "mysql2": "3.24.4"
+  },
+  "dependencies": {
+    "prisma": "7.10.0"
   }
 }
