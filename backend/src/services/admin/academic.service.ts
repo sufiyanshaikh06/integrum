@@ -559,12 +559,16 @@ export const adminAcademicService = {
     ipAddress?: string
   ) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "MasterSubject" WHERE "id" = ${id} FOR UPDATE`;
       const existing = await tx.masterSubject.findUnique({
         where: { id },
         include: { course: true },
       });
       if (!existing) throw ApiError.notFound('Master subject not found');
 
+      if (data.courseId && data.courseId !== existing.courseId && await tx.subject.count({ where: { masterSubjectId: id } })) {
+        throw ApiError.conflict('Cannot move a syllabus subject while student subjects reference it');
+      }
       const targetCourseId = data.courseId || existing.courseId;
       const targetCourse =
         data.courseId && data.courseId !== existing.courseId
@@ -624,11 +628,12 @@ export const adminAcademicService = {
       });
 
       return updated;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async deleteMasterSubject(actorUserId: string, id: string, ipAddress?: string) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "MasterSubject" WHERE "id" = ${id} FOR UPDATE`;
       const masterSubject = await tx.masterSubject.findUnique({
         where: { id },
         include: { _count: { select: { studentSubjects: true } } },
@@ -657,7 +662,7 @@ export const adminAcademicService = {
       });
 
       return deleted;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   // ───────────────────────────────────────────────────────────────────────────

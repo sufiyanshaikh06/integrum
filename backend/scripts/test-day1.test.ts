@@ -71,6 +71,7 @@ test('day-one HTTP and persistence regressions', async t => {
       const first = await prisma.course.create({ data: { departmentId: dept.id, name: 'First course', code: `F${stamp}` } });
       const second = await prisma.course.create({ data: { departmentId: dept.id, name: 'Second course', code: `S${stamp}` } });
       const master = await prisma.masterSubject.create({ data: { courseId: first.id, name: 'Catalog subject', code: stamp } });
+      const foreignMaster = await prisma.masterSubject.create({ data: { courseId: second.id, name: 'Foreign syllabus', code: stamp } });
       const action = 'STUDENT_ENROLLMENT_UPDATED', route = `/admin/users/${a.id}/enrollment`;
       const countAudit = () => prisma.adminAuditLog.count({ where: { action, targetId: a.id } });
       try {
@@ -101,13 +102,34 @@ test('day-one HTTP and persistence regressions', async t => {
         assert.equal(ownProfile.courseId, first.id); assert.equal(ownProfile.course.code, first.code);
         assert.equal((await req('PATCH', '/users/me', a.token, { courseId: second.id })).status, 200);
         assert.equal((await prisma.studentProfile.findUniqueOrThrow({ where: { id: a.profileId } })).courseId, first.id);
-        await prisma.subject.update({ where: { id: subject.id }, data: { masterSubjectId: master.id } });
+        assert.equal((await req('GET', '/subjects/syllabus')).status, 401);
+        assert.equal((await req('GET', '/subjects/syllabus?limit=101', a.token)).status, 400);
+        const catalog = (await (await req('GET', '/subjects/syllabus', a.token)).json() as any).data;
+        assert.deepEqual(catalog.items.map((item: any) => item.id), [master.id]);
+        const empty = (await (await req('GET', '/subjects/syllabus', b.token)).json() as any).data;
+        assert.deepEqual(empty.items, []);
+        const subjectRoute = `/subjects/${subject.id}`;
+        assert.equal((await req('PATCH', subjectRoute, b.token, { masterSubjectId: master.id })).status, 404);
+        assert.equal((await req('PATCH', subjectRoute, a.token, { masterSubjectId: 'bad' })).status, 400);
+        assert.equal((await req('PATCH', subjectRoute, a.token, { masterSubjectId: randomUUID() })).status, 404);
+        assert.equal((await req('PATCH', subjectRoute, a.token, { masterSubjectId: foreignMaster.id })).status, 409);
+        const linked = await req('PATCH', subjectRoute, a.token, { masterSubjectId: master.id });
+        assert.equal(linked.status, 200); assert.equal((await linked.json() as any).data.masterSubject.id, master.id);
+        assert.equal((await req('PATCH', subjectRoute, a.token, { attendanceGoal: 75 })).status, 200);
+        assert.equal((await (await req('GET', subjectRoute, a.token)).json() as any).data.masterSubjectId, master.id);
+        await assert.rejects(adminAcademicService.updateMasterSubject(adminUser.id, master.id, { courseId: second.id }), (e: any) => e.statusCode === 409);
+        await assert.rejects(adminAcademicService.deleteMasterSubject(adminUser.id, master.id), (e: any) => e.statusCode === 409);
+        const subjectBody = { semesterId: sem.id, name: 'Linked creation', masterSubjectId: master.id };
+        const created = await create('/subjects', a.token, subjectBody);
+        assert.equal(created.masterSubjectId, master.id);
+        assert.equal((await req('POST', '/subjects', a.token, { ...subjectBody, masterSubjectId: foreignMaster.id })).status, 409);
+        await prisma.subject.delete({ where: { id: created.id } });
         for (const courseId of [second.id, null]) {
           assert.equal((await req('PATCH', route, admin, { courseId })).status, 409);
         }
         assert.equal(await countAudit(), 1);
         await assert.rejects(adminAcademicService.deleteCourse(adminUser.id, first.id), (e: any) => e.statusCode === 409);
-        await prisma.subject.update({ where: { id: subject.id }, data: { masterSubjectId: null } });
+        assert.equal((await req('PATCH', `/subjects/${subject.id}`, a.token, { masterSubjectId: null })).status, 200);
         // A nonexistent audit actor forces the audit insert to fail after the enrollment write.
         await assert.rejects(adminUserService.updateStudentEnrollment(randomUUID(), a.id, { courseId: second.id }));
         assert.equal((await prisma.studentProfile.findUniqueOrThrow({ where: { id: a.profileId } })).courseId, first.id);
@@ -120,7 +142,7 @@ test('day-one HTTP and persistence regressions', async t => {
         await prisma.subject.update({ where: { id: subject.id }, data: { masterSubjectId: null } });
         await prisma.studentProfile.update({ where: { id: a.profileId }, data: { courseId: null } });
         await prisma.adminAuditLog.deleteMany({ where: { action, targetId: a.id } });
-        await prisma.masterSubject.delete({ where: { id: master.id } });
+        await prisma.masterSubject.deleteMany({ where: { id: { in: [master.id, foreignMaster.id] } } });
         await prisma.course.deleteMany({ where: { id: { in: [first.id, second.id] } } });
         await prisma.department.delete({ where: { id: dept.id } });
       }
