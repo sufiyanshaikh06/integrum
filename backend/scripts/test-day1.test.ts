@@ -1,3 +1,4 @@
+import { adminReportService } from '../src/services/admin/report.service.js';
 import { retryStorageCleanup, processCleanup } from '../src/services/storage/cleanup.js';
 import { adminUserService } from '../src/services/admin/user.service.js';
 import { authService } from '../src/services/auth.service.js';
@@ -63,6 +64,78 @@ test('day-one HTTP and persistence regressions', async t => {
     const note = await create('/notes', a.token, { subjectId: subject.id, title: 'Private document' });
     const own = await create('/study-plans', a.token, { title: 'Own plan' });
     const other = await create('/study-plans', b.token, { title: 'Other plan' });
+    await t.test('report filters consistently scope cohorts, dates and UTC trends', async () => {
+      const stamp = randomUUID();
+      const inside = new Date('2001-01-01T00:30:00Z'), outside = new Date('2000-12-31T23:30:00Z');
+      const originalA = await prisma.user.findUniqueOrThrow({ where: { id: a.id } });
+      const originalB = await prisma.user.findUniqueOrThrow({ where: { id: b.id } });
+      const dept1 = await prisma.department.create({ data: { name: `Reports one ${stamp}`, code: `R1${stamp}` } });
+      const dept2 = await prisma.department.create({ data: { name: `Reports two ${stamp}`, code: `R2${stamp}` } });
+      const c1 = await prisma.course.create({ data: { departmentId: dept1.id, name: 'First', code: `C1${stamp}` } });
+      const c2 = await prisma.course.create({ data: { departmentId: dept2.id, name: 'Second', code: `C2${stamp}` } });
+      const target = await prisma.subject.create({ data: { semesterId: sem.id, name: 'Report activity', totalClasses: 2, attendedClasses: 1 } });
+      const manual = await prisma.subject.create({ data: { semesterId: sem.id, name: 'Report manual', totalClasses: 10, attendedClasses: 8 } });
+      const query = { departmentId: dept1.id, courseId: c1.id, startDate: inside.toISOString(), endDate: inside.toISOString() };
+      try {
+        await prisma.studentProfile.update({ where: { id: a.profileId }, data: { courseId: c1.id } });
+        await prisma.studentProfile.update({ where: { id: b.profileId }, data: { courseId: c2.id } });
+        await prisma.user.update({ where: { id: a.id }, data: { createdAt: inside } });
+        await prisma.user.update({ where: { id: b.id }, data: { createdAt: outside } });
+        await prisma.attendanceRecord.createMany({ data: [
+          { subjectId: target.id, date: inside, status: 'PRESENT' },
+          { subjectId: target.id, date: outside, status: 'ABSENT' },
+        ] });
+        await prisma.assignment.createMany({ data: [
+          { subjectId: target.id, title: stamp, createdAt: inside, dueDate: inside, status: 'SUBMITTED' },
+          { subjectId: target.id, title: stamp, createdAt: outside, dueDate: inside, status: 'PENDING' },
+        ] });
+        await prisma.aIExecutionLog.createMany({ data: [
+          { studentProfileId: a.profileId, module: 'NOTES', operation: stamp, startedAt: inside, status: 'SUCCESS' },
+          { studentProfileId: a.profileId, module: 'NOTES', operation: stamp, startedAt: outside, status: 'FAILED' },
+          { studentProfileId: b.profileId, module: 'NOTES', operation: stamp, startedAt: inside, status: 'FAILED' },
+        ] });
+        await prisma.jobApplication.createMany({ data: [
+          { studentProfileId: a.profileId, companyName: stamp, role: 'Intern', createdAt: inside, appliedDate: outside, status: 'OFFERED' },
+          { studentProfileId: a.profileId, companyName: stamp, role: 'Intern', createdAt: outside },
+          { studentProfileId: b.profileId, companyName: stamp, role: 'Intern', createdAt: inside },
+        ] });
+        const users = await adminReportService.getUserReport(query);
+        assert.equal(users.summary.totalUsers, 1); assert.equal(users.summary.students, 1); assert.equal(users.summary.admins, 0);
+        assert.deepEqual(users.registrations, [{ period: '2001-01-01', count: 1 }]);
+        assert.deepEqual(users.studentsByCourse.map(c => [c.courseId, c.count]), [[c1.id, 1]]);
+        assert.deepEqual(users.studentsByDepartment.map(d => [d.departmentId, d.count]), [[dept1.id, 1]]);
+        assert.equal(users.unassignedStudents, 0);
+        const noUsers = await adminReportService.getUserReport({ ...query, startDate: '2002-01-01T00:00:00Z', endDate: '2002-12-31T00:00:00Z' });
+        assert.equal(noUsers.summary.totalUsers, 0); assert.equal(noUsers.studentsByCourse[0]!.count, 0);
+        const academics = await adminReportService.getAcademicReport(query);
+        assert.equal(academics.overview.totalStudentSubjects, 1);
+        assert.equal(academics.overview.totalAttendanceRecords, 1);
+        assert.equal(academics.overview.averageAttendancePercentage, 100);
+        assert.equal(academics.overview.totalAssignments, 1); assert.equal(academics.overview.submittedAssignments, 1);
+        assert.equal(academics.overview.unassignedStudents, 0);
+        assert.equal(academics.dateScope.subjectsWithExcludedManualTotals, 1);
+        assert.equal(academics.byCourse[0]!.averageAttendance, 100);
+        const usage = await adminReportService.getUsageReport(query);
+        assert.equal(usage.ai.totalExecutions, 1); assert.equal(usage.ai.successRate, 100);
+        assert.equal(usage.career.totalApplications, 1); assert.equal(usage.career.offered, 1);
+        assert.deepEqual(usage.career.applicationsByMonth, [{ month: '2001-01', count: 1 }]);
+        for (const report of ['getUserReport', 'getAcademicReport', 'getUsageReport'] as const) {
+          await assert.rejects(adminReportService[report]({ departmentId: dept2.id, courseId: c1.id }), (e: any) => e.statusCode === 400);
+          await assert.rejects(adminReportService[report]({ courseId: randomUUID() }), (e: any) => e.statusCode === 404);
+        }
+        const deptUsage = await adminReportService.getUsageReport({ departmentId: dept2.id });
+        assert.equal(deptUsage.ai.totalExecutions, 1); assert.equal(deptUsage.career.totalApplications, 1);
+      } finally {
+        await prisma.aIExecutionLog.deleteMany({ where: { operation: stamp } });
+        await prisma.jobApplication.deleteMany({ where: { companyName: stamp } });
+        await prisma.subject.deleteMany({ where: { id: { in: [target.id, manual.id] } } });
+        await prisma.studentProfile.updateMany({ where: { id: { in: [a.profileId, b.profileId] } }, data: { courseId: null } });
+        await prisma.user.update({ where: { id: a.id }, data: { createdAt: originalA.createdAt } });
+        await prisma.user.update({ where: { id: b.id }, data: { createdAt: originalB.createdAt } });
+        await prisma.course.deleteMany({ where: { id: { in: [c1.id, c2.id] } } });
+        await prisma.department.deleteMany({ where: { id: { in: [dept1.id, dept2.id] } } });
+      }
+    });
     await t.test('attendance totals, mode conflicts, ownership and concurrent writes', async () => {
       const target = await create('/subjects', a.token, { semesterId: sem.id, name: 'Attendance integrity' });
       const route = `/subjects/${target.id}`;
