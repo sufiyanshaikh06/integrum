@@ -11,7 +11,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:closure": "tsc -p tsconfig.tests.json && node --import tsx --test scripts/test-day1.test.ts",
     "test:hardening": "tsc -p tsconfig.tests.json && node --import tsx scripts/test-production-hardening.ts",
-    "storage:cleanup": "node --import tsx scripts/retry-storage-cleanup.ts"
+    "storage:cleanup": "node --import tsx scripts/retry-storage-cleanup.ts",
+    "test:native": "node scripts/test-native.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

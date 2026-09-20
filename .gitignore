@@ -17,3 +17,6 @@ docs/superpowers/plans/
 # Uploaded files
 backend/uploads/notes/
 backend/uploads/profiles/
+
+# Disposable native verification reports
+backend/test-results/
