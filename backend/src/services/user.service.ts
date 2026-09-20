@@ -21,6 +21,8 @@ export const userService = {
             firstName: true,
             lastName: true,
             university: true,
+            courseId: true,
+            course: { select: { id: true, name: true, code: true, department: { select: { id: true, name: true, code: true } } } },
             enrollmentYear: true,
             graduationYear: true,
             careerGoals: true,

@@ -8,6 +8,7 @@ import {
   CreateAdminInput,
   UpdateUserStatusInput,
   UpdateUserRoleInput,
+  UpdateStudentEnrollmentInput,
 } from '../../schemas/admin/user.schema.js';
 
 /**
@@ -66,6 +67,43 @@ export async function ensureStudentBaseline(
 }
 
 export const adminUserService = {
+  async updateStudentEnrollment(actorUserId: string, targetUserId: string, data: UpdateStudentEnrollmentInput, ipAddress?: string) {
+    return prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${targetUserId} FOR UPDATE`;
+      const user = await tx.user.findUnique({ where: { id: targetUserId }, select: { role: true } });
+      if (!user) throw ApiError.notFound('User not found');
+      if (user.role !== 'STUDENT') throw ApiError.badRequest('Course enrollment requires a student account');
+      if (data.courseId !== null) {
+        await tx.$queryRaw`SELECT "id" FROM "Course" WHERE "id" = ${data.courseId} FOR SHARE`;
+        if (!await tx.course.findUnique({ where: { id: data.courseId }, select: { id: true } })) {
+          throw ApiError.notFound('Course not found');
+        }
+      }
+      // Syllabus-link writers must use this same profile lock before linking subjects.
+      await tx.$queryRaw`SELECT "id" FROM "StudentProfile" WHERE "userId" = ${targetUserId} FOR UPDATE`;
+      const profile = await tx.studentProfile.findUnique({ where: { userId: targetUserId }, select: { id: true, courseId: true } });
+      if (!profile) throw ApiError.notFound('Student profile not found');
+      const selection = { id: true, userId: true, courseId: true, course: { select: { id: true, name: true, code: true, department: { select: { id: true, name: true, code: true } } } } } as const;
+      if (profile.courseId === data.courseId) {
+        return tx.studentProfile.findUniqueOrThrow({ where: { id: profile.id }, select: selection });
+      }
+      const incompatible = await tx.subject.count({ where: {
+        semester: { studentProfileId: profile.id }, masterSubjectId: { not: null },
+        ...(data.courseId !== null ? { masterSubject: { courseId: { not: data.courseId } } } : {}),
+      } });
+      if (incompatible) throw ApiError.conflict('Unlink incompatible syllabus subjects before changing enrollment');
+      const changed = await tx.studentProfile.updateMany({
+        where: { id: profile.id, courseId: profile.courseId }, data: { courseId: data.courseId },
+      });
+      if (changed.count !== 1) throw ApiError.conflict('Enrollment changed during this edit; reload and retry');
+      await tx.adminAuditLog.create({ data: {
+        actorUserId, action: 'STUDENT_ENROLLMENT_UPDATED', targetType: 'User', targetId: targetUserId,
+        details: { studentProfileId: profile.id, previousCourseId: profile.courseId, courseId: data.courseId },
+        ipAddress: ipAddress ?? null,
+      } });
+      return tx.studentProfile.findUniqueOrThrow({ where: { id: profile.id }, select: selection });
+    }, { isolationLevel: 'ReadCommitted' });
+  },
   /**
    * List student accounts with search, filters and pagination.
    * Explicitly excludes sensitive password and token hashes.

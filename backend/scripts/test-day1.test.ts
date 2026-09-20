@@ -65,6 +65,66 @@ test('day-one HTTP and persistence regressions', async t => {
     const note = await create('/notes', a.token, { subjectId: subject.id, title: 'Private document' });
     const own = await create('/study-plans', a.token, { title: 'Own plan' });
     const other = await create('/study-plans', b.token, { title: 'Other plan' });
+    await t.test('admin enrollment authorization, validation, profile visibility and atomic audit', async () => {
+      const stamp = randomUUID();
+      const dept = await prisma.department.create({ data: { name: `Enrollment ${stamp}`, code: `E${stamp}` } });
+      const first = await prisma.course.create({ data: { departmentId: dept.id, name: 'First course', code: `F${stamp}` } });
+      const second = await prisma.course.create({ data: { departmentId: dept.id, name: 'Second course', code: `S${stamp}` } });
+      const master = await prisma.masterSubject.create({ data: { courseId: first.id, name: 'Catalog subject', code: stamp } });
+      const action = 'STUDENT_ENROLLMENT_UPDATED', route = `/admin/users/${a.id}/enrollment`;
+      const countAudit = () => prisma.adminAuditLog.count({ where: { action, targetId: a.id } });
+      try {
+        const login = await req('POST', '/auth/login', '', { email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD });
+        assert.equal(login.status, 200);
+        const admin = (await login.json() as any).data.accessToken;
+        const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+        assert.equal((await req('PATCH', route, '', { courseId: first.id })).status, 401);
+        assert.equal((await req('PATCH', route, b.token, { courseId: first.id })).status, 403);
+        for (const body of [{}, { courseId: 'invalid' }, { courseId: first.id, role: 'ADMIN' }]) {
+          assert.equal((await req('PATCH', route, admin, body)).status, 400);
+        }
+        assert.equal((await req('PATCH', '/admin/users/invalid/enrollment', admin, { courseId: first.id })).status, 400);
+        assert.equal((await req('PATCH', route, admin, { courseId: randomUUID() })).status, 404);
+        assert.equal((await req('PATCH', `/admin/users/${randomUUID()}/enrollment`, admin, { courseId: first.id })).status, 404);
+        assert.equal((await req('PATCH', `/admin/users/${adminUser.id}/enrollment`, admin, { courseId: first.id })).status, 400);
+        assert.equal(await countAudit(), 0);
+        const assigned = await req('PATCH', route, admin, { courseId: first.id });
+        assert.equal(assigned.status, 200);
+        assert.equal((await assigned.json() as any).data.course.department.id, dept.id);
+        assert.equal(await countAudit(), 1);
+        const audit = await prisma.adminAuditLog.findFirstOrThrow({ where: { action, targetId: a.id } });
+        assert.equal(audit.actorUserId, adminUser.id);
+        assert.deepEqual(audit.details, { studentProfileId: a.profileId, previousCourseId: null, courseId: first.id });
+        assert.equal((await req('PATCH', route, admin, { courseId: first.id })).status, 200);
+        assert.equal(await countAudit(), 1);
+        const ownProfile = (await (await req('GET', '/users/me', a.token)).json() as any).data.studentProfile;
+        assert.equal(ownProfile.courseId, first.id); assert.equal(ownProfile.course.code, first.code);
+        assert.equal((await req('PATCH', '/users/me', a.token, { courseId: second.id })).status, 200);
+        assert.equal((await prisma.studentProfile.findUniqueOrThrow({ where: { id: a.profileId } })).courseId, first.id);
+        await prisma.subject.update({ where: { id: subject.id }, data: { masterSubjectId: master.id } });
+        for (const courseId of [second.id, null]) {
+          assert.equal((await req('PATCH', route, admin, { courseId })).status, 409);
+        }
+        assert.equal(await countAudit(), 1);
+        await assert.rejects(adminAcademicService.deleteCourse(adminUser.id, first.id), (e: any) => e.statusCode === 409);
+        await prisma.subject.update({ where: { id: subject.id }, data: { masterSubjectId: null } });
+        // A nonexistent audit actor forces the audit insert to fail after the enrollment write.
+        await assert.rejects(adminUserService.updateStudentEnrollment(randomUUID(), a.id, { courseId: second.id }));
+        assert.equal((await prisma.studentProfile.findUniqueOrThrow({ where: { id: a.profileId } })).courseId, first.id);
+        assert.equal(await countAudit(), 1);
+        assert.equal((await req('PATCH', route, admin, { courseId: second.id })).status, 200);
+        assert.equal((await req('PATCH', route, admin, { courseId: null })).status, 200);
+        assert.equal(await countAudit(), 3);
+        assert.equal((await prisma.studentProfile.findUniqueOrThrow({ where: { id: a.profileId } })).courseId, null);
+      } finally {
+        await prisma.subject.update({ where: { id: subject.id }, data: { masterSubjectId: null } });
+        await prisma.studentProfile.update({ where: { id: a.profileId }, data: { courseId: null } });
+        await prisma.adminAuditLog.deleteMany({ where: { action, targetId: a.id } });
+        await prisma.masterSubject.delete({ where: { id: master.id } });
+        await prisma.course.deleteMany({ where: { id: { in: [first.id, second.id] } } });
+        await prisma.department.delete({ where: { id: dept.id } });
+      }
+    });
     await t.test('student academic-term lookup, linking, ownership and date integrity', async () => {
       const term = await prisma.academicTerm.create({ data: { name: `Term ${prefix}`, academicYear: 2026, startDate: new Date('2026-09-01Z'), endDate: new Date('2026-12-31Z') } });
       const inactive = await prisma.academicTerm.create({ data: { name: `Inactive ${prefix}`, academicYear: 2026, startDate: term.startDate, endDate: term.endDate, isActive: false } });

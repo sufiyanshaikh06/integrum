@@ -12,6 +12,10 @@ import {
 } from '../../schemas/admin/user.schema.js';
 
 export const adminUserController = {
+  updateStudentEnrollment: asyncHandler(async (req: Request, res: Response) => {
+    const result = await adminUserService.updateStudentEnrollment(req.user!.id, req.params.id as string, req.body, req.ip);
+    ApiResponse.success(res, 'Student enrollment updated successfully', result, HTTP_STATUS.OK);
+  }),
   /**
    * GET /api/v1/admin/users/students
    */

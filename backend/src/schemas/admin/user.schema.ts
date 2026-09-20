@@ -58,3 +58,9 @@ export type ListAdminsQuery = z.infer<typeof listAdminsQuerySchema>['query'];
 export type CreateAdminInput = z.infer<typeof createAdminSchema>['body'];
 export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>['body'];
 export type UpdateUserRoleInput = z.infer<typeof updateUserRoleSchema>['body'];
+
+export const updateStudentEnrollmentSchema = z.object({
+  params: z.object({ id: z.string().uuid('Invalid user ID format') }),
+  body: z.object({ courseId: z.string().uuid('Invalid course ID format').nullable() }).strict(),
+});
+export type UpdateStudentEnrollmentInput = z.infer<typeof updateStudentEnrollmentSchema>['body'];

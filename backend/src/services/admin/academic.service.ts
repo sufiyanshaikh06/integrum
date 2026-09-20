@@ -378,6 +378,7 @@ export const adminAcademicService = {
 
   async deleteCourse(actorUserId: string, id: string, ipAddress?: string) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Course" WHERE "id" = ${id} FOR UPDATE`;
       const course = await tx.course.findUnique({
         where: { id },
         include: {
@@ -415,7 +416,7 @@ export const adminAcademicService = {
       });
 
       return deleted;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   // ───────────────────────────────────────────────────────────────────────────

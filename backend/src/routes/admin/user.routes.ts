@@ -7,6 +7,7 @@ import {
   createAdminSchema,
   updateUserStatusSchema,
   updateUserRoleSchema,
+  updateStudentEnrollmentSchema,
 } from '../../schemas/admin/user.schema.js';
 
 const router = Router();
@@ -25,5 +26,7 @@ router.patch('/:id/status', validateRequest(updateUserStatusSchema), adminUserCo
 
 // PATCH /api/v1/admin/users/:id/role — promote / demote user with baseline provisioning & guards
 router.patch('/:id/role', validateRequest(updateUserRoleSchema), adminUserController.updateUserRole);
+
+router.patch('/:id/enrollment', validateRequest(updateStudentEnrollmentSchema), adminUserController.updateStudentEnrollment);
 
 export default router;
