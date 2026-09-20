@@ -1,3 +1,4 @@
+import { adminAcademicService } from '../src/services/admin/academic.service.js';
 import { adminReportService } from '../src/services/admin/report.service.js';
 import { retryStorageCleanup, processCleanup } from '../src/services/storage/cleanup.js';
 import { adminUserService } from '../src/services/admin/user.service.js';
@@ -64,6 +65,53 @@ test('day-one HTTP and persistence regressions', async t => {
     const note = await create('/notes', a.token, { subjectId: subject.id, title: 'Private document' });
     const own = await create('/study-plans', a.token, { title: 'Own plan' });
     const other = await create('/study-plans', b.token, { title: 'Other plan' });
+    await t.test('student academic-term lookup, linking, ownership and date integrity', async () => {
+      const term = await prisma.academicTerm.create({ data: { name: `Term ${prefix}`, academicYear: 2026, startDate: new Date('2026-09-01Z'), endDate: new Date('2026-12-31Z') } });
+      const inactive = await prisma.academicTerm.create({ data: { name: `Inactive ${prefix}`, academicYear: 2026, startDate: term.startDate, endDate: term.endDate, isActive: false } });
+      let linked: any;
+      try {
+        assert.equal((await req('GET', '/semesters/academic-terms')).status, 401);
+        assert.equal((await req('GET', '/semesters/academic-terms?limit=101', a.token)).status, 400);
+        const lookup = await req('GET', '/semesters/academic-terms?limit=100', a.token);
+        assert.equal(lookup.status, 200);
+        const catalog = (await lookup.json() as any).data;
+        assert(catalog.items.some((item: any) => item.id === term.id));
+        assert(!catalog.items.some((item: any) => item.id === inactive.id));
+        assert(!('semesters' in catalog.items[0])); assert(!('_count' in catalog.items[0]));
+        const body = { name: 'Linked semester', startDate: term.startDate.toISOString(), endDate: term.endDate.toISOString(), academicTermId: term.id };
+        assert.equal((await req('POST', '/semesters', a.token, { ...body, academicTermId: randomUUID() })).status, 404);
+        assert.equal((await req('POST', '/semesters', a.token, { ...body, academicTermId: inactive.id })).status, 409);
+        assert.equal((await req('POST', '/semesters', a.token, { ...body, academicTermId: 'invalid' })).status, 400);
+        linked = await create('/semesters', a.token, body);
+        assert.equal(linked.academicTerm.id, term.id);
+        const route = `/semesters/${linked.id}`;
+        assert.equal((await req('PATCH', route, b.token, { academicTermId: null })).status, 404);
+        assert.equal((await req('PATCH', route, a.token, { startDate: '2027-01-01T00:00:00Z' })).status, 400);
+        assert.equal((await req('PATCH', route, a.token, { endDate: body.startDate })).status, 400);
+        const race = await Promise.all([
+          req('PATCH', route, a.token, { startDate: '2026-11-01T00:00:00Z' }),
+          req('PATCH', route, a.token, { endDate: '2026-10-01T00:00:00Z' }),
+        ]);
+        assert.equal(race.filter(r => r.status === 200).length, 1);
+        assert(race.some(r => r.status === 400 || r.status === 409));
+        const after = await prisma.semester.findUniqueOrThrow({ where: { id: linked.id } });
+        assert(after.startDate < after.endDate); assert.equal(after.academicTermId, term.id);
+        await assert.rejects(adminAcademicService.deleteAcademicTerm(a.id, term.id), (e: any) => e.statusCode === 409);
+        await prisma.academicTerm.update({ where: { id: term.id }, data: { isActive: false } });
+        assert.equal((await req('PATCH', route, a.token, { name: 'Historical semester' })).status, 200);
+        const historical = (await (await req('GET', route, a.token)).json() as any).data;
+        assert.equal(historical.academicTerm.isActive, false);
+        assert.equal((await req('PATCH', route, a.token, { academicTermId: inactive.id })).status, 409);
+        assert.equal((await req('PATCH', route, a.token, { academicTermId: null })).status, 200);
+        assert.equal((await prisma.semester.findUniqueOrThrow({ where: { id: linked.id } })).academicTermId, null);
+        assert.equal((await req('PATCH', route, a.token, { academicTermId: term.id })).status, 409);
+        await prisma.academicTerm.update({ where: { id: term.id }, data: { isActive: true } });
+        assert.equal((await req('PATCH', route, a.token, { academicTermId: term.id })).status, 200);
+      } finally {
+        if (linked) await prisma.semester.delete({ where: { id: linked.id } });
+        await prisma.academicTerm.deleteMany({ where: { id: { in: [term.id, inactive.id] } } });
+      }
+    });
     await t.test('report filters consistently scope cohorts, dates and UTC trends', async () => {
       const stamp = randomUUID();
       const inside = new Date('2001-01-01T00:30:00Z'), outside = new Date('2000-12-31T23:30:00Z');

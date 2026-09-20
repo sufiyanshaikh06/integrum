@@ -767,6 +767,7 @@ export const adminAcademicService = {
     ipAddress?: string
   ) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AcademicTerm" WHERE "id" = ${id} FOR UPDATE`;
       const existing = await tx.academicTerm.findUnique({ where: { id } });
       if (!existing) throw ApiError.notFound('Academic term not found');
 
@@ -801,11 +802,12 @@ export const adminAcademicService = {
       });
 
       return updated;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async deleteAcademicTerm(actorUserId: string, id: string, ipAddress?: string) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AcademicTerm" WHERE "id" = ${id} FOR UPDATE`;
       const term = await tx.academicTerm.findUnique({
         where: { id },
         include: { _count: { select: { semesters: true } } },
@@ -834,6 +836,6 @@ export const adminAcademicService = {
       });
 
       return deleted;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 };
