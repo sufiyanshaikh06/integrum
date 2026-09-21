@@ -38,6 +38,10 @@ Uploaded fixtures use unique test profile IDs under local uploads. Normal test c
 
 ## What passing establishes—and what it does not
 
+On Windows the production smoke test uses a test-only IPC launcher to invoke the compiled server's existing SIGTERM handler. Node's Windows kill(SIGTERM) forcibly terminates the child, so it cannot verify graceful shutdown. The test still requires a normal exit code of zero and fails on forced termination or its five-second shutdown timeout. Linux continues to use a real SIGTERM. The Windows path verifies application cleanup, not Windows OS signal delivery.
+
+The first laptop run at commit 86df369 passed all 25 closure tests, database locking/rollback, migrations, compilation, and production HTTP checks, and removed its disposable database. It failed the old shutdown assertion (null exit code versus zero); retain those logs. The corrected smoke script was type-checked and both shutdown paths were exercised on Linux against an isolated PGlite database. A new native Windows run remains required.
+
 The process must exit zero, all closure tests and smoke checks must pass, and result.json must report testsPassed=true and cleanupSucceeded=true. Check server.txt for the actual PostgreSQL version used.
 
 This verifies the migration chain and closure suite against a native local server and its filesystem. It is not the separate 14-script legacy regression matrix, exhaustive domain concurrency coverage, a Supabase-storage test, or deployment approval. Live Supabase/private bucket behavior, Gemini availability, real email delivery and deployment cookie/proxy behavior remain separate gates.

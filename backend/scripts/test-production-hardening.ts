@@ -12,13 +12,23 @@ const rejected = spawnSync(process.execPath, ['-e', "require('./dist/config/env.
   stdio: 'ignore', timeout: 5000,
 });
 assert.equal(rejected.status, 1, 'Production refuses weak secrets');
-const child = spawn(process.execPath, ['dist/server.js'], {
+// Windows kill(SIGTERM) force-terminates the process. This test-only launcher
+// invokes the real signal handler over IPC; production server code stays unchanged.
+const windowsShutdown = process.platform === 'win32';
+const serverArgs = windowsShutdown ? ['-e', `
+  require('./dist/server.js');
+  process.once('message', message => {
+    if (message === 'integrum-test-shutdown') process.emit('SIGTERM');
+  });
+`] : ['dist/server.js'];
+const child = spawn(process.execPath, serverArgs, {
   env: { ...process.env, NODE_ENV: 'production', PORT: '5099', TRUST_PROXY_HOPS: '0',
     JWT_ACCESS_SECRET: randomBytes(32).toString('hex'), JWT_REFRESH_SECRET: randomBytes(32).toString('hex') },
-  stdio: ['ignore', 'pipe', 'pipe'],
+  stdio: windowsShutdown ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'],
 });
 const exited = once(child, 'exit');
 let output = '';
+assert(child.stdout && child.stderr, 'Compiled server output pipes exist');
 child.stdout.on('data', data => { output += data.toString(); });
 child.stderr.on('data', () => {});
 const base = 'http://127.0.0.1:5099/api/v1';
@@ -48,11 +58,22 @@ try {
   assert.equal(status, 429, 'Production auth rate limit is enforced');
   console.log('PASS: compiled production server, database health, headers, authentication, body limits and rate limiting');
 } finally {
-  child.kill('SIGTERM');
   const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
-  const [code] = await exited;
-  clearTimeout(timer);
-  assert.equal(code, 0, 'Compiled server shuts down cleanly');
+  try {
+    if (windowsShutdown) {
+      await new Promise<void>((resolve, reject) => {
+        child.send('integrum-test-shutdown', error => error ? reject(error) : resolve());
+      });
+    } else {
+      child.kill('SIGTERM');
+    }
+    const [code, signal] = await exited;
+    assert.equal(signal, null, 'Compiled server was not forcibly terminated');
+    assert.equal(code, 0, 'Compiled server shuts down cleanly');
+    console.log('PASS: compiled server shutdown handler completed cleanly');
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 }
