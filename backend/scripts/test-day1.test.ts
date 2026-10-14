@@ -785,6 +785,71 @@ test('day-one HTTP and persistence regressions', async t => {
       const saved = await prisma.task.findUniqueOrThrow({ where: { id: task.id } });
       assert.equal(saved.studyPlanId, own.id); assert.equal(saved.title, 'Own task');
     });
+    await t.test('W06: task omission vs clearing semantics preserves omitted fields and clears nullable fields', async () => {
+      const initialDue = '2026-11-01T12:00:00.000Z';
+      const created = await create('/tasks', a.token, {
+        title: 'Initial title',
+        description: 'Initial description',
+        dueDate: initialDue,
+        priority: 'HIGH',
+        studyPlanId: own.id,
+      });
+      assert.equal(created.title, 'Initial title');
+      assert.equal(created.description, 'Initial description');
+      assert.equal(created.dueDate, initialDue);
+      assert.equal(created.studyPlanId, own.id);
+
+      // 1. Omission preserves existing values
+      const patchOmitted = await req('PATCH', `/tasks/${created.id}`, a.token, {
+        title: 'Updated title only',
+      });
+      assert.equal(patchOmitted.status, 200);
+      const omittedData = (await patchOmitted.json() as any).data;
+      assert.equal(omittedData.title, 'Updated title only');
+      assert.equal(omittedData.description, 'Initial description');
+      assert.equal(omittedData.dueDate, initialDue);
+      assert.equal(omittedData.studyPlanId, own.id);
+
+      // 2. Explicit null clears nullable fields
+      const patchClear = await req('PATCH', `/tasks/${created.id}`, a.token, {
+        description: null,
+        dueDate: null,
+        studyPlanId: null,
+      });
+      assert.equal(patchClear.status, 200);
+      const clearedData = (await patchClear.json() as any).data;
+      assert.equal(clearedData.title, 'Updated title only');
+      assert.equal(clearedData.description, null);
+      assert.equal(clearedData.dueDate, null);
+      assert.equal(clearedData.studyPlanId, null);
+
+      const dbRow = await prisma.task.findUniqueOrThrow({ where: { id: created.id } });
+      assert.equal(dbRow.description, null);
+      assert.equal(dbRow.dueDate, null);
+      assert.equal(dbRow.studyPlanId, null);
+
+      // 3. Valid values replace cleared values
+      const replacedDue = '2026-12-01T00:00:00.000Z';
+      const patchReplace = await req('PATCH', `/tasks/${created.id}`, a.token, {
+        description: 'New description',
+        dueDate: replacedDue,
+        studyPlanId: own.id,
+      });
+      assert.equal(patchReplace.status, 200);
+      const replacedData = (await patchReplace.json() as any).data;
+      assert.equal(replacedData.description, 'New description');
+      assert.equal(replacedData.dueDate, replacedDue);
+      assert.equal(replacedData.studyPlanId, own.id);
+
+      // 4. Foreign study-plan link still rejected with 404
+      assert.equal((await req('PATCH', `/tasks/${created.id}`, a.token, { studyPlanId: other.id })).status, 404);
+
+      // 5. Ownership isolation: student B cannot update or clear student A's task
+      assert.equal((await req('PATCH', `/tasks/${created.id}`, b.token, { description: null })).status, 404);
+
+      // Cleanup
+      await prisma.task.delete({ where: { id: created.id } }).catch(() => {});
+    });
     await t.test('private note bytes, access isolation and replacement cleanup', async () => {
       const r = await upload(`/notes/${note.id}/upload`, a.token); assert.equal(r.status, 200);
       const old = (await r.json() as any).data.fileId;

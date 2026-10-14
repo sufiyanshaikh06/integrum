@@ -1,27 +1,30 @@
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
+import { CreateTaskInput, UpdateTaskInput } from '../schemas/task.schema.js';
 
 export const taskService = {
-  async verifyStudyPlanOwnership(studentProfileId: string, studyPlanId?: string) {
-    if (studyPlanId === undefined) return;
+  async verifyStudyPlanOwnership(studentProfileId: string, studyPlanId?: string | null) {
+    if (!studyPlanId) return;
     const plan = await prisma.studyPlan.findFirst({
       where: { id: studyPlanId, studentProfileId }, select: { id: true },
     });
     if (!plan) throw ApiError.notFound('Study plan not found or does not belong to you');
   },
 
-  async createTask(studentProfileId: string, data: any) {
+  async createTask(studentProfileId: string, data: CreateTaskInput) {
     await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
+    const taskData: Parameters<typeof prisma.task.create>[0]['data'] = {
+      studentProfileId,
+      title: data.title,
+      description: data.description ?? null,
+      dueDate: data.dueDate ? new Date(data.dueDate) : null,
+      studyPlanId: data.studyPlanId ?? null,
+    };
+    if (data.priority !== undefined) taskData.priority = data.priority;
+    if (data.status !== undefined) taskData.status = data.status;
+
     return prisma.task.create({
-      data: {
-        studentProfileId,
-        title: data.title,
-        description: data.description,
-        dueDate: data.dueDate ? new Date(data.dueDate) : null,
-        priority: data.priority,
-        status: data.status,
-        studyPlanId: data.studyPlanId,
-      },
+      data: taskData,
     });
   },
 
@@ -58,12 +61,19 @@ export const taskService = {
     return task;
   },
 
-  async updateTask(studentProfileId: string, taskId: string, data: any) {
+  async updateTask(studentProfileId: string, taskId: string, data: UpdateTaskInput) {
     await this.getTaskById(studentProfileId, taskId);
 
     await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
 
-    const updateData: any = {};
+    const updateData: {
+      title?: string;
+      description?: string | null;
+      dueDate?: Date | null;
+      priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+      status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+      studyPlanId?: string | null;
+    } = {};
     if (data.title !== undefined) updateData.title = data.title;
     if (data.description !== undefined) updateData.description = data.description;
     if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
