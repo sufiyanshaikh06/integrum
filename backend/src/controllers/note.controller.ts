@@ -64,21 +64,41 @@ export const uploadNoteFile = asyncHandler(async (req: Request, res: Response) =
 
   const note = await noteService.getNoteById(studentProfileId, req.params.noteId as string);
 
-  // Magic-byte validation
-  const { fileTypeFromBuffer } = await import('file-type');
-  const fileTypeResult = await fileTypeFromBuffer(req.file.buffer);
-  const allowedMimes = new Set([
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/vnd.ms-powerpoint',
-    'application/x-cfb', // .ppt CFBF container
-  ]);
-  if (!fileTypeResult || !allowedMimes.has(fileTypeResult.mime)) {
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  const allowedExtensions = new Set(['.pdf', '.docx', '.pptx', '.ppt']);
+  if (!allowedExtensions.has(ext)) {
     throw ApiError.badRequest('File type not allowed. Accepted: PDF, DOCX, PPT, PPTX');
   }
 
-  const ext = path.extname(req.file.originalname).toLowerCase() || '.' + (fileTypeResult.ext ?? 'bin');
+  // Magic-byte and deep format validation
+  const { fileTypeFromBuffer } = await import('file-type');
+  const fileTypeResult = await fileTypeFromBuffer(req.file.buffer);
+  if (!fileTypeResult) {
+    throw ApiError.badRequest('File type not allowed. Accepted: PDF, DOCX, PPT, PPTX');
+  }
+
+  // Verify that the detected format strictly matches the declared extension
+  if (ext === '.pdf') {
+    if (fileTypeResult.mime !== 'application/pdf') {
+      throw ApiError.badRequest('File type not allowed. Accepted: PDF, DOCX, PPT, PPTX');
+    }
+  } else if (ext === '.docx') {
+    if (fileTypeResult.mime !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      throw ApiError.badRequest('File type not allowed. Accepted: PDF, DOCX, PPT, PPTX');
+    }
+  } else if (ext === '.pptx') {
+    if (fileTypeResult.mime !== 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+      throw ApiError.badRequest('File type not allowed. Accepted: PDF, DOCX, PPT, PPTX');
+    }
+  } else if (ext === '.ppt') {
+    const isPptMime = fileTypeResult.mime === 'application/vnd.ms-powerpoint' || fileTypeResult.mime === 'application/x-cfb';
+    const hasPptStream = req.file.buffer.includes(Buffer.from('PowerPoint Document', 'utf16le')) ||
+                         req.file.buffer.includes(Buffer.from('Current User', 'utf16le'));
+    if (!isPptMime || !hasPptStream) {
+      throw ApiError.badRequest('File type not allowed. Accepted: PDF, DOCX, PPT, PPTX');
+    }
+  }
+
   const storagePath = `notes/${studentProfileId}/${Date.now()}-${crypto.randomUUID()}${ext}`;
 
   const provider = getStorageProvider();

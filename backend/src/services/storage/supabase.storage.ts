@@ -10,7 +10,7 @@ export class SupabaseStorageProvider implements StorageProvider {
 
   constructor() {
     if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
-      throw ApiError.internal('Supabase storage credentials not configured');
+      throw ApiError.internal('Storage credentials not configured');
     }
     this.storageClient = new StorageClient(`${env.SUPABASE_URL}/storage/v1`, {
       apikey: env.SUPABASE_SERVICE_KEY!,
@@ -19,29 +19,46 @@ export class SupabaseStorageProvider implements StorageProvider {
   }
 
   async upload(filePath: string, buffer: Buffer, mimeType: string): Promise<string> {
-    const { error } = await this.storageClient
-      .from(BUCKET)
-      .upload(filePath, buffer, { contentType: mimeType, upsert: true });
+    try {
+      const { error } = await this.storageClient
+        .from(BUCKET)
+        .upload(filePath, buffer, { contentType: mimeType, upsert: true });
 
-    if (error) {
-      throw ApiError.internal(`Supabase upload failed: ${error.message}`);
+      if (error) {
+        throw new ApiError(503, 'Storage service is temporarily unavailable');
+      }
+      return filePath;
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(503, 'Storage service is temporarily unavailable');
     }
-    return filePath;
   }
 
   async getSignedUrl(fileId: string, expiresInSeconds: number): Promise<string> {
-    const { data, error } = await this.storageClient
-      .from(BUCKET)
-      .createSignedUrl(fileId, expiresInSeconds);
+    try {
+      const { data, error } = await this.storageClient
+        .from(BUCKET)
+        .createSignedUrl(fileId, expiresInSeconds);
 
-    if (error || !data?.signedUrl) {
-      throw ApiError.internal(`Failed to generate signed URL: ${error?.message ?? 'unknown'}`);
+      if (error || !data?.signedUrl) {
+        throw new ApiError(503, 'Storage service is temporarily unavailable');
+      }
+      return data.signedUrl;
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(503, 'Storage service is temporarily unavailable');
     }
-    return data.signedUrl;
   }
 
   async delete(fileId: string): Promise<void> {
-    const { error } = await this.storageClient.from(BUCKET).remove([fileId]);
-    if (error) throw ApiError.internal('Storage deletion failed');
+    try {
+      const { error } = await this.storageClient.from(BUCKET).remove([fileId]);
+      if (error) {
+        throw new ApiError(503, 'Storage service is temporarily unavailable');
+      }
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(503, 'Storage service is temporarily unavailable');
+    }
   }
 }

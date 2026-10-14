@@ -53,8 +53,8 @@ test('day-one HTTP and persistence regressions', async t => {
     u.profileId = (await (await req('GET', '/users/me', u.token)).json() as any).data.studentProfile.id;
     return u;
   }
-  async function upload(route: string, token: string) {
-    const f = new FormData(); f.append('file', new Blob([pdf]), 'document.pdf');
+  async function upload(route: string, token: string, customBuffer: Buffer = pdf, filename = 'document.pdf') {
+    const f = new FormData(); f.append('file', new Blob([new Uint8Array(customBuffer)]), filename);
     return fetch(base + route, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: f });
   }
   const files = (id: string, folder = 'notes') => readdir(path.resolve('uploads', folder, id)).catch(() => []);
@@ -826,6 +826,110 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal((await req('DELETE', `/notes/${note.id}`, a.token)).status, 204);
       await assert.rejects(readFile(path.resolve('uploads', id)), { code: 'ENOENT' });
     });
+    await t.test('note upload format validation accepts valid formats and rejects renamed invalid files and generic CFB', async () => {
+      function createZip(files: Array<{ name: string; content?: string }>) {
+        const parts: Buffer[] = [];
+        const cdParts: Buffer[] = [];
+        let offset = 0;
+        for (const { name, content } of files) {
+          const nameBuf = Buffer.from(name, 'utf8');
+          const contentBuf = Buffer.from(content || '', 'utf8');
+          const header = Buffer.alloc(30);
+          header.writeUInt32LE(0x04034b50, 0);
+          header.writeUInt16LE(20, 4);
+          header.writeUInt16LE(0, 6);
+          header.writeUInt16LE(0, 8);
+          header.writeUInt16LE(0, 10);
+          header.writeUInt16LE(0, 12);
+          header.writeUInt32LE(0, 14);
+          header.writeUInt32LE(contentBuf.length, 18);
+          header.writeUInt32LE(contentBuf.length, 22);
+          header.writeUInt16LE(nameBuf.length, 26);
+          header.writeUInt16LE(0, 28);
+          parts.push(header, nameBuf, contentBuf);
+
+          const cd = Buffer.alloc(46);
+          cd.writeUInt32LE(0x02014b50, 0);
+          cd.writeUInt16LE(20, 4);
+          cd.writeUInt16LE(20, 6);
+          cd.writeUInt16LE(0, 8);
+          cd.writeUInt16LE(0, 10);
+          cd.writeUInt16LE(0, 12);
+          cd.writeUInt16LE(0, 14);
+          cd.writeUInt32LE(0, 16);
+          cd.writeUInt32LE(contentBuf.length, 20);
+          cd.writeUInt32LE(contentBuf.length, 24);
+          cd.writeUInt16LE(nameBuf.length, 28);
+          cd.writeUInt16LE(0, 30);
+          cd.writeUInt16LE(0, 32);
+          cd.writeUInt16LE(0, 34);
+          cd.writeUInt16LE(0, 36);
+          cd.writeUInt32LE(0, 38);
+          cd.writeUInt32LE(offset, 42);
+          cdParts.push(cd, nameBuf);
+
+          offset += header.length + nameBuf.length + contentBuf.length;
+        }
+        const cdOffset = offset;
+        const cdBuf = Buffer.concat(cdParts);
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0);
+        eocd.writeUInt16LE(0, 4);
+        eocd.writeUInt16LE(0, 6);
+        eocd.writeUInt16LE(files.length, 8);
+        eocd.writeUInt16LE(files.length, 10);
+        eocd.writeUInt32LE(cdBuf.length, 12);
+        eocd.writeUInt32LE(cdOffset, 16);
+        eocd.writeUInt16LE(0, 20);
+        return Buffer.concat([...parts, cdBuf, eocd]);
+      }
+
+      const validDocx = createZip([
+        { name: '[Content_Types].xml', content: '<?xml version="1.0"?><Types><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+        { name: 'word/document.xml', content: '<w:document/>' },
+      ]);
+      const validPptx = createZip([
+        { name: '[Content_Types].xml', content: '<?xml version="1.0"?><Types><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>' },
+        { name: 'ppt/presentation.xml', content: '<p:presentation/>' },
+      ]);
+      const genericZip = createZip([
+        { name: 'sample.txt', content: 'generic zip file content' },
+      ]);
+      const validPpt = Buffer.concat([
+        Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+        Buffer.alloc(100),
+        Buffer.from('PowerPoint Document', 'utf16le'),
+        Buffer.alloc(100),
+      ]);
+      const genericCfb = Buffer.concat([
+        Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+        Buffer.alloc(504),
+      ]);
+
+      const testNote = await create('/notes', a.token, { subjectId: subject.id, title: 'Format validation document' });
+      try {
+        // Valid formats accepted
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, validDocx, 'lecture.docx')).status, 200);
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, validPptx, 'slides.pptx')).status, 200);
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, validPpt, 'legacy.ppt')).status, 200);
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, pdf, 'doc.pdf')).status, 200);
+
+        // Generic CFB without PowerPoint stream must be rejected with 400
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, genericCfb, 'fake.ppt')).status, 400);
+
+        // Generic zip renamed to docx/pptx must be rejected with 400
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, genericZip, 'fake.docx')).status, 400);
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, genericZip, 'fake.pptx')).status, 400);
+
+        // Mismatched extension/MIME (PDF content named docx) must be rejected with 400
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, pdf, 'fake.docx')).status, 400);
+
+        // Plain text named pdf must be rejected with 400
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, Buffer.from('hello world plain text'), 'fake.pdf')).status, 400);
+      } finally {
+        await prisma.note.delete({ where: { id: testNote.id } }).catch(() => {});
+      }
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });
@@ -933,5 +1037,44 @@ test('Resend adapter request and failure sanitization without real delivery', as
     });
   } finally {
     env.EMAIL_PROVIDER = previous.provider; env.RESEND_API_KEY = previous.key; env.EMAIL_FROM = previous.from;
+  }
+});
+
+test('Supabase storage provider request and failure sanitization without real bucket', async () => {
+  const oldUrl = env.SUPABASE_URL, oldKey = env.SUPABASE_SERVICE_KEY;
+  env.SUPABASE_URL = 'https://supabase.example.com'; env.SUPABASE_SERVICE_KEY = 'secret-service-key-12345';
+  try {
+    const { SupabaseStorageProvider } = await import('../src/services/storage/supabase.storage.js');
+    const provider = new SupabaseStorageProvider();
+    const client = (provider as any).storageClient;
+
+    client.from = () => ({
+      upload: async () => ({ error: { message: 'upstream supabase error with https://supabase.example.com and secret-service-key-12345' } }),
+      createSignedUrl: async () => ({ error: { message: 'upstream signed-url error with secret token' }, data: null }),
+      remove: async () => ({ error: { message: 'upstream delete error' } }),
+    });
+
+    await assert.rejects(provider.upload('notes/test.pdf', Buffer.from('test'), 'application/pdf'), (err: any) => {
+      assert.equal(err.statusCode, 503);
+      assert.equal(err.message, 'Storage service is temporarily unavailable');
+      assert(!JSON.stringify(err).includes('secret-service-key'));
+      assert(!JSON.stringify(err).includes('supabase.example.com'));
+      return true;
+    });
+
+    await assert.rejects(provider.getSignedUrl('notes/test.pdf', 60), (err: any) => {
+      assert.equal(err.statusCode, 503);
+      assert.equal(err.message, 'Storage service is temporarily unavailable');
+      assert(!JSON.stringify(err).includes('secret token'));
+      return true;
+    });
+
+    await assert.rejects(provider.delete('notes/test.pdf'), (err: any) => {
+      assert.equal(err.statusCode, 503);
+      assert.equal(err.message, 'Storage service is temporarily unavailable');
+      return true;
+    });
+  } finally {
+    env.SUPABASE_URL = oldUrl; env.SUPABASE_SERVICE_KEY = oldKey;
   }
 });
