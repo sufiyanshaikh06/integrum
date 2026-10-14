@@ -185,6 +185,7 @@ export const adminAcademicService = {
 
   async deleteDepartment(actorUserId: string, id: string, ipAddress?: string) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Department" WHERE "id" = ${id} FOR UPDATE`;
       const department = await tx.department.findUnique({
         where: { id },
         include: { _count: { select: { courses: true } } },
@@ -192,10 +193,20 @@ export const adminAcademicService = {
 
       if (!department) throw ApiError.notFound('Department not found');
 
-      // Restrictive Deletion Guard: Cannot delete department containing courses
+      // Restrictive Deletion Guard 1: Cannot delete department containing courses
       if (department._count.courses > 0) {
         throw ApiError.conflict(
           `Cannot delete department "${department.name}" because it contains ${department._count.courses} course(s). Please delete or reassign all courses first.`
+        );
+      }
+
+      // Restrictive Deletion Guard 2: Cannot delete department with targeted academic resources
+      const resourceCount = await tx.academicResource.count({
+        where: { departmentId: id },
+      });
+      if (resourceCount > 0) {
+        throw ApiError.conflict(
+          `Cannot delete department "${department.name}" because it contains ${resourceCount} targeted academic resource(s). Please delete or reassign all resources first.`
         );
       }
 
@@ -213,7 +224,7 @@ export const adminAcademicService = {
       });
 
       return deleted;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -399,6 +410,16 @@ export const adminAcademicService = {
       if (course._count.students > 0) {
         throw ApiError.conflict(
           `Cannot delete course "${course.name}" because ${course._count.students} student(s) are currently enrolled in it.`
+        );
+      }
+
+      // Restrictive Deletion Guard 3: Cannot delete course with targeted academic resources
+      const resourceCount = await tx.academicResource.count({
+        where: { courseId: id },
+      });
+      if (resourceCount > 0) {
+        throw ApiError.conflict(
+          `Cannot delete course "${course.name}" because it contains ${resourceCount} targeted academic resource(s). Please delete or reassign all resources first.`
         );
       }
 

@@ -194,6 +194,113 @@ test('day-one HTTP and persistence regressions', async t => {
         await prisma.academicTerm.deleteMany({ where: { id: { in: [term.id, inactive.id] } } });
       }
     });
+    await t.test('catalog deletion cannot broaden targeted resource visibility and rolls back', async () => {
+      const stamp = randomUUID();
+      const login = await req('POST', '/auth/login', '', { email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD });
+      assert.equal(login.status, 200);
+      const adminToken = (await login.json() as any).data.accessToken;
+      const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+
+      const deptA = await prisma.department.create({ data: { name: `Dept A ${stamp}`, code: `DA${stamp.slice(0, 8)}` } });
+      const deptB = await prisma.department.create({ data: { name: `Dept B ${stamp}`, code: `DB${stamp.slice(0, 8)}` } });
+      const courseA = await prisma.course.create({ data: { departmentId: deptA.id, name: `Course A ${stamp}`, code: `CA${stamp.slice(0, 8)}` } });
+      const courseB = await prisma.course.create({ data: { departmentId: deptB.id, name: `Course B ${stamp}`, code: `CB${stamp.slice(0, 8)}` } });
+
+      await req('PATCH', `/admin/users/${a.id}/enrollment`, adminToken, { courseId: courseA.id });
+      await req('PATCH', `/admin/users/${b.id}/enrollment`, adminToken, { courseId: courseB.id });
+
+      const resCourse = await prisma.academicResource.create({
+        data: {
+          title: `Course Resource ${stamp}`,
+          fileUrl: `https://example.com/res-${stamp}.pdf`,
+          fileType: 'PDF',
+          category: 'SYLLABUS',
+          courseId: courseA.id,
+          departmentId: deptA.id,
+          uploadedByUserId: adminUser.id,
+        },
+      });
+
+      const resDept = await prisma.academicResource.create({
+        data: {
+          title: `Dept Resource ${stamp}`,
+          fileUrl: `https://example.com/dept-${stamp}.pdf`,
+          fileType: 'PDF',
+          category: 'SYLLABUS',
+          departmentId: deptA.id,
+          uploadedByUserId: adminUser.id,
+        },
+      });
+
+      try {
+        const feedA = await req('GET', '/content/resources', a.token);
+        assert.equal(feedA.status, 200);
+        const itemsA = (await feedA.json() as any).data;
+        assert(itemsA.some((r: any) => r.id === resCourse.id));
+        assert(itemsA.some((r: any) => r.id === resDept.id));
+
+        const feedB = await req('GET', '/content/resources', b.token);
+        assert.equal(feedB.status, 200);
+        const itemsB = (await feedB.json() as any).data;
+        assert(!itemsB.some((r: any) => r.id === resCourse.id), 'Unrelated student must not see course resource');
+        assert(!itemsB.some((r: any) => r.id === resDept.id), 'Unrelated student must not see dept resource');
+
+        await req('PATCH', `/admin/users/${a.id}/enrollment`, adminToken, { courseId: null });
+
+        const delCourseRes = await req('DELETE', `/admin/academics/courses/${courseA.id}`, adminToken);
+        assert.equal(delCourseRes.status, 409, 'Deleting course with targeted resource must be rejected with 409');
+        await assert.rejects(
+          adminAcademicService.deleteCourse(adminUser.id, courseA.id),
+          (err: any) => err.statusCode === 409 && err.message.includes('targeted academic resource'),
+          'Service call must reject with 409 and descriptive message'
+        );
+
+        const courseCheck = await prisma.course.findUnique({ where: { id: courseA.id } });
+        assert.notEqual(courseCheck, null, 'Course must not be deleted');
+        const resCourseCheck = await prisma.academicResource.findUniqueOrThrow({ where: { id: resCourse.id } });
+        assert.equal(resCourseCheck.courseId, courseA.id, 'Resource courseId must not be set to null');
+
+        const feedBAfterCourse = await req('GET', '/content/resources', b.token);
+        const itemsBAfterCourse = (await feedBAfterCourse.json() as any).data;
+        assert(!itemsBAfterCourse.some((r: any) => r.id === resCourse.id), 'Unrelated student must not see resource after failed course deletion');
+
+        // Delete resCourse and delete courseA cleanly
+        await prisma.academicResource.delete({ where: { id: resCourse.id } });
+        const delCourseSuccess = await req('DELETE', `/admin/academics/courses/${courseA.id}`, adminToken);
+        assert.equal(delCourseSuccess.status, 200, 'Deleting course after its resource is removed must succeed');
+
+        // Now deptA has 0 courses, but has resDept targeted to it. Deleting deptA MUST FAIL with 409
+        const delDeptRes = await req('DELETE', `/admin/academics/departments/${deptA.id}`, adminToken);
+        assert.equal(delDeptRes.status, 409, 'Deleting department with targeted resource must be rejected with 409');
+        await assert.rejects(
+          adminAcademicService.deleteDepartment(adminUser.id, deptA.id),
+          (err: any) => err.statusCode === 409 && err.message.includes('targeted academic resource'),
+          'Service call must reject with 409 and descriptive message'
+        );
+
+        const deptCheck = await prisma.department.findUnique({ where: { id: deptA.id } });
+        assert.notEqual(deptCheck, null, 'Department must not be deleted');
+        const resDeptCheck = await prisma.academicResource.findUniqueOrThrow({ where: { id: resDept.id } });
+        assert.equal(resDeptCheck.departmentId, deptA.id, 'Resource departmentId must not be set to null');
+
+        const feedBAfterDept = await req('GET', '/content/resources', b.token);
+        const itemsBAfterDept = (await feedBAfterDept.json() as any).data;
+        assert(!itemsBAfterDept.some((r: any) => r.id === resDept.id), 'Unrelated student must not see resource after failed dept deletion');
+
+        // Now delete resDept
+        await prisma.academicResource.delete({ where: { id: resDept.id } });
+
+        // Deleting deptA should now succeed
+        const delDeptSuccess = await req('DELETE', `/admin/academics/departments/${deptA.id}`, adminToken);
+        assert.equal(delDeptSuccess.status, 200, 'Deleting department after resource removal must succeed');
+      } finally {
+        await req('PATCH', `/admin/users/${a.id}/enrollment`, adminToken, { courseId: null }).catch(() => {});
+        await req('PATCH', `/admin/users/${b.id}/enrollment`, adminToken, { courseId: null }).catch(() => {});
+        await prisma.academicResource.deleteMany({ where: { id: { in: [resCourse.id, resDept.id] } } }).catch(() => {});
+        await prisma.course.deleteMany({ where: { id: { in: [courseA.id, courseB.id] } } }).catch(() => {});
+        await prisma.department.deleteMany({ where: { id: { in: [deptA.id, deptB.id] } } }).catch(() => {});
+      }
+    });
     await t.test('report filters consistently scope cohorts, dates and UTC trends', async () => {
       const stamp = randomUUID();
       const inside = new Date('2001-01-01T00:30:00Z'), outside = new Date('2000-12-31T23:30:00Z');
