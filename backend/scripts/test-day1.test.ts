@@ -1076,6 +1076,47 @@ test('day-one HTTP and persistence regressions', async t => {
       // Cleanup
       await prisma.calendarEvent.delete({ where: { id: ev1.id } }).catch(() => {});
     });
+
+    await t.test('W15: content and catalog query validation, enum matching, array rejection and boolean coercion', async () => {
+      const dummyId = randomUUID();
+
+      // 1. Array query parameters rejected with 400
+      assert.equal((await req('GET', '/content/announcements?type[]=ANNOUNCEMENT', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/announcements?priority[]=HIGH', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/events?category[]=EXAM', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/events?upcomingOnly[]=true', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/resources?category[]=SYLLABUS', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/courses?departmentId[]=not-a-string', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?courseId[]=not-a-string', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?semesterNumber[]=1', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/terms?isActive[]=true', a.token)).status, 400);
+
+      // 2. Invalid enum values rejected with 400
+      assert.equal((await req('GET', '/content/announcements?type=INVALID_TYPE', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/announcements?priority=INVALID_PRIORITY', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/events?category=INVALID_CAT', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/events?upcomingOnly=maybe', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/resources?category=INVALID_RES_CAT', a.token)).status, 400);
+
+      // 3. Invalid catalog query parameters rejected with 400
+      assert.equal((await req('GET', '/catalog/courses?departmentId=not-a-uuid', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?courseId=not-a-uuid', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?semesterNumber=0', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?semesterNumber=-3', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?semesterNumber=abc', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/terms?isActive=unknown', a.token)).status, 400);
+
+      // 4. Valid filters & transformed booleans accepted with 200
+      assert.equal((await req('GET', '/content/announcements?type=ANNOUNCEMENT&priority=HIGH', a.token)).status, 200);
+      assert.equal((await req('GET', '/content/events?category=EXAM&upcomingOnly=true', a.token)).status, 200);
+      assert.equal((await req('GET', '/content/events?upcomingOnly=false', a.token)).status, 200);
+      assert.equal((await req('GET', '/content/resources?category=SYLLABUS', a.token)).status, 200);
+      assert.equal((await req('GET', '/catalog/departments', a.token)).status, 200);
+      assert.equal((await req('GET', `/catalog/courses?departmentId=${dummyId}`, a.token)).status, 200);
+      assert.equal((await req('GET', `/catalog/subjects?courseId=${dummyId}&semesterNumber=1`, a.token)).status, 200);
+      assert.equal((await req('GET', '/catalog/terms?isActive=true', a.token)).status, 200);
+      assert.equal((await req('GET', '/catalog/terms?isActive=false', a.token)).status, 200);
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });

@@ -4,6 +4,11 @@ import { prisma } from '../config/prisma.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { HTTP_STATUS } from '../constants/httpStatus.js';
+import {
+  GetCoursesQuery,
+  GetSubjectsQuery,
+  GetTermsQuery,
+} from '../schemas/catalog.schema.js';
 
 export const catalogController = {
   /**
@@ -35,14 +40,14 @@ export const catalogController = {
    * Returns list of degree programs / courses, optionally filtered by departmentId.
    */
   getCourses: asyncHandler(async (req: Request, res: Response) => {
-    const { departmentId, search } = req.query;
+    const { departmentId, search } = req.query as unknown as GetCoursesQuery;
 
     const where: Prisma.CourseWhereInput = {};
-    if (departmentId) where.departmentId = departmentId as string;
+    if (departmentId) where.departmentId = departmentId;
     if (search) {
       where.OR = [
-        { name: { contains: search as string, mode: 'insensitive' } },
-        { code: { contains: search as string, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { code: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -67,15 +72,15 @@ export const catalogController = {
    * Returns list of standard master subjects, optionally filtered by courseId and semesterNumber.
    */
   getSubjects: asyncHandler(async (req: Request, res: Response) => {
-    const { courseId, semesterNumber, search } = req.query;
+    const { courseId, semesterNumber, search } = req.query as unknown as GetSubjectsQuery;
 
     const where: Prisma.MasterSubjectWhereInput = {};
-    if (courseId) where.courseId = courseId as string;
-    if (semesterNumber) where.semesterNumber = Number(semesterNumber);
+    if (courseId) where.courseId = courseId;
+    if (semesterNumber !== undefined) where.semesterNumber = semesterNumber;
     if (search) {
       where.OR = [
-        { name: { contains: search as string, mode: 'insensitive' } },
-        { code: { contains: search as string, mode: 'insensitive' } },
+        { name: { contains: search, mode: 'insensitive' } },
+        { code: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -102,11 +107,11 @@ export const catalogController = {
    * Returns institutional academic terms, optionally filtered by isActive.
    */
   getTerms: asyncHandler(async (req: Request, res: Response) => {
-    const { isActive } = req.query;
+    const { isActive } = req.query as unknown as GetTermsQuery;
 
     const where: Prisma.AcademicTermWhereInput = {};
     if (isActive !== undefined) {
-      where.isActive = isActive === 'true';
+      where.isActive = isActive;
     }
 
     const terms = await prisma.academicTerm.findMany({
