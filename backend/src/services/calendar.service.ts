@@ -4,6 +4,9 @@ import { ApiError } from '../utils/ApiError.js';
 
 export const calendarService = {
   async createCalendarEvent(studentProfileId: string, data: CreateCalendarEventInput) {
+    if (data.endDate && new Date(data.endDate) < new Date(data.date)) {
+      throw ApiError.badRequest('End date must be greater than or equal to start date');
+    }
     return prisma.calendarEvent.create({
       data: {
         studentProfileId,
@@ -36,24 +39,47 @@ export const calendarService = {
   },
 
   async updateCalendarEvent(studentProfileId: string, eventId: string, data: UpdateCalendarEventInput) {
-    await this.getCalendarEventById(studentProfileId, eventId); // verify ownership
+    return prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: string; studentProfileId: string; date: Date; endDate: Date | null }>>`
+        SELECT "id", "studentProfileId", "date", "endDate"
+        FROM "CalendarEvent"
+        WHERE "id" = ${eventId}
+        FOR UPDATE
+      `;
 
-    const updateData: {
-      title?: string;
-      description?: string | null;
-      date?: Date;
-      endDate?: Date | null;
-      eventType?: 'CLASS' | 'EXAM' | 'HOLIDAY' | 'COLLEGE_EVENT';
-    } = {};
-    if (data.title !== undefined) updateData.title = data.title;
-    if (data.description !== undefined) updateData.description = data.description ?? null;
-    if (data.date !== undefined) updateData.date = new Date(data.date);
-    if (data.endDate !== undefined) updateData.endDate = data.endDate ? new Date(data.endDate) : null;
-    if (data.eventType !== undefined) updateData.eventType = data.eventType;
+      const event = locked[0];
+      if (!event || event.studentProfileId !== studentProfileId) {
+        throw ApiError.notFound('Calendar event not found');
+      }
 
-    return prisma.calendarEvent.update({
-      where: { id: eventId },
-      data: updateData,
+      const effectiveDate = data.date !== undefined ? new Date(data.date) : event.date;
+      const effectiveEndDate = data.endDate !== undefined
+        ? (data.endDate ? new Date(data.endDate) : null)
+        : event.endDate;
+
+      if (effectiveEndDate !== null && effectiveEndDate < effectiveDate) {
+        throw ApiError.badRequest('End date must be greater than or equal to start date');
+      }
+
+      const updateData: {
+        title?: string;
+        description?: string | null;
+        date?: Date;
+        endDate?: Date | null;
+        eventType?: 'CLASS' | 'EXAM' | 'HOLIDAY' | 'COLLEGE_EVENT';
+      } = {};
+      if (data.title !== undefined) updateData.title = data.title;
+      if (data.description !== undefined) updateData.description = data.description ?? null;
+      if (data.date !== undefined) updateData.date = effectiveDate;
+      if (data.endDate !== undefined) updateData.endDate = effectiveEndDate;
+      if (data.eventType !== undefined) updateData.eventType = data.eventType;
+
+      return tx.calendarEvent.update({
+        where: { id: eventId },
+        data: updateData,
+      });
+    }, {
+      isolationLevel: 'ReadCommitted',
     });
   },
 

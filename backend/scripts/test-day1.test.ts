@@ -930,6 +930,87 @@ test('day-one HTTP and persistence regressions', async t => {
         await prisma.note.delete({ where: { id: testNote.id } }).catch(() => {});
       }
     });
+
+    await t.test('W04: calendar event date range validation, clearing, ownership and concurrent serialization', async () => {
+      // 1. Equal start and end dates permitted on creation
+      const sameDate = '2026-10-15T10:00:00.000Z';
+      const ev1 = await create('/calendar', a.token, {
+        title: 'Meeting',
+        eventType: 'COLLEGE_EVENT',
+        date: sameDate,
+        endDate: sameDate,
+      });
+      assert.equal(ev1.date, sameDate);
+      assert.equal(ev1.endDate, sameDate);
+
+      // 2. Inverted dates on creation rejected with 400
+      const badCreate = await req('POST', '/calendar', a.token, {
+        title: 'Inverted',
+        eventType: 'EXAM',
+        date: '2026-10-15T12:00:00.000Z',
+        endDate: '2026-10-15T10:00:00.000Z',
+      });
+      assert.equal(badCreate.status, 400);
+
+      // 3. Ownership rejection: student B cannot view, edit, or delete student A's event (404)
+      assert.equal((await req('GET', `/calendar/${ev1.id}`, b.token)).status, 404);
+      assert.equal((await req('PATCH', `/calendar/${ev1.id}`, b.token, { title: 'Hack' })).status, 404);
+      assert.equal((await req('DELETE', `/calendar/${ev1.id}`, b.token)).status, 404);
+
+      // 4. Omitted fields remain unchanged
+      const patchTitle = await req('PATCH', `/calendar/${ev1.id}`, a.token, { title: 'Updated title' });
+      assert.equal(patchTitle.status, 200);
+      const patchTitleJson = await patchTitle.json() as any;
+      assert.equal(patchTitleJson.data.title, 'Updated title');
+      assert.equal(patchTitleJson.data.date, sameDate);
+      assert.equal(patchTitleJson.data.endDate, sameDate);
+
+      // 5. Clearing endDate with null is permitted
+      const clearEnd = await req('PATCH', `/calendar/${ev1.id}`, a.token, { endDate: null });
+      assert.equal(clearEnd.status, 200);
+      const clearEndJson = await clearEnd.json() as any;
+      assert.equal(clearEndJson.data.endDate, null);
+
+      // 6. Partial update validation against stored state
+      // Set baseline: date = 10:00, endDate = 12:00
+      const setRange = await req('PATCH', `/calendar/${ev1.id}`, a.token, {
+        date: '2026-10-15T10:00:00.000Z',
+        endDate: '2026-10-15T12:00:00.000Z',
+      });
+      assert.equal(setRange.status, 200);
+
+      // Partial date update pushing date past existing endDate (13:00 > 12:00) must return 400
+      const invalidDatePatch = await req('PATCH', `/calendar/${ev1.id}`, a.token, {
+        date: '2026-10-15T13:00:00.000Z',
+      });
+      assert.equal(invalidDatePatch.status, 400);
+
+      // Partial endDate update pulling endDate before existing date (09:00 < 10:00) must return 400
+      const invalidEndPatch = await req('PATCH', `/calendar/${ev1.id}`, a.token, {
+        endDate: '2026-10-15T09:00:00.000Z',
+      });
+      assert.equal(invalidEndPatch.status, 400);
+
+      // 7. Competing partial date updates serialized:
+      // Current DB state: date = 10:00, endDate = 12:00
+      // Request 1 wants date = 11:30 (valid against old endDate 12:00)
+      // Request 2 wants endDate = 11:00 (valid against old date 10:00)
+      // Together they conflict (11:30 > 11:00).
+      // Row lock serialization ensures one commits and the second fails with 400.
+      const [res1, res2] = await Promise.all([
+        req('PATCH', `/calendar/${ev1.id}`, a.token, { date: '2026-10-15T11:30:00.000Z' }),
+        req('PATCH', `/calendar/${ev1.id}`, a.token, { endDate: '2026-10-15T11:00:00.000Z' }),
+      ]);
+      const statuses = [res1.status, res2.status].sort();
+      assert.deepEqual(statuses, [200, 400]);
+
+      // Verify DB row remains valid (endDate >= date)
+      const finalRow = await prisma.calendarEvent.findUniqueOrThrow({ where: { id: ev1.id } });
+      assert(finalRow.endDate! >= finalRow.date);
+
+      // Cleanup
+      await prisma.calendarEvent.delete({ where: { id: ev1.id } }).catch(() => {});
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });
