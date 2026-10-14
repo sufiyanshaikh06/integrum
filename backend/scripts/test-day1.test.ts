@@ -1117,6 +1117,42 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal((await req('GET', '/catalog/terms?isActive=true', a.token)).status, 200);
       assert.equal((await req('GET', '/catalog/terms?isActive=false', a.token)).status, 200);
     });
+
+    await t.test('W18: authentication isolates token errors from database outages and preserves inactive 403', async () => {
+      // 1. Invalid or expired token produces 401
+      const badTokenRes = await req('GET', '/users/me', 'invalid.token.here');
+      assert.equal(badTokenRes.status, 401);
+      const badTokenJson = await badTokenRes.json() as any;
+      assert.equal(badTokenJson.message, 'Access token is invalid or expired');
+
+      // 2. Database outage during user lookup in authenticate middleware produces 503, never 401
+      const originalFindUnique = prisma.user.findUnique;
+      try {
+        prisma.user.findUnique = (() => {
+          throw new Error('Database connection failed: ECONNREFUSED');
+        }) as any;
+        const dbDownRes = await req('GET', '/users/me', a.token);
+        assert.equal(dbDownRes.status, 503);
+        const dbDownJson = await dbDownRes.json() as any;
+        assert.equal(dbDownJson.message, 'Database service is temporarily unavailable');
+      } finally {
+        prisma.user.findUnique = originalFindUnique;
+      }
+
+      // 3. Database outage during session lookup in authenticate middleware produces 503, never 401
+      const originalFindFirst = prisma.authSession.findFirst;
+      try {
+        prisma.authSession.findFirst = (() => {
+          throw new Error('Database connection timeout: ETIMEDOUT');
+        }) as any;
+        const dbDownRes = await req('GET', '/users/me', a.token);
+        assert.equal(dbDownRes.status, 503);
+        const dbDownJson = await dbDownRes.json() as any;
+        assert.equal(dbDownJson.message, 'Database service is temporarily unavailable');
+      } finally {
+        prisma.authSession.findFirst = originalFindFirst;
+      }
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });
