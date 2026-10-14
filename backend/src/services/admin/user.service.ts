@@ -359,6 +359,15 @@ export const adminUserService = {
     ipAddress?: string
   ) {
     return prisma.$transaction(async (tx) => {
+      // Safety guard 1: Cannot deactivate own account
+      if (actorUserId === targetUserId && !data.isActive) {
+        throw ApiError.badRequest('You cannot deactivate your own administrator account');
+      }
+
+      if (!data.isActive) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('admin_active_guard'))`;
+      }
+
       const targetUser = await tx.user.findUnique({
         where: { id: targetUserId },
         select: { id: true, email: true, role: true, isActive: true },
@@ -366,11 +375,6 @@ export const adminUserService = {
 
       if (!targetUser) {
         throw ApiError.notFound('User not found');
-      }
-
-      // Safety guard 1: Cannot deactivate own account
-      if (actorUserId === targetUserId && !data.isActive) {
-        throw ApiError.badRequest('You cannot deactivate your own administrator account');
       }
 
       // Safety guard 2: Cannot deactivate the last active admin
@@ -423,7 +427,7 @@ export const adminUserService = {
       });
 
       return updated;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   /**
@@ -438,6 +442,15 @@ export const adminUserService = {
     ipAddress?: string
   ) {
     return prisma.$transaction(async (tx) => {
+      // Safety guard 1: Cannot change own role
+      if (actorUserId === targetUserId) {
+        throw ApiError.badRequest('You cannot modify your own administrator role');
+      }
+
+      if (data.role === 'STUDENT') {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('admin_active_guard'))`;
+      }
+
       const targetUser = await tx.user.findUnique({
         where: { id: targetUserId },
         include: {
@@ -448,11 +461,6 @@ export const adminUserService = {
 
       if (!targetUser) {
         throw ApiError.notFound('User not found');
-      }
-
-      // Safety guard 1: Cannot change own role
-      if (actorUserId === targetUserId) {
-        throw ApiError.badRequest('You cannot modify your own administrator role');
       }
 
       // If already at target role, return without modifications
@@ -512,17 +520,19 @@ export const adminUserService = {
 
       // ─── DEMOTION: ADMIN -> STUDENT ──────────────────────────────
       if (data.role === 'STUDENT') {
-        // Safety guard 2: Cannot demote the last active admin
-        const otherActiveAdmins = await tx.user.count({
-          where: {
-            role: 'ADMIN',
-            isActive: true,
-            NOT: { id: targetUserId },
-          },
-        });
+        if (targetUser.role === 'ADMIN') {
+          // Safety guard 2: Cannot demote the last active admin
+          const otherActiveAdmins = await tx.user.count({
+            where: {
+              role: 'ADMIN',
+              isActive: true,
+              NOT: { id: targetUserId },
+            },
+          });
 
-        if (otherActiveAdmins === 0) {
-          throw ApiError.badRequest('Cannot demote the last active administrator in the system');
+          if (otherActiveAdmins === 0) {
+            throw ApiError.badRequest('Cannot demote the last active administrator in the system');
+          }
         }
 
         await tx.user.update({
@@ -571,6 +581,6 @@ export const adminUserService = {
       });
 
       return refreshed!;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 };

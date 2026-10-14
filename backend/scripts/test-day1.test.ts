@@ -301,6 +301,105 @@ test('day-one HTTP and persistence regressions', async t => {
         await prisma.department.deleteMany({ where: { id: { in: [deptA.id, deptB.id] } } }).catch(() => {});
       }
     });
+    await t.test('last active admin invariant is protected under competing concurrent status and role operations', async () => {
+      const stamp = randomUUID();
+      const login = await req('POST', '/auth/login', '', { email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD });
+      assert.equal(login.status, 200);
+      const adminToken = (await login.json() as any).data.accessToken;
+
+      const admin1 = await adminUserService.createAdmin(a.id, {
+        email: `adm1_${stamp}@integrum.test`,
+        password: 'AdminPassword123!',
+        firstName: 'AdmOne',
+        lastName: 'Test',
+        permissionsLevel: 1,
+      });
+      const admin2 = await adminUserService.createAdmin(a.id, {
+        email: `adm2_${stamp}@integrum.test`,
+        password: 'AdminPassword123!',
+        firstName: 'AdmTwo',
+        lastName: 'Test',
+        permissionsLevel: 1,
+      });
+
+      const login1 = await req('POST', '/auth/login', '', { email: `adm1_${stamp}@integrum.test`, password: 'AdminPassword123!' });
+      assert.equal(login1.status, 200);
+      const token1 = (await login1.json() as any).data.accessToken;
+
+      const login2 = await req('POST', '/auth/login', '', { email: `adm2_${stamp}@integrum.test`, password: 'AdminPassword123!' });
+      assert.equal(login2.status, 200);
+      const token2 = (await login2.json() as any).data.accessToken;
+
+      const seedAdmin = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      try {
+        await prisma.user.update({ where: { id: seedAdmin.id }, data: { isActive: false } });
+
+        const [res1, res2] = await Promise.all([
+          req('PATCH', `/admin/users/${admin2.id}/status`, token1, { isActive: false }),
+          req('PATCH', `/admin/users/${admin1.id}/status`, token2, { isActive: false }),
+        ]);
+
+        const statuses = [res1.status, res2.status].sort();
+        assert.deepEqual(statuses, [200, 400], 'One deactivation must succeed with 200 and one must fail with 400');
+        const remainingAfterDeact = await prisma.user.count({
+          where: { role: 'ADMIN', isActive: true, id: { in: [admin1.id, admin2.id] } },
+        });
+        assert.equal(remainingAfterDeact, 1, 'Exactly one admin must remain active; never zero');
+
+        await prisma.user.updateMany({ where: { id: { in: [admin1.id, admin2.id] } }, data: { isActive: true, role: 'ADMIN' } });
+
+        const [login1Demote, login2Demote] = await Promise.all([
+          req('POST', '/auth/login', '', { email: `adm1_${stamp}@integrum.test`, password: 'AdminPassword123!' }),
+          req('POST', '/auth/login', '', { email: `adm2_${stamp}@integrum.test`, password: 'AdminPassword123!' }),
+        ]);
+        assert.equal(login1Demote.status, 200);
+        assert.equal(login2Demote.status, 200);
+        const demoteToken1 = (await login1Demote.json() as any).data.accessToken;
+        const demoteToken2 = (await login2Demote.json() as any).data.accessToken;
+
+        const [demote1, demote2] = await Promise.all([
+          req('PATCH', `/admin/users/${admin2.id}/role`, demoteToken1, { role: 'STUDENT' }),
+          req('PATCH', `/admin/users/${admin1.id}/role`, demoteToken2, { role: 'STUDENT' }),
+        ]);
+
+        const demoteStatuses = [demote1.status, demote2.status].sort();
+        assert.deepEqual(demoteStatuses, [200, 400], 'One demotion must succeed with 200 and one must fail with 400');
+        const remainingAfterDemote = await prisma.user.count({
+          where: { role: 'ADMIN', isActive: true, id: { in: [admin1.id, admin2.id] } },
+        });
+        assert.equal(remainingAfterDemote, 1, 'Exactly one admin must remain active after competing demotions');
+
+        await prisma.user.updateMany({ where: { id: { in: [admin1.id, admin2.id] } }, data: { isActive: true, role: 'ADMIN' } });
+
+        const [login1Mixed, login2Mixed] = await Promise.all([
+          req('POST', '/auth/login', '', { email: `adm1_${stamp}@integrum.test`, password: 'AdminPassword123!' }),
+          req('POST', '/auth/login', '', { email: `adm2_${stamp}@integrum.test`, password: 'AdminPassword123!' }),
+        ]);
+        assert.equal(login1Mixed.status, 200);
+        assert.equal(login2Mixed.status, 200);
+        const mixedToken1 = (await login1Mixed.json() as any).data.accessToken;
+        const mixedToken2 = (await login2Mixed.json() as any).data.accessToken;
+
+        const [mixed1, mixed2] = await Promise.all([
+          req('PATCH', `/admin/users/${admin2.id}/status`, mixedToken1, { isActive: false }),
+          req('PATCH', `/admin/users/${admin1.id}/role`, mixedToken2, { role: 'STUDENT' }),
+        ]);
+
+        const mixedStatuses = [mixed1.status, mixed2.status].sort();
+        assert.deepEqual(mixedStatuses, [200, 400], 'One operation must succeed with 200 and one must fail with 400 in mixed race');
+        const remainingAfterMixed = await prisma.user.count({
+          where: { role: 'ADMIN', isActive: true, id: { in: [admin1.id, admin2.id] } },
+        });
+        assert.equal(remainingAfterMixed, 1, 'Exactly one admin must remain active after mixed race');
+      } finally {
+        await prisma.user.update({ where: { id: seedAdmin.id }, data: { isActive: true } }).catch(() => {});
+        await prisma.adminAuditLog.deleteMany({ where: { targetId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+        await prisma.adminProfile.deleteMany({ where: { userId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+        await prisma.studentProfile.deleteMany({ where: { userId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+        await prisma.authSession.deleteMany({ where: { userId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+      }
+    });
     await t.test('report filters consistently scope cohorts, dates and UTC trends', async () => {
       const stamp = randomUUID();
       const inside = new Date('2001-01-01T00:30:00Z'), outside = new Date('2000-12-31T23:30:00Z');
