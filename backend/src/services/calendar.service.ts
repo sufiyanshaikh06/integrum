@@ -304,8 +304,9 @@ export const calendarService = {
             if (round && round.date) {
               const rDate = new Date(round.date);
               if (rDate >= windowStart && rDate <= windowEnd) {
+                const roundId = round.id ?? round.roundId ?? index;
                 items.push({
-                  id: `INTERVIEW:${app.id}:${index}`,
+                  id: `INTERVIEW:${app.id}:${roundId}`,
                   source: 'INTERVIEW',
                   sourceId: app.id,
                   title: `Interview (${round.round}): ${app.companyName} - ${app.role}`,

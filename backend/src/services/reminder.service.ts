@@ -6,6 +6,7 @@ import { ApiError } from '../utils/ApiError.js';
 
 let isProcessing = false;
 let timer: NodeJS.Timeout | null = null;
+let activeBatchPromise: Promise<{ processedCount: number; skippedCount: number }> | null = null;
 
 export const reminderService = {
   async createReminder(studentProfileId: string, data: CreateReminderInput) {
@@ -15,46 +16,43 @@ export const reminderService = {
         title: data.title,
         description: data.description ?? null,
         triggerAt: new Date(data.triggerAt),
-        isCompleted: data.isCompleted ?? false,
+        deliveryStatus: 'PENDING',
       },
     });
   },
 
   async getReminders(studentProfileId: string) {
     return prisma.reminder.findMany({
-      where: {
-        studentProfileId,
-      },
-      orderBy: {
-        triggerAt: 'asc',
-      },
+      where: { studentProfileId },
+      orderBy: { triggerAt: 'asc' },
     });
   },
 
   async getReminderById(studentProfileId: string, reminderId: string) {
-    const reminder = await prisma.reminder.findFirst({
-      where: {
-        id: reminderId,
-        studentProfileId,
-      },
+    const reminder = await prisma.reminder.findUnique({
+      where: { id: reminderId },
     });
 
-    if (!reminder) {
-      throw ApiError.notFound('Reminder not found or does not belong to you');
+    if (!reminder || reminder.studentProfileId !== studentProfileId) {
+      throw ApiError.notFound('Reminder not found');
     }
 
     return reminder;
   },
 
   async updateReminder(studentProfileId: string, reminderId: string, data: UpdateReminderInput) {
-    // Verify ownership first
-    await this.getReminderById(studentProfileId, reminderId);
+    await this.getReminderById(studentProfileId, reminderId); // verify ownership
 
     const updateData: any = {};
     if (data.title !== undefined) updateData.title = data.title;
     if (data.description !== undefined) updateData.description = data.description;
     if (data.triggerAt !== undefined) updateData.triggerAt = new Date(data.triggerAt);
-    if (data.isCompleted !== undefined) updateData.isCompleted = data.isCompleted;
+    if (data.isCompleted !== undefined) {
+      updateData.isCompleted = data.isCompleted;
+      if (data.isCompleted) {
+        updateData.deliveryStatus = 'CANCELLED';
+      }
+    }
 
     return prisma.reminder.update({
       where: { id: reminderId },
@@ -63,8 +61,7 @@ export const reminderService = {
   },
 
   async deleteReminder(studentProfileId: string, reminderId: string) {
-    // Verify ownership first
-    await this.getReminderById(studentProfileId, reminderId);
+    await this.getReminderById(studentProfileId, reminderId); // verify ownership
 
     await prisma.reminder.delete({
       where: { id: reminderId },
@@ -82,6 +79,7 @@ export const reminderService = {
       title: string;
       description?: string | null;
       targetDate: Date | null;
+      leadTimeMs?: number;
       cancelled?: boolean;
     }
   ) {
@@ -101,7 +99,7 @@ export const reminderService = {
       return;
     }
 
-    const leadTimeMs = 24 * 60 * 60 * 1000; // 24 hours
+    const leadTimeMs = params.leadTimeMs ?? (24 * 60 * 60 * 1000); // default 24 hours
     const triggerAt = params.targetDate.getTime() > Date.now() + leadTimeMs
       ? new Date(params.targetDate.getTime() - leadTimeMs)
       : new Date();
@@ -166,99 +164,105 @@ export const reminderService = {
     });
   },
 
-  // W03 / B06: Atomic batch processor
+  // W03 / B06: Atomic batch processor with overlapping-batch protection & per-item recovery
   async processDueReminders(): Promise<{ processedCount: number; skippedCount: number }> {
     if (isProcessing) return { processedCount: 0, skippedCount: 0 };
     isProcessing = true;
-    let processedCount = 0;
-    let skippedCount = 0;
 
-    try {
-      const candidates = await prisma.reminder.findMany({
-        where: {
-          triggerAt: { lte: new Date() },
-          deliveryStatus: 'PENDING',
-        },
-        select: { id: true },
-        orderBy: { triggerAt: 'asc' },
-        take: 50,
-      });
+    activeBatchPromise = (async () => {
+      let processedCount = 0;
+      let skippedCount = 0;
 
-      for (const { id } of candidates) {
-        try {
-          await prisma.$transaction(async (tx) => {
-            // Atomic lock and transition to processing / claim
-            const claim = await tx.reminder.updateMany({
-              where: { id, triggerAt: { lte: new Date() }, deliveryStatus: 'PENDING' },
-              data: { deliveryStatus: 'DELIVERED', deliveredAt: new Date() },
-            });
-            if (claim.count !== 1) return; // already claimed, cancelled, or rescheduled
+      try {
+        const candidates = await prisma.reminder.findMany({
+          where: {
+            triggerAt: { lte: new Date() },
+            deliveryStatus: 'PENDING',
+          },
+          select: { id: true },
+          orderBy: { triggerAt: 'asc' },
+          take: 50,
+        });
 
-            const reminder = await tx.reminder.findUniqueOrThrow({
-              where: { id },
-              include: {
-                studentProfile: {
-                  include: { user: { include: { settings: true } } },
-                },
-              },
-            });
+        for (const { id } of candidates) {
+          try {
+            await prisma.$transaction(async (tx) => {
+              // Atomic lock and transition to processing / claim
+              const claim = await tx.reminder.updateMany({
+                where: { id, triggerAt: { lte: new Date() }, deliveryStatus: 'PENDING' },
+                data: { deliveryStatus: 'DELIVERED', deliveredAt: new Date() },
+              });
+              if (claim.count !== 1) return; // already claimed, cancelled, or rescheduled
 
-            const prefs = reminder.studentProfile.user.settings?.notificationPreferences as Record<string, boolean> | null;
-            let suppressed = false;
-            if (prefs) {
-              if (reminder.sourceType === 'ASSIGNMENT' && prefs.assignmentReminders === false) suppressed = true;
-              if (reminder.sourceType === 'EXAM' && prefs.examReminders === false) suppressed = true;
-              if (reminder.sourceType === 'INTERVIEW' && prefs.interviewReminders === false) suppressed = true;
-              if (reminder.sourceType === 'CERTIFICATION' && prefs.certificationReminders === false) suppressed = true;
-              // CRITICAL: emailNotifications === false does NOT suppress in-app notifications!
-            }
-
-            if (suppressed) {
-              await tx.reminder.update({
+              const reminder = await tx.reminder.findUniqueOrThrow({
                 where: { id },
-                data: {
-                  deliveryStatus: 'SKIPPED',
-                  deliveredAt: null,
-                  suppressedAt: new Date(),
+                include: {
+                  studentProfile: {
+                    include: { user: { include: { settings: true } } },
+                  },
                 },
               });
-              skippedCount++;
-              return;
-            }
 
-            let notifType: NotificationType = NotificationType.GENERAL_REMINDER;
-            if (reminder.sourceType === 'ASSIGNMENT') notifType = NotificationType.ASSIGNMENT_REMINDER;
-            else if (reminder.sourceType === 'INTERVIEW') notifType = NotificationType.PLACEMENT_ALERT;
-            else if (reminder.sourceType === 'EXAM') notifType = NotificationType.EXAM_REMINDER;
-            else if (reminder.sourceType === 'CERTIFICATION') notifType = NotificationType.CERTIFICATION_ALERT;
+              const prefs = reminder.studentProfile.user.settings?.notificationPreferences as Record<string, boolean> | null;
+              let suppressed = false;
+              if (prefs) {
+                if (reminder.sourceType === 'ASSIGNMENT' && prefs.assignmentReminders === false) suppressed = true;
+                if (reminder.sourceType === 'EXAM' && prefs.examReminders === false) suppressed = true;
+                if (reminder.sourceType === 'INTERVIEW' && prefs.interviewReminders === false) suppressed = true;
+                if (reminder.sourceType === 'CERTIFICATION' && prefs.certificationReminders === false) suppressed = true;
+                // CRITICAL: emailNotifications === false does NOT suppress in-app notifications!
+              }
 
-            await tx.notification.create({
-              data: {
-                userId: reminder.studentProfile.userId,
-                title: reminder.title,
-                message: reminder.description || reminder.title,
-                type: notifType,
-                triggerTime: reminder.triggerAt,
-                isRead: false,
-              },
+              if (suppressed) {
+                await tx.reminder.update({
+                  where: { id },
+                  data: {
+                    deliveryStatus: 'SKIPPED',
+                    deliveredAt: null,
+                    suppressedAt: new Date(),
+                  },
+                });
+                skippedCount++;
+                return;
+              }
+
+              let notifType: NotificationType = NotificationType.GENERAL_REMINDER;
+              if (reminder.sourceType === 'ASSIGNMENT') notifType = NotificationType.ASSIGNMENT_REMINDER;
+              else if (reminder.sourceType === 'INTERVIEW') notifType = NotificationType.PLACEMENT_ALERT;
+              else if (reminder.sourceType === 'EXAM') notifType = NotificationType.EXAM_REMINDER;
+              else if (reminder.sourceType === 'CERTIFICATION') notifType = NotificationType.CERTIFICATION_ALERT;
+
+              await tx.notification.create({
+                data: {
+                  userId: reminder.studentProfile.userId,
+                  title: reminder.title,
+                  message: reminder.description || reminder.title,
+                  type: notifType,
+                  triggerTime: reminder.triggerAt,
+                  isRead: false,
+                },
+              });
+
+              processedCount++;
             });
-
-            processedCount++;
-          });
-        } catch (err) {
-          console.error(`Error processing reminder ${id}:`, err);
-          // Rollback tentative claim on error so it can be retried
-          await prisma.reminder.updateMany({
-            where: { id, deliveryStatus: 'DELIVERED', deliveredAt: { not: null } },
-            data: { deliveryStatus: 'PENDING', deliveredAt: null },
-          }).catch(() => {});
+          } catch (err) {
+            console.error(`Error processing reminder ${id}:`, err);
+            // Rollback tentative claim on error so it can be retried
+            await prisma.reminder.updateMany({
+              where: { id, deliveryStatus: 'DELIVERED', deliveredAt: { not: null } },
+              data: { deliveryStatus: 'PENDING', deliveredAt: null },
+            }).catch(() => {});
+          }
         }
+      } finally {
+        isProcessing = false;
+        activeBatchPromise = null;
       }
-    } finally {
-      isProcessing = false;
-    }
 
-    return { processedCount, skippedCount };
+      return { processedCount, skippedCount };
+    })();
+
+    return activeBatchPromise;
   },
 
   startReminderProcessor(intervalMs = 60000) {
@@ -268,12 +272,20 @@ export const reminderService = {
       }, intervalMs);
       timer.unref(); // Don't hold node process open
     }
+    return timer;
   },
 
-  stopReminderProcessor() {
+  async stopReminderProcessor(): Promise<void> {
     if (timer) {
       clearInterval(timer);
       timer = null;
     }
+    if (activeBatchPromise) {
+      await activeBatchPromise;
+    }
+  },
+
+  isProcessorRunning(): boolean {
+    return timer !== null;
   },
 };

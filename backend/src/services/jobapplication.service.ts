@@ -4,15 +4,32 @@ import { CreateJobApplicationInput, UpdateJobApplicationInput } from '../schemas
 import { ApiError } from '../utils/ApiError.js';
 import { reminderService } from './reminder.service.js';
 
+function normalizeInterviewHistory(history: any): any {
+  if (!Array.isArray(history)) return history ?? Prisma.DbNull;
+  return history.map((item, index) => {
+    if (!item || typeof item !== 'object') return item;
+    const persistentId = item.id || item.roundId;
+    if (persistentId) {
+      return {
+        ...item,
+        id: persistentId,
+      };
+    }
+    return item;
+  });
+}
+
 export const jobApplicationService = {
   async createApplication(studentProfileId: string, data: CreateJobApplicationInput) {
+    const interviewHistory = normalizeInterviewHistory(data.interviewHistory);
+
     return prisma.$transaction(async (tx) => {
       const application = await tx.jobApplication.create({
         data: {
           studentProfileId,
           applicationType: data.applicationType ?? 'INTERNSHIP',
           eligibilityStatus: data.eligibilityStatus ?? 'UNKNOWN',
-          interviewHistory: data.interviewHistory ?? Prisma.DbNull,
+          interviewHistory,
           companyName: data.companyName,
           role: data.role,
           applicationUrl: data.applicationUrl ?? null,
@@ -28,16 +45,17 @@ export const jobApplicationService = {
       });
 
       if (application.status !== 'REJECTED') {
-        if (Array.isArray(data.interviewHistory)) {
-          for (let i = 0; i < data.interviewHistory.length; i++) {
-            const round = data.interviewHistory[i] as any;
+        if (Array.isArray(interviewHistory)) {
+          for (let i = 0; i < interviewHistory.length; i++) {
+            const round = interviewHistory[i] as any;
             const roundDate = round?.date ? new Date(round.date) : null;
             if (roundDate) {
+              const roundKey = round.id ? (round.id.startsWith('round-') ? round.id : `round-${round.id}`) : `round-${i}`;
               await reminderService.syncSourceReminder(tx, {
                 studentProfileId,
                 sourceType: 'INTERVIEW',
                 sourceId: application.id,
-                occurrenceKey: `round-${i}`,
+                occurrenceKey: roundKey,
                 title: `Interview Round (${round.round || i + 1}): ${application.companyName} - ${application.role}`,
                 description: `Upcoming interview round for ${application.role} at ${application.companyName}`,
                 targetDate: roundDate,
@@ -89,7 +107,7 @@ export const jobApplicationService = {
     const updateData: Prisma.JobApplicationUpdateInput = {};
     if (data.applicationType !== undefined) updateData.applicationType = data.applicationType;
     if (data.eligibilityStatus !== undefined) updateData.eligibilityStatus = data.eligibilityStatus;
-    if (data.interviewHistory !== undefined) updateData.interviewHistory = data.interviewHistory;
+    if (data.interviewHistory !== undefined) updateData.interviewHistory = normalizeInterviewHistory(data.interviewHistory);
     if (data.companyName !== undefined) updateData.companyName = data.companyName;
     if (data.role !== undefined) updateData.role = data.role;
     if (data.applicationUrl !== undefined) updateData.applicationUrl = data.applicationUrl;
@@ -121,14 +139,14 @@ export const jobApplicationService = {
           for (let i = 0; i < updated.interviewHistory.length; i++) {
             const round = updated.interviewHistory[i] as any;
             const roundDate = round?.date ? new Date(round.date) : null;
-            const key = `round-${i}`;
-            activeKeys.add(key);
+            const roundKey = round?.id ? (round.id.startsWith('round-') ? round.id : `round-${round.id}`) : `round-${i}`;
+            activeKeys.add(roundKey);
 
             await reminderService.syncSourceReminder(tx, {
               studentProfileId,
               sourceType: 'INTERVIEW',
               sourceId: updated.id,
-              occurrenceKey: key,
+              occurrenceKey: roundKey,
               title: `Interview Round (${round?.round || i + 1}): ${updated.companyName} - ${updated.role}`,
               description: `Upcoming interview round for ${updated.role} at ${updated.companyName}`,
               targetDate: roundDate,

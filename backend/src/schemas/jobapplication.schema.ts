@@ -6,11 +6,13 @@ const careerFields = {
   applicationType: z.nativeEnum(ApplicationType).optional(),
   eligibilityStatus: z.nativeEnum(EligibilityStatus).optional(),
   interviewHistory: z.array(z.object({
+    id: z.string().trim().max(100).optional(),
+    roundId: z.string().trim().max(100).optional(),
     date: z.string().datetime(),
     round: z.string().trim().min(1).max(200),
     notes: z.string().max(5000).optional(),
     outcome: z.string().max(500).optional(),
-  })).max(100).optional(),
+  }).passthrough()).max(100).optional(),
 };
 export const listJobApplicationsSchema = z.object({
   query: z.object({ applicationType: z.nativeEnum(ApplicationType).optional() }),

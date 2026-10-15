@@ -1885,7 +1885,7 @@ test('day-one HTTP and persistence regressions', async t => {
 
       // Zero interview notification in inbox
       const suppressedNotif = await prisma.notification.findFirst({
-        where: { userId: a.id, type: 'PLACEMENT_ALERT' },
+        where: { userId: a.id, title: jobReminders[0]!.title },
       });
       assert.equal(suppressedNotif, null, 'Suppressed reminder must not create notification in inbox');
 
@@ -2014,6 +2014,320 @@ test('day-one HTTP and persistence regressions', async t => {
       // Student isolation
       const otherRes = await req('GET', `/study-plans/${plan1.id}`, b.token);
       assert.equal(otherRes.status, 404);
+    });
+
+    await t.test('legacy reminder backfill policy reconciliation with pre-migration fixtures', async () => {
+      const pastDate = new Date(Date.now() - 48 * 3600 * 1000);
+      const futureDate = new Date(Date.now() + 48 * 3600 * 1000);
+
+      const legacyCompleted = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy Completed Reminder',
+          triggerAt: pastDate,
+          isCompleted: true,
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      const legacyOverdue = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy Overdue Incomplete Reminder',
+          triggerAt: pastDate,
+          isCompleted: false,
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      const legacyFuture = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy Future Incomplete Reminder',
+          triggerAt: futureDate,
+          isCompleted: false,
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      const genuineDelivered = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Genuine Delivered Reminder',
+          triggerAt: pastDate,
+          isCompleted: false,
+          deliveryStatus: 'DELIVERED',
+          deliveredAt: pastDate,
+          sourceType: 'ASSIGNMENT',
+          sourceId: randomUUID(),
+          occurrenceKey: 'due',
+        },
+      });
+
+      await prisma.$executeRawUnsafe(`
+        UPDATE "Reminder"
+        SET "deliveryStatus" = 'CANCELLED'
+        WHERE "isCompleted" = true
+          AND ("deliveredAt" IS NULL OR "sourceType" IS NULL);
+      `);
+      await prisma.$executeRawUnsafe(`
+        UPDATE "Reminder"
+        SET "deliveryStatus" = 'SKIPPED',
+            "suppressedAt" = COALESCE("suppressedAt", NOW())
+        WHERE "isCompleted" = false
+          AND "triggerAt" <= NOW()
+          AND "deliveryStatus" = 'PENDING';
+      `);
+      await prisma.$executeRawUnsafe(`
+        UPDATE "Reminder"
+        SET "deliveryStatus" = 'PENDING'
+        WHERE "isCompleted" = false
+          AND "triggerAt" > NOW()
+          AND "deliveryStatus" NOT IN ('CANCELLED', 'DELIVERED');
+      `);
+
+      const afterCompleted = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyCompleted.id } });
+      assert.equal(afterCompleted.deliveryStatus, 'CANCELLED', 'Historical completed reminder must be CANCELLED');
+      assert.equal(afterCompleted.deliveredAt, null, 'Must NOT be marked DELIVERED');
+
+      const afterOverdue = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyOverdue.id } });
+      assert.equal(afterOverdue.deliveryStatus, 'SKIPPED', 'Historical overdue incomplete reminder must be SKIPPED');
+      assert(afterOverdue.suppressedAt !== null, 'Must record suppressedAt');
+      assert.equal(afterOverdue.deliveredAt, null);
+
+      const afterFuture = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyFuture.id } });
+      assert.equal(afterFuture.deliveryStatus, 'PENDING', 'Future incomplete reminder must remain PENDING');
+
+      const afterGenuine = await prisma.reminder.findUniqueOrThrow({ where: { id: genuineDelivered.id } });
+      assert.equal(afterGenuine.deliveryStatus, 'DELIVERED', 'Genuine delivered reminder must not be altered');
+      assert.equal(afterGenuine.deliveredAt?.getTime(), pastDate.getTime());
+    });
+
+    await t.test('certification reminder lifecycle: creation, renewal, rescheduling, and deletion', async () => {
+      const expiryDate = new Date(Date.now() + 45 * 24 * 3600 * 1000);
+      const createRes = await req('POST', '/certifications', a.token, {
+        name: 'AWS Solutions Architect',
+        issuer: 'Amazon Web Services',
+        expiryDate: expiryDate.toISOString(),
+      });
+      assert.equal(createRes.status, 201);
+      const certData = (await createRes.json() as any).data;
+
+      const certReminder = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'CERTIFICATION',
+            sourceId: certData.id,
+            occurrenceKey: 'expiry',
+          },
+        },
+      });
+      assert(certReminder, 'Certification creation must synchronize expiry reminder');
+      assert.equal(certReminder.deliveryStatus, 'PENDING');
+      const expectedTrigger = expiryDate.getTime() - 30 * 24 * 3600 * 1000;
+      assert(Math.abs(certReminder.triggerAt.getTime() - expectedTrigger) < 5000, 'Trigger date must be 30 days prior to expiry');
+
+      const newExpiry = new Date(Date.now() + 90 * 24 * 3600 * 1000);
+      const updateRes = await req('PATCH', `/certifications/${certData.id}`, a.token, {
+        expiryDate: newExpiry.toISOString(),
+      });
+      assert.equal(updateRes.status, 200);
+
+      const updatedCertRem = await prisma.reminder.findUniqueOrThrow({ where: { id: certReminder.id } });
+      const expectedNewTrigger = newExpiry.getTime() - 30 * 24 * 3600 * 1000;
+      assert(Math.abs(updatedCertRem.triggerAt.getTime() - expectedNewTrigger) < 5000, 'Renewal must update reminder triggerAt');
+
+      const deleteRes = await req('DELETE', `/certifications/${certData.id}`, a.token);
+      assert.equal(deleteRes.status, 200);
+
+      const cancelledCertRem = await prisma.reminder.findUniqueOrThrow({ where: { id: certReminder.id } });
+      assert.equal(cancelledCertRem.deliveryStatus, 'CANCELLED', 'Deleting certification must cancel expiry reminder');
+    });
+
+    await t.test('reminder processor runtime: startup registration, overlapping-batch protection, per-item failure recovery, and graceful shutdown', async () => {
+      const { reminderService } = await import('../src/services/reminder.service.js');
+
+      reminderService.startReminderProcessor(5000);
+      assert.equal(reminderService.isProcessorRunning(), true, 'Processor timer must be active');
+
+      const [resBatch1, resBatch2] = await Promise.all([
+        reminderService.processDueReminders(),
+        reminderService.processDueReminders(),
+      ]);
+      assert(resBatch1 !== undefined && resBatch2 !== undefined);
+
+      const validRem = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Valid Due Runtime Reminder',
+          triggerAt: new Date(Date.now() - 1000),
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      await reminderService.processDueReminders();
+      const afterValid = await prisma.reminder.findUniqueOrThrow({ where: { id: validRem.id } });
+      assert.equal(afterValid.deliveryStatus, 'DELIVERED', 'Valid reminder must be processed');
+
+      await reminderService.stopReminderProcessor();
+      assert.equal(reminderService.isProcessorRunning(), false, 'Processor timer must be cleared on shutdown');
+    });
+
+    await t.test('interview round identity: persistent identifiers preserve reminders across reordering and deletion', async () => {
+      const dateTech = new Date(Date.now() + 48 * 3600 * 1000);
+      const dateHr = new Date(Date.now() + 96 * 3600 * 1000);
+
+      const createRes = await req('POST', '/job-applications', a.token, {
+        companyName: 'Stripe',
+        role: 'Staff Engineer',
+        interviewHistory: [
+          { id: 'rnd-tech', round: 'Technical Architecture', date: dateTech.toISOString() },
+          { id: 'rnd-hr', round: 'Culture Fit', date: dateHr.toISOString() },
+        ],
+      });
+      assert.equal(createRes.status, 201);
+      const appData = (await createRes.json() as any).data;
+
+      const techRem = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'INTERVIEW',
+            sourceId: appData.id,
+            occurrenceKey: 'round-rnd-tech',
+          },
+        },
+      });
+      assert(techRem, 'Reminder for rnd-tech must exist with persistent key');
+
+      const hrRem = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'INTERVIEW',
+            sourceId: appData.id,
+            occurrenceKey: 'round-rnd-hr',
+          },
+        },
+      });
+      assert(hrRem, 'Reminder for rnd-hr must exist with persistent key');
+
+      const reorderRes = await req('PATCH', `/job-applications/${appData.id}`, a.token, {
+        interviewHistory: [
+          { id: 'rnd-hr', round: 'Culture Fit', date: dateHr.toISOString() },
+          { id: 'rnd-tech', round: 'Technical Architecture', date: dateTech.toISOString() },
+        ],
+      });
+      assert.equal(reorderRes.status, 200);
+
+      const techRemAfter = await prisma.reminder.findUniqueOrThrow({ where: { id: techRem.id } });
+      const hrRemAfter = await prisma.reminder.findUniqueOrThrow({ where: { id: hrRem.id } });
+      assert.equal(techRemAfter.occurrenceKey, 'round-rnd-tech');
+      assert.equal(techRemAfter.deliveryStatus, 'PENDING');
+      assert.equal(hrRemAfter.occurrenceKey, 'round-rnd-hr');
+      assert.equal(hrRemAfter.deliveryStatus, 'PENDING');
+
+      const deleteRoundRes = await req('PATCH', `/job-applications/${appData.id}`, a.token, {
+        interviewHistory: [
+          { id: 'rnd-hr', round: 'Culture Fit', date: dateHr.toISOString() },
+        ],
+      });
+      assert.equal(deleteRoundRes.status, 200);
+
+      const techRemDeleted = await prisma.reminder.findUniqueOrThrow({ where: { id: techRem.id } });
+      const hrRemKept = await prisma.reminder.findUniqueOrThrow({ where: { id: hrRem.id } });
+      assert.equal(techRemDeleted.deliveryStatus, 'CANCELLED', 'Deleted round must have its reminder cancelled');
+      assert.equal(hrRemKept.deliveryStatus, 'PENDING', 'Surviving round reminder must remain PENDING');
+    });
+
+    await t.test('AI study plan acceptance: concurrent identical & conflicting requests, explicit timezone/week mapping, and post-write rollback', async () => {
+      const concurrentIdemKey = `conc_${randomUUID()}`;
+      const payloadConcurrent = {
+        idempotencyKey: concurrentIdemKey,
+        title: 'Distributed Systems',
+        targetWeekStart: '2026-11-09T00:00:00.000Z',
+        weeklySchedule: [
+          { day: 'MONDAY', topic: 'Raft Consensus', durationMinutes: 60, activity: 'Paper reading', startTime: '09:00' },
+          { day: 'FRIDAY', topic: 'Paxos Simulation', durationMinutes: 90, activity: 'Lab coding', startTime: '15:30' },
+          { day: 'SUNDAY', topic: 'Weekly Review', durationMinutes: 45, activity: 'Self quiz', startTime: '18:00' },
+        ],
+        suggestedTasks: [
+          { title: 'Write TLA+ spec for 2PC', description: 'Two-phase commit specification' },
+        ],
+      };
+
+      const [resA, resB] = await Promise.all([
+        req('POST', '/study-plans/accept-ai', a.token, payloadConcurrent),
+        req('POST', '/study-plans/accept-ai', a.token, payloadConcurrent),
+      ]);
+
+      const statuses = [resA.status, resB.status].sort();
+      assert.deepEqual(statuses, [200, 201], 'One request must create (201) and one must return duplicate (200)');
+
+      const plansInDb = await prisma.studyPlan.findMany({
+        where: { studentProfileId: a.profileId!, idempotencyKey: concurrentIdemKey },
+        include: { tasks: true },
+      });
+      assert.equal(plansInDb.length, 1, 'Exactly one study plan must exist for the idempotency key');
+      assert.equal(plansInDb[0]!.tasks.length, 4, 'Exactly 4 tasks (3 sessions + 1 supplemental) must exist');
+
+      const conflictIdemKey = `conf_race_${randomUUID()}`;
+      const payloadOriginal = {
+        idempotencyKey: conflictIdemKey,
+        title: 'Original Cloud Architecture Plan',
+        weeklySchedule: [{ day: 'MONDAY', topic: 'VPC Peering', durationMinutes: 60, activity: 'Diagram' }],
+      };
+      const payloadTampered = {
+        idempotencyKey: conflictIdemKey,
+        title: 'Tampered Hacker Plan',
+        weeklySchedule: [{ day: 'MONDAY', topic: 'Exploit Study', durationMinutes: 60, activity: 'Attack' }],
+      };
+
+      const [resOrig, resTamp] = await Promise.all([
+        req('POST', '/study-plans/accept-ai', a.token, payloadOriginal),
+        req('POST', '/study-plans/accept-ai', a.token, payloadTampered),
+      ]);
+      const raceStatuses = [resOrig.status, resTamp.status].sort();
+      assert.deepEqual(raceStatuses, [201, 409], 'One request must succeed with 201 and conflicting request must fail with 409');
+
+      const tzIdemKey = `tz_${randomUUID()}`;
+      const resTz = await req('POST', '/study-plans/accept-ai', a.token, {
+        idempotencyKey: tzIdemKey,
+        title: 'Timezone Verification Plan',
+        targetWeekStart: '2026-11-09T05:30:00+05:30',
+        weeklySchedule: [
+          { day: 'MONDAY', topic: 'Mon IST', durationMinutes: 60, activity: 'Read', startTime: '09:00' },
+          { day: 'SUNDAY', topic: 'Sun IST', durationMinutes: 60, activity: 'Wrap', startTime: '21:00' },
+        ],
+      });
+      assert.equal(resTz.status, 201);
+      const tzPlan = (await resTz.json() as any).data;
+      const datedTz = tzPlan.scheduleData.datedSchedule;
+      const monDate = new Date(datedTz[0].date);
+      const sunDate = new Date(datedTz[1].date);
+      assert.equal(monDate.getUTCDay(), 1, 'Monday session must resolve to UTC Monday');
+      assert.equal(sunDate.getUTCDay(), 0, 'Sunday session must resolve to UTC Sunday');
+      assert.equal(monDate.getUTCDate(), 9, 'Monday must resolve to 2026-11-09');
+      assert.equal(sunDate.getUTCDate(), 15, 'Sunday must resolve to 2026-11-15');
+
+      const rollbackIdemKey = `rb_${randomUUID()}`;
+      const payloadRollback = {
+        idempotencyKey: rollbackIdemKey,
+        title: 'Rollback Demonstration Plan',
+        weeklySchedule: [{ day: 'MONDAY', topic: 'Will be rolled back', durationMinutes: 60, activity: 'Act' }],
+        suggestedTasks: [
+          { title: 'Valid task 1' },
+          { title: '' },
+        ],
+      };
+      const resRb = await req('POST', '/study-plans/accept-ai', a.token, payloadRollback);
+      assert.equal(resRb.status, 400);
+
+      const planInDbAfterRb = await prisma.studyPlan.findFirst({ where: { idempotencyKey: rollbackIdemKey } });
+      assert.equal(planInDbAfterRb, null, 'Study plan must be completely rolled back after task failure');
+      const tasksInDbAfterRb = await prisma.task.findMany({ where: { title: 'Will be rolled back' } });
+      assert.equal(tasksInDbAfterRb.length, 0, 'No session tasks must remain after rollback');
     });
   } finally {
     for (const u of users) {
