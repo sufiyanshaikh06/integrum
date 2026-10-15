@@ -11,6 +11,7 @@ import { env } from '../src/config/env.js';
 import { MockProvider } from '../src/services/ai/mock.provider.js';
 import { generatedStudyPlanOutputSchema } from '../src/schemas/ai.schema.js';
 import 'dotenv/config';
+import { Prisma } from '@prisma/client';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
@@ -1151,6 +1152,51 @@ test('day-one HTTP and persistence regressions', async t => {
         assert.equal(dbDownJson.message, 'Database service is temporarily unavailable');
       } finally {
         prisma.authSession.findFirst = originalFindFirst;
+      }
+
+      // 4. System misconfiguration (P1000 bad database credentials) produces sanitized 500, not 503
+      try {
+        prisma.user.findUnique = (() => {
+          throw new Prisma.PrismaClientKnownRequestError('Authentication failed against database', {
+            code: 'P1000',
+            clientVersion: '5.x',
+          });
+        }) as any;
+        const configErrRes = await req('GET', '/users/me', a.token);
+        assert.equal(configErrRes.status, 500);
+        const configErrJson = await configErrRes.json() as any;
+        assert.equal(configErrJson.message, 'Internal server error during authentication');
+      } finally {
+        prisma.user.findUnique = originalFindUnique;
+      }
+
+      // 5. Engine panic (PrismaClientRustPanicError) produces sanitized 500, not 503
+      try {
+        prisma.user.findUnique = (() => {
+          throw new Prisma.PrismaClientRustPanicError('Engine crashed', '5.x');
+        }) as any;
+        const panicRes = await req('GET', '/users/me', a.token);
+        assert.equal(panicRes.status, 500);
+        const panicJson = await panicRes.json() as any;
+        assert.equal(panicJson.message, 'Internal server error during authentication');
+      } finally {
+        prisma.user.findUnique = originalFindUnique;
+      }
+
+      // 6. True transient connectivity failure (P1001) produces 503
+      try {
+        prisma.user.findUnique = (() => {
+          throw new Prisma.PrismaClientKnownRequestError("Can't reach database server", {
+            code: 'P1001',
+            clientVersion: '5.x',
+          });
+        }) as any;
+        const p1001Res = await req('GET', '/users/me', a.token);
+        assert.equal(p1001Res.status, 503);
+        const p1001Json = await p1001Res.json() as any;
+        assert.equal(p1001Json.message, 'Database service is temporarily unavailable');
+      } finally {
+        prisma.user.findUnique = originalFindUnique;
       }
     });
   } finally {
