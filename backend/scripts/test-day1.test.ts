@@ -1278,6 +1278,59 @@ test('day-one HTTP and persistence regressions', async t => {
       const resUnrecognized = await req('GET', '/notes?invalidParam=true', a.token);
       assert.equal(resUnrecognized.status, 400);
     });
+
+    await t.test('W17: student feedback own-list projection strictly excludes internal admin notes', async () => {
+      // 1. Unauthenticated request rejected
+      assert.equal((await req('GET', '/feedback')).status, 401);
+
+      // 2. Student A submits feedback
+      const feedbackPayload = {
+        category: 'BUG_REPORT',
+        subject: 'Calendar layout issue',
+        message: 'The date picker overlaps on small mobile viewports.',
+      };
+      const createdRes = await req('POST', '/feedback', a.token, feedbackPayload);
+      assert.equal(createdRes.status, 201);
+      const created = (await createdRes.json() as any).data;
+      assert.equal(created.subject, feedbackPayload.subject);
+
+      // 3. Admin updates feedback with internal note and resolution
+      const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      await prisma.feedback.update({
+        where: { id: created.id },
+        data: {
+          adminNotes: 'CONFIDENTIAL INTERNAL NOTE: Confirmed bug on iOS Safari. Do not disclose to student.',
+          resolvedByUserId: adminUser.id,
+          status: 'RESOLVED',
+          resolvedAt: new Date(),
+        },
+      });
+
+      // 4. Student A retrieves own feedback list
+      const listResA = await req('GET', '/feedback', a.token);
+      assert.equal(listResA.status, 200);
+      const itemsA = (await listResA.json() as any).data;
+      assert(Array.isArray(itemsA));
+      const ownTicket = itemsA.find((f: any) => f.id === created.id);
+      assert(ownTicket, 'Student A must see their own submitted ticket');
+      assert.equal(ownTicket.status, 'RESOLVED');
+      assert.equal(ownTicket.subject, feedbackPayload.subject);
+      assert.equal(ownTicket.message, feedbackPayload.message);
+      assert(ownTicket.resolvedAt !== null);
+
+      // Invariant: Confidential internal admin notes and resolver user ID are strictly omitted
+      assert.equal(ownTicket.adminNotes, undefined);
+      assert.equal(ownTicket.resolvedByUserId, undefined);
+      assert.equal('adminNotes' in ownTicket, false);
+      assert.equal('resolvedByUserId' in ownTicket, false);
+
+      // 5. Cross-student isolation: Student B queries own feedback and cannot see Student A's ticket
+      const listResB = await req('GET', '/feedback', b.token);
+      assert.equal(listResB.status, 200);
+      const itemsB = (await listResB.json() as any).data;
+      assert(Array.isArray(itemsB));
+      assert.equal(itemsB.some((f: any) => f.id === created.id), false);
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });

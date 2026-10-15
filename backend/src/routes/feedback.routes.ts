@@ -16,4 +16,12 @@ router.post(
   feedbackController.submitFeedback
 );
 
+// GET /api/v1/feedback — Student feedback own-list
+router.get(
+  '/',
+  authenticate,
+  authorize('STUDENT'),
+  feedbackController.getMyFeedback
+);
+
 export default router;
