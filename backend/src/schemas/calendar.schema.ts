@@ -38,3 +38,27 @@ export const updateCalendarEventSchema = z.object({
 
 export type CreateCalendarEventInput = z.infer<typeof createCalendarEventSchema>['body'];
 export type UpdateCalendarEventInput = z.infer<typeof updateCalendarEventSchema>['body'];
+
+const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+export const getUnifiedCalendarSchema = z.object({
+  query: z.object({
+    startDate: z.string().datetime({ message: 'startDate must be a valid ISO datetime' }),
+    endDate: z.string().datetime({ message: 'endDate must be a valid ISO datetime' }),
+  }).strict().refine(data => {
+    const start = new Date(data.startDate).getTime();
+    const end = new Date(data.endDate).getTime();
+    return start < end;
+  }, {
+    message: 'endDate must be after startDate',
+    path: ['endDate'],
+  }).refine(data => {
+    const start = new Date(data.startDate).getTime();
+    const end = new Date(data.endDate).getTime();
+    return (end - start) <= MAX_WINDOW_MS;
+  }, {
+    message: 'Query window cannot exceed 90 days',
+    path: ['endDate'],
+  }),
+});
+

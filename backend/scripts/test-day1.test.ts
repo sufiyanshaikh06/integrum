@@ -1585,6 +1585,160 @@ test('day-one HTTP and persistence regressions', async t => {
         (err: any) => err.code === 'P2002'
       );
     });
+
+    await t.test('W05: unified calendar aggregation, interval overlap, interview history coverage and audience isolation', async () => {
+      const windowStart = '2026-11-01T00:00:00.000Z';
+      const windowEnd = '2026-11-30T23:59:59.999Z';
+
+      // 1. Unauthenticated rejection
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${windowEnd}`, '')).status, 401);
+
+      // 2. Query validation
+      // Missing end date
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowStart}`, a.token)).status, 400);
+      // Inverted window
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowEnd}&endDate=${windowStart}`, a.token)).status, 400);
+      // Window exceeding 90 days (e.g. 120 days)
+      const excessiveEnd = '2027-03-01T00:00:00.000Z';
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${excessiveEnd}`, a.token)).status, 400);
+      // Extra unknown field
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${windowEnd}&extra=1`, a.token)).status, 400);
+
+      // 3. Seed data for all 5 sources within Student A's scope:
+      // (a) Personal event (interval)
+      const pEvent = await prisma.calendarEvent.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Midterm Study Session',
+          date: new Date('2026-11-05T10:00:00.000Z'),
+          endDate: new Date('2026-11-05T14:00:00.000Z'),
+          eventType: 'CLASS',
+        },
+      });
+
+      // (b) Assignment deadline
+      const asgn = await prisma.assignment.create({
+        data: {
+          subjectId: subject.id,
+          title: 'Algorithms Homework 3',
+          dueDate: new Date('2026-11-10T17:00:00.000Z'),
+          priority: 'HIGH',
+        },
+      });
+
+      // (c) Task deadline
+      const tsk = await prisma.task.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Review Chapter 5',
+          dueDate: new Date('2026-11-15T12:00:00.000Z'),
+          priority: 'MEDIUM',
+        },
+      });
+
+      // (d) Job application with multiple interview rounds in interviewHistory
+      const appWithHistory = await prisma.jobApplication.create({
+        data: {
+          studentProfileId: a.profileId!,
+          companyName: 'Acme Corp',
+          role: 'Backend Engineer',
+          interviewDate: new Date('2026-11-20T10:00:00.000Z'), // Legacy date (should NOT be double-displayed)
+          interviewRound: 'Legacy Round',
+          interviewHistory: [
+            { round: 'Technical Screen', date: '2026-11-18T10:00:00.000Z', notes: 'Coding test passed' },
+            { round: 'System Design', date: '2026-11-25T14:00:00.000Z', notes: 'Design distributed cache' },
+            { round: 'Out of Window Round', date: '2026-12-15T14:00:00.000Z' }, // Outside query window
+          ],
+        },
+      });
+
+      // (e) Job application with only legacy interviewDate (no history)
+      const appLegacyOnly = await prisma.jobApplication.create({
+        data: {
+          studentProfileId: a.profileId!,
+          companyName: 'Beta Tech',
+          role: 'Full Stack Dev',
+          interviewDate: new Date('2026-11-22T11:00:00.000Z'),
+          interviewRound: 'Final Round',
+        },
+      });
+
+      // (f) Institutional events:
+      const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+
+      // - Event with targetScope ALL and null endDate
+      const instAll = await prisma.institutionalEvent.create({
+        data: {
+          title: 'Campus Tech Fest',
+          startDate: new Date('2026-11-08T09:00:00.000Z'),
+          endDate: null, // Null endDate: point event
+          category: 'COLLEGE_EVENT',
+          targetScope: 'ALL',
+          isPublished: true,
+          createdByUserId: adminUser.id,
+        },
+      });
+
+      // - Event outside window (before window) with null endDate: must NOT appear
+      await prisma.institutionalEvent.create({
+        data: {
+          title: 'Past Campus Orientation',
+          startDate: new Date('2026-10-15T09:00:00.000Z'),
+          endDate: null,
+          category: 'COLLEGE_EVENT',
+          targetScope: 'ALL',
+          isPublished: true,
+          createdByUserId: adminUser.id,
+        },
+      });
+
+      // - Event for another student (Student B) that must NOT appear for Student A
+      await prisma.calendarEvent.create({
+        data: {
+          studentProfileId: b.profileId!,
+          title: 'Student B Private Event',
+          date: new Date('2026-11-12T10:00:00.000Z'),
+          eventType: 'CLASS',
+        },
+      });
+
+      // 4. Fetch unified calendar for Student A
+      const resA = await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${windowEnd}`, a.token);
+      assert.equal(resA.status, 200);
+      const itemsA = (await resA.json() as any).data;
+
+      // Verify all expected items are present with stable composite IDs
+      const itemIds = itemsA.map((i: any) => i.id);
+      assert(itemIds.includes(`PERSONAL:${pEvent.id}`), 'Personal event must be included');
+      assert(itemIds.includes(`ASSIGNMENT:${asgn.id}`), 'Assignment deadline must be included');
+      assert(itemIds.includes(`TASK:${tsk.id}`), 'Task deadline must be included');
+      assert(itemIds.includes(`INSTITUTIONAL:${instAll.id}`), 'Institutional ALL event with null endDate must be included');
+
+      // Verify interview history coverage without double-display
+      assert(itemIds.includes(`INTERVIEW:${appWithHistory.id}:0`), 'Round 0 must be included');
+      assert(itemIds.includes(`INTERVIEW:${appWithHistory.id}:1`), 'Round 1 must be included');
+      assert(!itemIds.includes(`INTERVIEW:${appWithHistory.id}:2`), 'Out-of-window round must NOT be included');
+      assert(!itemIds.includes(`INTERVIEW:${appWithHistory.id}:legacy`), 'Legacy date must NOT be double-displayed when history exists');
+      assert(itemIds.includes(`INTERVIEW:${appLegacyOnly.id}:legacy`), 'Legacy interview must be included when history is absent');
+
+      // Verify cross-student isolation: Student B's event is NOT in Student A's calendar
+      assert(!itemsA.some((i: any) => i.title === 'Student B Private Event'));
+
+      // Verify chronological sorting
+      for (let i = 0; i < itemsA.length - 1; i++) {
+        const cur = new Date(itemsA[i].startDate).getTime();
+        const next = new Date(itemsA[i + 1].startDate).getTime();
+        assert(cur <= next, `Items must be chronologically sorted: ${itemsA[i].title} (${itemsA[i].startDate}) vs ${itemsA[i+1].title} (${itemsA[i+1].startDate})`);
+      }
+
+      // 5. Test unenrolled student safe audience scoping (courseId is null)
+      // Student B has courseId === null
+      const resB = await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${windowEnd}`, b.token);
+      assert.equal(resB.status, 200);
+      const itemsB = (await resB.json() as any).data;
+      // Sees ALL institutional events safely without runtime error
+      assert(itemsB.some((i: any) => i.id === `INSTITUTIONAL:${instAll.id}`));
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });
