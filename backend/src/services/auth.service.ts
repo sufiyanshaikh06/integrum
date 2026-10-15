@@ -251,30 +251,23 @@ export const authService = {
   async verifyEmail(rawToken: string) {
     const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-    const user = await prisma.user.findFirst({
+    // Single-use atomic conditional consumption
+    const updated = await prisma.user.updateMany({
       where: {
         verificationTokenHash: hashedToken,
         verificationExpires: { gt: new Date() },
+        isVerified: false,
       },
-    });
-
-    if (!user) {
-      throw ApiError.badRequest('Verification token is invalid or has expired');
-    }
-
-    if (user.isVerified) {
-      // Already verified — safe no-op
-      return { message: 'Email is already verified' };
-    }
-
-    await prisma.user.update({
-      where: { id: user.id },
       data: {
         isVerified: true,
         verificationTokenHash: null,
         verificationExpires: null,
       },
     });
+
+    if (updated.count === 0) {
+      throw ApiError.badRequest('Verification token is invalid or has expired');
+    }
 
     return { message: 'Email verified successfully' };
   },
@@ -290,19 +283,40 @@ export const authService = {
     const [rawToken, hashedToken] = generateSecureToken();
     const expires = new Date(Date.now() + TOKEN_TTL_MS);
 
-    await prisma.user.update({
-      where: { id: userId },
+    // Atomically set new token ONLY IF user remains unverified
+    const updated = await prisma.user.updateMany({
+      where: { id: userId, isVerified: false },
       data: {
         verificationTokenHash: hashedToken,
         verificationExpires: expires,
       },
     });
 
-    await emailService.send(
-      user.email,
-      'Verify your Integrum account',
-      `Your new verification token is: ${rawToken}\n\nUse POST /api/v1/auth/verify-email with this token.\nExpires in 1 hour.`
-    );
+    // If verification completed concurrently or user not eligible, do not send email
+    if (updated.count === 0) {
+      return { message: 'Email is already verified' };
+    }
+
+    // External email delivery outside database transaction
+    try {
+      await emailService.send(
+        user.email,
+        'Verify your Integrum account',
+        `Your new verification token is: ${rawToken}\n\nUse POST /api/v1/auth/verify-email with this token.\nExpires in 1 hour.`
+      );
+    } catch (error) {
+      // Conditional rollback on delivery failure:
+      // Must only clear if verificationTokenHash is still this exact token
+      await prisma.user.updateMany({
+        where: { id: userId, verificationTokenHash: hashedToken },
+        data: {
+          verificationTokenHash: null,
+          verificationExpires: null,
+        },
+      });
+      console.error('Resend verification email delivery failed');
+      throw ApiError.serviceUnavailable('Failed to deliver verification email. Please try again.');
+    }
 
     return { message: 'Verification email resent' };
   },

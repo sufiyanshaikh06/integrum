@@ -1331,6 +1331,82 @@ test('day-one HTTP and persistence regressions', async t => {
       assert(Array.isArray(itemsB));
       assert.equal(itemsB.some((f: any) => f.id === created.id), false);
     });
+
+    await t.test('W10: atomic single-use verification token consumption and resend race recovery', async () => {
+      // 1. Create an unverified student
+      let sentVerificationToken = '';
+      const originalEmailSend = emailService.send;
+      emailService.send = async (_to, _subject, text) => {
+        const match = text.match(/[a-f0-9]{64}/);
+        if (match) sentVerificationToken = match[0];
+      };
+
+      try {
+        const studentW10 = await student('W10_Race');
+        assert(sentVerificationToken, 'Verification email must contain token');
+        const tokenToVerify = sentVerificationToken;
+
+        // 2. Concurrent verification of the same token
+        const parallelVerifications = await Promise.allSettled([
+          authService.verifyEmail(tokenToVerify),
+          authService.verifyEmail(tokenToVerify),
+        ]);
+
+        const fulfilled = parallelVerifications.filter(r => r.status === 'fulfilled');
+        const rejected = parallelVerifications.filter(r => r.status === 'rejected');
+
+        // Exactly one must succeed (atomic consumption); second must fail with 400
+        assert.equal(fulfilled.length, 1, 'Only one concurrent verification can consume the single-use token');
+        assert.equal(rejected.length, 1, 'Second concurrent verification must be rejected');
+        assert.equal((rejected[0] as PromiseRejectedResult).reason.statusCode, 400);
+
+        // Account is now verified
+        const userAfter = await prisma.user.findUniqueOrThrow({ where: { id: studentW10.id } });
+        assert.equal(userAfter.isVerified, true);
+        assert.equal(userAfter.verificationTokenHash, null);
+
+        // Subsequent verification attempt with same token fails with 400 (no blind fallback)
+        await assert.rejects(authService.verifyEmail(tokenToVerify), {
+          statusCode: 400,
+          message: 'Verification token is invalid or has expired',
+        });
+
+        // Nonexistent random token fails with 400 without matching any verified user
+        await assert.rejects(authService.verifyEmail('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'), {
+          statusCode: 400,
+          message: 'Verification token is invalid or has expired',
+        });
+
+        // 3. Resend check: If verification already completed, resend update affects 0 rows and sends no email
+        let emailSentOnVerified = false;
+        emailService.send = async () => { emailSentOnVerified = true; };
+        const resendVerifiedResult = await authService.resendVerificationEmail(studentW10.id);
+        assert.equal(resendVerifiedResult.message, 'Email is already verified');
+        assert.equal(emailSentOnVerified, false, 'No email should be dispatched when user is already verified');
+
+        // 4. Resend failure recovery on unverified account
+        sentVerificationToken = '';
+        emailService.send = async (_to, _subject, text) => {
+          const match = text.match(/[a-f0-9]{64}/);
+          if (match) sentVerificationToken = match[0];
+        };
+        const unverifiedStudent = await student('W10_Fail');
+        assert(sentVerificationToken);
+
+        // Simulate delivery failure during resend
+        emailService.send = async () => { throw new Error('Resend network outage'); };
+        await assert.rejects(authService.resendVerificationEmail(unverifiedStudent.id), {
+          statusCode: 503,
+          message: 'Failed to deliver verification email. Please try again.',
+        });
+
+        // Verify token hash was conditionally rolled back so student is not locked out with phantom token
+        const rolledBackUser = await prisma.user.findUniqueOrThrow({ where: { id: unverifiedStudent.id } });
+        assert.equal(rolledBackUser.verificationTokenHash, null);
+      } finally {
+        emailService.send = originalEmailSend;
+      }
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });
