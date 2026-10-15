@@ -114,6 +114,57 @@ async function main() {
   }
 
   console.log('  ✅ Baseline SystemSettings verified.');
+
+  // 4. Seed Verified Demo Student Account (Sufiyan Shaikh - R.K. Talreja College)
+  const studentEmail = 'sufiyan.shaikh@example.com';
+  console.log(`  👤 Ensuring demo student account "${studentEmail}"...`);
+  const studentPassHash = await bcrypt.hash('password123', saltRounds);
+
+  let demoStudent = await prisma.user.findUnique({
+    where: { email: studentEmail },
+    include: { studentProfile: { include: { semesters: { include: { subjects: true } } } } },
+  });
+
+  if (!demoStudent) {
+    demoStudent = await prisma.user.create({
+      data: {
+        email: studentEmail,
+        passwordHash: studentPassHash,
+        role: Role.STUDENT,
+        isVerified: true,
+        isActive: true,
+        studentProfile: {
+          create: {
+            firstName: 'Sufiyan',
+            lastName: 'Shaikh',
+            university: 'R.K. Talreja College',
+            enrollmentYear: 2024,
+            graduationYear: 2027,
+            careerGoals: 'B.Sc. Computer Science graduate targeting software engineering and backend systems architecture.',
+            semesters: {
+              create: {
+                name: 'Semester 5 (B.Sc. Computer Science)',
+                startDate: new Date('2026-06-15T00:00:00.000Z'),
+                endDate: new Date('2026-11-30T00:00:00.000Z'),
+                subjects: {
+                  create: [
+                    { name: 'Data Structures & Algorithms', code: 'CS301', credits: 4, totalClasses: 24, attendedClasses: 22 },
+                    { name: 'Database Management Systems', code: 'CS302', credits: 4, totalClasses: 24, attendedClasses: 20 },
+                    { name: 'Operating Systems', code: 'CS303', credits: 4, totalClasses: 23, attendedClasses: 21 },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+      include: { studentProfile: { include: { semesters: { include: { subjects: true } } } } },
+    });
+    console.log(`  ✅ Demo student account created (ID: ${demoStudent.id}).`);
+  } else {
+    console.log(`  ℹ️  Demo student account "${studentEmail}" already exists.`);
+  }
+
   console.log('🎉 Database seeding completed successfully.');
 }
 

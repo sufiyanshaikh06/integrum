@@ -1,3 +1,5 @@
+import path from 'path';
+import fs from 'fs';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -125,6 +127,19 @@ app.use('/api/v1/catalog', catalogRoutes);
 app.use('/api/v1/content', contentRoutes);
 app.use('/api/v1/feedback', feedbackRoutes);
 app.use('/api/v1/admin', adminRoutes);
+
+// Serve frontend production build if available
+const frontendDist = path.resolve(process.cwd(), '../frontend/dist');
+const altFrontendDist = path.resolve(process.cwd(), 'frontend/dist');
+const targetDist = fs.existsSync(frontendDist) ? frontendDist : (fs.existsSync(altFrontendDist) ? altFrontendDist : null);
+
+if (targetDist) {
+  app.use(express.static(targetDist));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(targetDist, 'index.html'));
+  });
+}
 
 // Error Handling
 app.use(notFound);
