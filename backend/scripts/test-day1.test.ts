@@ -1900,6 +1900,121 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(markReadRes.status, 200);
       assert.equal((await markReadRes.json() as any).data.isRead, true);
     });
+
+    await t.test('W02 / W16: idempotent AI study plan acceptance with dated session mapping, supplemental tasks, and transactional rollback', async () => {
+      const idemKey = `idem_${randomUUID()}`;
+      const payload1 = {
+        idempotencyKey: idemKey,
+        title: 'Operating Systems Mastery',
+        recommendedTargetDate: '2026-11-15T00:00:00.000Z',
+        overview: 'Deep dive into virtual memory and scheduling',
+        weeklySchedule: [
+          {
+            day: 'MONDAY',
+            topic: 'Virtual Memory Intro',
+            durationMinutes: 60,
+            activity: 'Read Silberschatz Ch 9',
+            startTime: '10:00',
+          },
+          {
+            day: 'WEDNESDAY',
+            topic: 'Page Replacement Algorithms',
+            durationMinutes: 90,
+            activity: 'Simulate LRU and FIFO',
+            startTime: '14:00',
+          },
+        ],
+        suggestedTasks: [
+          {
+            title: 'Implement FIFO page replacement in C',
+            description: 'Handle frame allocation logic',
+          },
+        ],
+      };
+
+      // 1. Initial acceptance: 201 Created
+      const res1 = await req('POST', '/study-plans/accept-ai', a.token, payload1);
+      const res1Json = await res1.json() as any;
+      assert.equal(res1.status, 201, JSON.stringify(res1Json));
+      const plan1 = res1Json.data;
+      assert.equal(plan1.title, 'Operating Systems Mastery');
+      assert.equal(plan1.idempotencyKey, idemKey);
+
+      // Verify scheduleData has dated sessions
+      assert(plan1.scheduleData, 'scheduleData must be persisted');
+      const datedSchedule = plan1.scheduleData.datedSchedule || plan1.scheduleData.weeklySchedule;
+      assert.equal(datedSchedule.length, 2);
+      const monSession = datedSchedule[0];
+      const wedSession = datedSchedule[1];
+      assert(monSession.date, 'Session must have concrete date');
+      assert(wedSession.date, 'Session must have concrete date');
+
+      const monDate = new Date(monSession.date);
+      const wedDate = new Date(wedSession.date);
+      assert.equal(monDate.getUTCDay(), 1, 'Monday session must map to Monday (UTC day 1)');
+      assert.equal(wedDate.getUTCDay(), 3, 'Wednesday session must map to Wednesday (UTC day 3)');
+      assert.equal(monDate.getUTCHours(), 10, 'Start time 10:00 must be preserved');
+      assert.equal(wedDate.getUTCHours(), 14, 'Start time 14:00 must be preserved');
+
+      // Verify database tasks: study sessions + supplemental tasks
+      const persistedTasks = await prisma.task.findMany({
+        where: { studyPlanId: plan1.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      assert.equal(persistedTasks.length, 3, 'Persisted tasks must include both 2 study sessions and 1 supplemental task');
+      assert(persistedTasks.some(t => t.title.includes('Virtual Memory Intro')));
+      assert(persistedTasks.some(t => t.title.includes('Page Replacement Algorithms')));
+      assert(persistedTasks.some(t => t.title === 'Implement FIFO page replacement in C'));
+
+      // 2. Idempotent duplicate: same key and identical payload -> 200 OK
+      const resDup = await req('POST', '/study-plans/accept-ai', a.token, payload1);
+      assert.equal(resDup.status, 200);
+      const dupData = (await resDup.json() as any).data;
+      assert.equal(dupData.id, plan1.id);
+
+      const countAfterDup = await prisma.studyPlan.count({ where: { studentProfileId: a.profileId!, idempotencyKey: idemKey } });
+      assert.equal(countAfterDup, 1, 'Duplicate request must not create a second study plan');
+
+      // 3. Conflict: same key with DIFFERENT payload -> 409 Conflict
+      const payloadConflict = {
+        ...payload1,
+        title: 'Tampered Different Plan Title',
+      };
+      const resConflict = await req('POST', '/study-plans/accept-ai', a.token, payloadConflict);
+      assert.equal(resConflict.status, 409, 'Different payload with same idempotency key must return 409 Conflict');
+
+      // 4. All-or-nothing rollback on invalid task
+      const failIdemKey = `fail_${randomUUID()}`;
+      const payloadInvalidTask = {
+        idempotencyKey: failIdemKey,
+        title: 'Plan that should roll back',
+        weeklySchedule: [
+          { day: 'MONDAY', topic: 'Valid Topic', durationMinutes: 60, activity: 'Valid Activity' },
+        ],
+        suggestedTasks: [
+          { title: '', description: 'Empty title must fail validation' },
+        ],
+      };
+      const resFail = await req('POST', '/study-plans/accept-ai', a.token, payloadInvalidTask);
+      assert.equal(resFail.status, 400);
+
+      const planAfterFail = await prisma.studyPlan.findFirst({ where: { idempotencyKey: failIdemKey } });
+      assert.equal(planAfterFail, null, 'Study plan must be rolled back on task validation failure');
+      const orphanTasks = await prisma.task.findMany({ where: { title: 'Valid Topic' } });
+      assert.equal(orphanTasks.length, 0, 'No tasks must be left behind after rollback');
+
+      // 5. Verification via GET /study-plans/:id
+      const getPlanRes = await req('GET', `/study-plans/${plan1.id}`, a.token);
+      assert.equal(getPlanRes.status, 200);
+      const fetchedPlan = (await getPlanRes.json() as any).data;
+      assert.equal(fetchedPlan.id, plan1.id);
+      assert(fetchedPlan.scheduleData);
+      assert.equal(fetchedPlan.tasks.length, 3);
+
+      // Student isolation
+      const otherRes = await req('GET', `/study-plans/${plan1.id}`, b.token);
+      assert.equal(otherRes.status, 404);
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });

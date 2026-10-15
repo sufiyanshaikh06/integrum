@@ -3,7 +3,7 @@ import { studyPlanService } from '../services/studyplan.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { ApiError } from '../utils/ApiError.js';
-import { CreateStudyPlanInput, UpdateStudyPlanInput } from '../schemas/studyplan.schema.js';
+import { CreateStudyPlanInput, UpdateStudyPlanInput, AcceptAiStudyPlanInput } from '../schemas/studyplan.schema.js';
 
 function getProfileId(req: Request): string {
   const id = req.user?.studentProfile?.id;
@@ -41,4 +41,16 @@ export const deleteStudyPlan = asyncHandler(async (req: Request, res: Response) 
   const studentProfileId = getProfileId(req);
   await studyPlanService.deleteStudyPlan(studentProfileId, req.params.id as string);
   ApiResponse.success(res, 'Study plan deleted successfully', null, 204);
+});
+
+export const acceptAiStudyPlan = asyncHandler(async (req: Request, res: Response) => {
+  const studentProfileId = getProfileId(req);
+  const data: AcceptAiStudyPlanInput = req.body;
+  const idempotencyKey = (req.headers['idempotency-key'] as string) || (req.headers['x-idempotency-key'] as string);
+
+  const result = await studyPlanService.acceptAiStudyPlan(studentProfileId, data, idempotencyKey);
+  const statusCode = result.isDuplicate ? 200 : 201;
+  const message = result.isDuplicate ? 'AI study plan already accepted' : 'AI study plan accepted successfully';
+
+  ApiResponse.success(res, message, result.plan, statusCode);
 });
