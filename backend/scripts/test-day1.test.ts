@@ -1495,6 +1495,96 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(getSettingsData.notificationPreferences.examReminders, false);
       assert.equal(getSettingsData.defaultSemesterId, null);
     });
+
+    await t.test('Migration: reminder deliveryStatus backfill policy and schema backward compatibility', async () => {
+      // 1. Test existing API CRUD works seamlessly with new columns default
+      const createdReminder = await create('/reminders', a.token, {
+        title: 'Compatibility reminder',
+        triggerAt: '2028-01-01T10:00:00Z',
+      });
+      assert(createdReminder.id);
+      const fetchedInDb = await prisma.reminder.findUniqueOrThrow({ where: { id: createdReminder.id } });
+      assert.equal(fetchedInDb.deliveryStatus, 'PENDING');
+      assert.equal(fetchedInDb.deliveredAt, null);
+      assert.equal(fetchedInDb.suppressedAt, null);
+      assert.equal(fetchedInDb.sourceType, null);
+
+      // 2. Test backfill policy on historical legacy rows:
+      const pastTime = new Date(Date.now() - 3600000); // 1 hour ago
+      const futureTime = new Date(Date.now() + 3600000); // 1 hour in future
+
+      // Completed past reminder
+      const legacyCompleted = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy completed',
+          triggerAt: pastTime,
+          isCompleted: true,
+        },
+      });
+
+      // Incomplete overdue reminder
+      const legacyOverdue = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy overdue',
+          triggerAt: pastTime,
+          isCompleted: false,
+        },
+      });
+
+      // Incomplete future reminder
+      const legacyFuture = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy future',
+          triggerAt: futureTime,
+          isCompleted: false,
+        },
+      });
+
+      // Run the backfill update statements (as defined in the migration script)
+      await prisma.$executeRawUnsafe(`UPDATE "Reminder" SET "deliveryStatus" = 'CANCELLED' WHERE "isCompleted" = true AND "id" = '${legacyCompleted.id}'`);
+      await prisma.$executeRawUnsafe(`UPDATE "Reminder" SET "deliveryStatus" = 'SKIPPED', "suppressedAt" = NOW() WHERE "isCompleted" = false AND "triggerAt" <= NOW() AND "id" = '${legacyOverdue.id}'`);
+      await prisma.$executeRawUnsafe(`UPDATE "Reminder" SET "deliveryStatus" = 'PENDING' WHERE "isCompleted" = false AND "triggerAt" > NOW() AND "id" = '${legacyFuture.id}'`);
+
+      const verifiedCompleted = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyCompleted.id } });
+      assert.equal(verifiedCompleted.deliveryStatus, 'CANCELLED');
+
+      const verifiedOverdue = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyOverdue.id } });
+      assert.equal(verifiedOverdue.deliveryStatus, 'SKIPPED');
+      assert(verifiedOverdue.suppressedAt !== null);
+
+      const verifiedFuture = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyFuture.id } });
+      assert.equal(verifiedFuture.deliveryStatus, 'PENDING');
+
+      // 3. Database uniqueness for recipient/source/occurrence
+      await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Unique test 1',
+          triggerAt: futureTime,
+          sourceType: 'ASSIGNMENT',
+          sourceId: 'src-123',
+          occurrenceKey: 'due',
+        },
+      });
+
+      // Competing duplicate insert must fail with unique violation (P2002)
+      await assert.rejects(
+        prisma.reminder.create({
+          data: {
+            studentProfileId: a.profileId!,
+            title: 'Unique test duplicate',
+            triggerAt: futureTime,
+            sourceType: 'ASSIGNMENT',
+            sourceId: 'src-123',
+            occurrenceKey: 'due',
+          },
+        }),
+        (err: any) => err.code === 'P2002'
+      );
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });
