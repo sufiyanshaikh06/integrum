@@ -32,21 +32,33 @@ export const noteService = {
     });
   },
 
-  async getNotes(studentProfileId: string, subjectId?: string, tag?: string) {
+  async getNotes(studentProfileId: string, subjectId?: string, tag?: string, search?: string) {
     // If subjectId is provided, verify it. Otherwise, get all notes for the student's subjects
     if (subjectId) {
       await this.verifySubjectOwnership(studentProfileId, subjectId);
     }
 
-    return prisma.note.findMany({
-      where: {
-        subject: subjectId ? { id: subjectId } : {
-          semester: {
-            studentProfileId,
-          },
+    const where: any = {
+      subject: subjectId ? { id: subjectId } : {
+        semester: {
+          studentProfileId,
         },
-        ...(tag ? { tags: { has: tag } } : {}),
       },
+    };
+
+    if (tag) {
+      where.tags = { has: tag };
+    }
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { content: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    return prisma.note.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: { subject: { select: { name: true } } },
     });

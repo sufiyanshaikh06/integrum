@@ -23,3 +23,14 @@ export const updateNoteSchema = z.object({
 
 export type CreateNoteInput = z.infer<typeof createNoteSchema>['body'];
 export type UpdateNoteInput = z.infer<typeof updateNoteSchema>['body'];
+
+export const getNotesQuerySchema = z.object({
+  query: z.object({
+    subjectId: z.string().uuid().optional(),
+    tag: z.string().trim().min(1).optional(),
+    search: z.string().trim().min(1).max(100).optional(),
+  }).strict(),
+});
+
+export type GetNotesQuery = z.infer<typeof getNotesQuerySchema>['query'];
+

@@ -34,7 +34,8 @@ export const getNotes = asyncHandler(async (req: Request, res: Response) => {
   const studentProfileId = getProfileId(req);
   const subjectId = req.query.subjectId as string | undefined;
   const tag = req.query.tag as string | undefined;
-  const notes = await noteService.getNotes(studentProfileId, subjectId, tag);
+  const search = req.query.search as string | undefined;
+  const notes = await noteService.getNotes(studentProfileId, subjectId, tag, search);
   ApiResponse.success(res, 'Notes retrieved successfully', notes);
 });
 

@@ -1199,6 +1199,85 @@ test('day-one HTTP and persistence regressions', async t => {
         prisma.user.findUnique = originalFindUnique;
       }
     });
+
+    await t.test('W01: bounded note search across title/content with ownership isolation', async () => {
+      // 1. Setup distinct note fixtures for Student A
+      const semA = await create('/semesters', a.token, { name: 'Sem A Notes', startDate: '2026-09-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' });
+      const subA1 = await create('/subjects', a.token, { semesterId: semA.id, name: 'Algorithms', code: 'CS301' });
+      const subA2 = await create('/subjects', a.token, { semesterId: semA.id, name: 'Databases', code: 'CS302' });
+
+      const note1 = await create('/notes', a.token, {
+        subjectId: subA1.id,
+        title: 'Binary Search Trees and AVL balance',
+        content: 'Self-balancing trees maintain logarithmic height for fast search operations.',
+        tags: ['dsa', 'trees'],
+      });
+      const note2 = await create('/notes', a.token, {
+        subjectId: subA2.id,
+        title: 'Relational Normalization Forms',
+        content: 'Third normal form (3NF) eliminates transitive dependency on primary key.',
+        tags: ['database', 'theory'],
+      });
+
+      // Setup note for Student B with similar keywords
+      const semB = await create('/semesters', b.token, { name: 'Sem B Notes', startDate: '2026-09-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' });
+      const subB = await create('/subjects', b.token, { semesterId: semB.id, name: 'Advanced Trees', code: 'CS501' });
+      const noteB = await create('/notes', b.token, {
+        subjectId: subB.id,
+        title: 'B-Trees and Red-Black Trees for B',
+        content: 'Student B private secret notes on search trees and logarithmic height.',
+        tags: ['trees', 'secret'],
+      });
+
+      // 2. Search by title substring (case-insensitive)
+      const resTitle = await req('GET', '/notes?search=binary%20search', a.token);
+      assert.equal(resTitle.status, 200);
+      const dataTitle = (await resTitle.json() as any).data;
+      assert.equal(dataTitle.length, 1);
+      assert.equal(dataTitle[0].id, note1.id);
+
+      // 3. Search by content substring (case-insensitive)
+      const resContent = await req('GET', '/notes?search=transitive%20dependency', a.token);
+      assert.equal(resContent.status, 200);
+      const dataContent = (await resContent.json() as any).data;
+      assert.equal(dataContent.length, 1);
+      assert.equal(dataContent[0].id, note2.id);
+
+      // 4. Search with tag conjunction (search + tag)
+      const resTagConjunction = await req('GET', '/notes?search=trees&tag=dsa', a.token);
+      assert.equal(resTagConjunction.status, 200);
+      const dataTagConjunction = (await resTagConjunction.json() as any).data;
+      assert.equal(dataTagConjunction.length, 1);
+      assert.equal(dataTagConjunction[0].id, note1.id);
+
+      // 5. Cross-student isolation: Student A searching for Student B keyword 'secret' returns empty list
+      const resSecretA = await req('GET', '/notes?search=secret', a.token);
+      assert.equal(resSecretA.status, 200);
+      const dataSecretA = (await resSecretA.json() as any).data;
+      assert.equal(dataSecretA.length, 0);
+
+      // Student B searching for 'secret' returns only noteB
+      const resSecretB = await req('GET', '/notes?search=secret', b.token);
+      assert.equal(resSecretB.status, 200);
+      const dataSecretB = (await resSecretB.json() as any).data;
+      assert.equal(dataSecretB.length, 1);
+      assert.equal(dataSecretB[0].id, noteB.id);
+
+      // Student B searching for Student A keyword 'transitive' returns empty list
+      const resTransitiveB = await req('GET', '/notes?search=transitive', b.token);
+      assert.equal(resTransitiveB.status, 200);
+      const dataTransitiveB = (await resTransitiveB.json() as any).data;
+      assert.equal(dataTransitiveB.length, 0);
+
+      // 6. Query schema validation bounds: search query longer than 100 chars produces 400
+      const longSearch = 'a'.repeat(101);
+      const resLong = await req('GET', `/notes?search=${longSearch}`, a.token);
+      assert.equal(resLong.status, 400);
+
+      // 7. Unrecognized query parameter produces 400 (strict validation)
+      const resUnrecognized = await req('GET', '/notes?invalidParam=true', a.token);
+      assert.equal(resUnrecognized.status, 400);
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });
