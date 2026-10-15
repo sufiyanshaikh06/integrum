@@ -1739,6 +1739,167 @@ test('day-one HTTP and persistence regressions', async t => {
       // Sees ALL institutional events safely without runtime error
       assert(itemsB.some((i: any) => i.id === `INSTITUTIONAL:${instAll.id}`));
     });
+
+    await t.test('W03 / B06: reminder lifecycle synchronization, cancellation on parent deletion, channel separation and atomic dispatch', async () => {
+      // 1. Source creation & synchronization
+      // (a) Assignment with future due date -> linked reminder created
+      const asgnDate = new Date(Date.now() + 48 * 3600 * 1000); // 48h in future
+      const asgnRes = await req('POST', '/assignments', a.token, {
+        subjectId: subject.id,
+        title: 'Network Systems Lab',
+        dueDate: asgnDate.toISOString(),
+      });
+      assert.equal(asgnRes.status, 201);
+      const asgnData = (await asgnRes.json() as any).data;
+
+      const asgnReminder = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'ASSIGNMENT',
+            sourceId: asgnData.id,
+            occurrenceKey: 'due',
+          },
+        },
+      });
+      assert(asgnReminder, 'Assignment creation must synchronize linked reminder');
+      assert.equal(asgnReminder.deliveryStatus, 'PENDING');
+      assert.equal(asgnReminder.triggerAt.getTime(), asgnDate.getTime() - 24 * 3600 * 1000);
+
+      // (b) Exam event -> linked reminder created
+      const examDate = new Date(Date.now() + 72 * 3600 * 1000);
+      const examRes = await req('POST', '/calendar', a.token, {
+        title: 'Operating Systems Final',
+        date: examDate.toISOString(),
+        eventType: 'EXAM',
+      });
+      assert.equal(examRes.status, 201);
+      const examData = (await examRes.json() as any).data;
+
+      const examReminder = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'EXAM',
+            sourceId: examData.id,
+            occurrenceKey: 'exam',
+          },
+        },
+      });
+      assert(examReminder, 'Exam event creation must synchronize linked reminder');
+      assert.equal(examReminder.deliveryStatus, 'PENDING');
+
+      // (c) Job application with 2 interview rounds -> 2 linked reminders created
+      const round0Date = new Date(Date.now() + 48 * 3600 * 1000);
+      const round1Date = new Date(Date.now() + 96 * 3600 * 1000);
+      const jobAppRes = await req('POST', '/job-applications', a.token, {
+        companyName: 'Gamma AI',
+        role: 'Research Engineer',
+        interviewHistory: [
+          { round: 'Round 1 Coding', date: round0Date.toISOString() },
+          { round: 'Round 2 System', date: round1Date.toISOString() },
+        ],
+      });
+      assert.equal(jobAppRes.status, 201);
+      const jobAppData = (await jobAppRes.json() as any).data;
+
+      const jobReminders = await prisma.reminder.findMany({
+        where: {
+          studentProfileId: a.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: jobAppData.id,
+        },
+        orderBy: { occurrenceKey: 'asc' },
+      });
+      assert.equal(jobReminders.length, 2, 'Must create a reminder for each individual interview round');
+      assert.equal(jobReminders[0]!.occurrenceKey, 'round-0');
+      assert.equal(jobReminders[1]!.occurrenceKey, 'round-1');
+
+      // 2. Parent record update: rescheduling assignment moves reminder triggerAt
+      const newAsgnDate = new Date(Date.now() + 96 * 3600 * 1000);
+      const updateAsgnRes = await req('PATCH', `/assignments/${asgnData.id}`, a.token, {
+        dueDate: newAsgnDate.toISOString(),
+      });
+      assert.equal(updateAsgnRes.status, 200);
+
+      const updatedAsgnRem = await prisma.reminder.findUniqueOrThrow({
+        where: { id: asgnReminder.id },
+      });
+      assert.equal(updatedAsgnRem.triggerAt.getTime(), newAsgnDate.getTime() - 24 * 3600 * 1000, 'Rescheduling must update reminder triggerAt');
+
+      // 3. Parent record deletion cancellation: deleting exam cancels reminder
+      const deleteExamRes = await req('DELETE', `/calendar/${examData.id}`, a.token);
+      assert.equal(deleteExamRes.status, 204);
+
+      const cancelledExamRem = await prisma.reminder.findUniqueOrThrow({
+        where: { id: examReminder.id },
+      });
+      assert.equal(cancelledExamRem.deliveryStatus, 'CANCELLED', 'Deleting parent exam must mark linked reminder CANCELLED');
+
+      // 4. Preference-channel separation:
+      // Configure Student A: emailNotifications = false, but assignmentReminders = true
+      await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { emailNotifications: false, assignmentReminders: true },
+      });
+
+      // Force assignment reminder to be due now
+      await prisma.reminder.update({
+        where: { id: asgnReminder.id },
+        data: { triggerAt: new Date(Date.now() - 1000) },
+      });
+
+      // Import and invoke dispatcher processDueReminders
+      const { reminderService } = await import('../src/services/reminder.service.js');
+      const batchResult1 = await reminderService.processDueReminders();
+      assert(batchResult1.processedCount >= 1);
+
+      // Verify reminder is marked DELIVERED and in-app Notification was created
+      const dispatchedAsgnRem = await prisma.reminder.findUniqueOrThrow({ where: { id: asgnReminder.id } });
+      assert.equal(dispatchedAsgnRem.deliveryStatus, 'DELIVERED', 'In-app notification must NOT be suppressed when emailNotifications=false');
+      assert(dispatchedAsgnRem.deliveredAt !== null);
+
+      const inAppNotif = await prisma.notification.findFirst({
+        where: { userId: a.id, type: 'ASSIGNMENT_REMINDER' },
+      });
+      assert(inAppNotif, 'In-app notification record must be created in student inbox');
+
+      // 5. Category suppression without false delivery:
+      // Configure Student A: interviewReminders = false
+      await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { interviewReminders: false },
+      });
+
+      // Force job round-0 reminder to be due now
+      await prisma.reminder.update({
+        where: { id: jobReminders[0]!.id },
+        data: { triggerAt: new Date(Date.now() - 1000) },
+      });
+
+      const batchResult2 = await reminderService.processDueReminders();
+      assert(batchResult2.skippedCount >= 1);
+
+      const suppressedRem = await prisma.reminder.findUniqueOrThrow({ where: { id: jobReminders[0]!.id } });
+      assert.equal(suppressedRem.deliveryStatus, 'SKIPPED', 'Suppressed reminder must be marked SKIPPED');
+      assert.equal(suppressedRem.deliveredAt, null, 'Suppressed reminder must NOT be marked deliveredAt');
+      assert(suppressedRem.suppressedAt !== null, 'Suppressed reminder must record suppressedAt');
+
+      // Zero interview notification in inbox
+      const suppressedNotif = await prisma.notification.findFirst({
+        where: { userId: a.id, type: 'PLACEMENT_ALERT' },
+      });
+      assert.equal(suppressedNotif, null, 'Suppressed reminder must not create notification in inbox');
+
+      // 6. Notifications inbox API: GET and PATCH read
+      const notifListRes = await req('GET', '/notifications', a.token);
+      assert.equal(notifListRes.status, 200);
+      const notifList = (await notifListRes.json() as any).data;
+      assert(notifList.length >= 1);
+      assert.equal(notifList[0].isRead, false);
+
+      const markReadRes = await req('PATCH', `/notifications/${notifList[0].id}/read`, a.token);
+      assert.equal(markReadRes.status, 200);
+      assert.equal((await markReadRes.json() as any).data.isRead, true);
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });

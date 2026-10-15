@@ -3,20 +3,39 @@ import { prisma } from '../config/prisma.js';
 import { CreateCalendarEventInput, UpdateCalendarEventInput } from '../schemas/calendar.schema.js';
 import { ApiError } from '../utils/ApiError.js';
 
+import { reminderService } from './reminder.service.js';
+
 export const calendarService = {
   async createCalendarEvent(studentProfileId: string, data: CreateCalendarEventInput) {
     if (data.endDate && new Date(data.endDate) < new Date(data.date)) {
       throw ApiError.badRequest('End date must be greater than or equal to start date');
     }
-    return prisma.calendarEvent.create({
-      data: {
-        studentProfileId,
-        title: data.title,
-        description: data.description ?? null,
-        date: new Date(data.date),
-        endDate: data.endDate ? new Date(data.endDate) : null,
-        eventType: data.eventType,
-      },
+
+    return prisma.$transaction(async (tx) => {
+      const event = await tx.calendarEvent.create({
+        data: {
+          studentProfileId,
+          title: data.title,
+          description: data.description ?? null,
+          date: new Date(data.date),
+          endDate: data.endDate ? new Date(data.endDate) : null,
+          eventType: data.eventType,
+        },
+      });
+
+      if (event.eventType === 'EXAM') {
+        await reminderService.syncSourceReminder(tx, {
+          studentProfileId,
+          sourceType: 'EXAM',
+          sourceId: event.id,
+          occurrenceKey: 'exam',
+          title: `Exam Tomorrow: ${event.title}`,
+          description: event.description,
+          targetDate: event.date,
+        });
+      }
+
+      return event;
     });
   },
 
@@ -41,8 +60,8 @@ export const calendarService = {
 
   async updateCalendarEvent(studentProfileId: string, eventId: string, data: UpdateCalendarEventInput) {
     return prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<Array<{ id: string; studentProfileId: string; date: Date; endDate: Date | null }>>`
-        SELECT "id", "studentProfileId", "date", "endDate"
+      const locked = await tx.$queryRaw<Array<{ id: string; studentProfileId: string; date: Date; endDate: Date | null; eventType: string }>>`
+        SELECT "id", "studentProfileId", "date", "endDate", "eventType"
         FROM "CalendarEvent"
         WHERE "id" = ${eventId}
         FOR UPDATE
@@ -75,10 +94,31 @@ export const calendarService = {
       if (data.endDate !== undefined) updateData.endDate = effectiveEndDate;
       if (data.eventType !== undefined) updateData.eventType = data.eventType;
 
-      return tx.calendarEvent.update({
+      const updated = await tx.calendarEvent.update({
         where: { id: eventId },
         data: updateData,
       });
+
+      if (updated.eventType === 'EXAM') {
+        await reminderService.syncSourceReminder(tx, {
+          studentProfileId,
+          sourceType: 'EXAM',
+          sourceId: updated.id,
+          occurrenceKey: 'exam',
+          title: `Exam Tomorrow: ${updated.title}`,
+          description: updated.description,
+          targetDate: updated.date,
+          cancelled: false,
+        });
+      } else if (event.eventType === 'EXAM') {
+        await reminderService.cancelSourceReminders(tx, {
+          studentProfileId,
+          sourceType: 'EXAM',
+          sourceId: updated.id,
+        });
+      }
+
+      return updated;
     }, {
       isolationLevel: 'ReadCommitted',
     });
@@ -87,8 +127,16 @@ export const calendarService = {
   async deleteCalendarEvent(studentProfileId: string, eventId: string) {
     await this.getCalendarEventById(studentProfileId, eventId); // verify ownership
 
-    await prisma.calendarEvent.delete({
-      where: { id: eventId },
+    return prisma.$transaction(async (tx) => {
+      await reminderService.cancelSourceReminders(tx, {
+        studentProfileId,
+        sourceType: 'EXAM',
+        sourceId: eventId,
+      });
+
+      await tx.calendarEvent.delete({
+        where: { id: eventId },
+      });
     });
   },
 
