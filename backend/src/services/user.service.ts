@@ -2,6 +2,15 @@ import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
 
+export const DEFAULT_NOTIFICATION_PREFERENCES = {
+  assignmentReminders: true,
+  examReminders: true,
+  interviewReminders: true,
+  certificationReminders: true,
+  systemAnnouncements: true,
+  emailNotifications: true,
+} as const;
+
 export const userService = {
   async getProfile(userId: string) {
     const user = await prisma.user.findUnique({
@@ -42,6 +51,13 @@ export const userService = {
     });
 
     if (!user) throw ApiError.notFound('User profile not found');
+    if (user.settings) {
+      const prefs = (user.settings.notificationPreferences as Record<string, boolean> | null) ?? {};
+      user.settings.notificationPreferences = {
+        ...DEFAULT_NOTIFICATION_PREFERENCES,
+        ...prefs,
+      };
+    }
     return user;
   },
 
@@ -99,4 +115,111 @@ export const userService = {
     }
     return profile.uploadedResumeFileId;
   },
+
+  // W19: Student settings
+  async getSettings(userId: string) {
+    const profile = await prisma.studentProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) throw ApiError.notFound('Student profile not found');
+
+    let settings = await prisma.studentSettings.findUnique({
+      where: { userId },
+      include: {
+        defaultSemester: {
+          select: { id: true, name: true, startDate: true, endDate: true },
+        },
+      },
+    });
+
+    if (!settings) {
+      settings = await prisma.studentSettings.create({
+        data: {
+          userId,
+          notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
+        },
+        include: {
+          defaultSemester: {
+            select: { id: true, name: true, startDate: true, endDate: true },
+          },
+        },
+      });
+    }
+
+    const currentPrefs = (settings.notificationPreferences as Record<string, boolean> | null) ?? {};
+    const resolvedPrefs = {
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      ...currentPrefs,
+    };
+
+    return {
+      id: settings.id,
+      userId: settings.userId,
+      notificationPreferences: resolvedPrefs,
+      defaultSemesterId: settings.defaultSemesterId,
+      defaultSemester: settings.defaultSemester,
+    };
+  },
+
+  async updateSettings(userId: string, data: {
+    notificationPreferences?: Partial<typeof DEFAULT_NOTIFICATION_PREFERENCES>;
+    defaultSemesterId?: string | null;
+  }) {
+    const profile = await prisma.studentProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (!profile) throw ApiError.notFound('Student profile not found');
+
+    if (data.defaultSemesterId !== undefined && data.defaultSemesterId !== null) {
+      const semester = await prisma.semester.findFirst({
+        where: {
+          id: data.defaultSemesterId,
+          studentProfileId: profile.id,
+        },
+        select: { id: true },
+      });
+      if (!semester) {
+        throw ApiError.notFound('Semester not found or does not belong to you');
+      }
+    }
+
+    const existingSettings = await prisma.studentSettings.findUnique({
+      where: { userId },
+    });
+    const existingPrefs = (existingSettings?.notificationPreferences as Record<string, boolean> | null) ?? DEFAULT_NOTIFICATION_PREFERENCES;
+    const mergedPrefs = {
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      ...existingPrefs,
+      ...(data.notificationPreferences ?? {}),
+    };
+
+    const updated = await prisma.studentSettings.upsert({
+      where: { userId },
+      create: {
+        userId,
+        notificationPreferences: mergedPrefs,
+        ...(data.defaultSemesterId !== undefined ? { defaultSemesterId: data.defaultSemesterId } : {}),
+      },
+      update: {
+        ...(data.notificationPreferences !== undefined ? { notificationPreferences: mergedPrefs } : {}),
+        ...(data.defaultSemesterId !== undefined ? { defaultSemesterId: data.defaultSemesterId } : {}),
+      },
+      include: {
+        defaultSemester: {
+          select: { id: true, name: true, startDate: true, endDate: true },
+        },
+      },
+    });
+
+    return {
+      id: updated.id,
+      userId: updated.userId,
+      notificationPreferences: updated.notificationPreferences,
+      defaultSemesterId: updated.defaultSemesterId,
+      defaultSemester: updated.defaultSemester,
+    };
+  },
 };
+

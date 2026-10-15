@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { userController, uploadResume, streamResume } from '../controllers/user.controller.js';
 import { validateRequest } from '../middleware/validateRequest.js';
-import { updateProfileSchema } from '../schemas/user.schema.js';
+import { updateProfileSchema, updateSettingsSchema } from '../schemas/user.schema.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
 import { resumeUpload } from '../middleware/upload.js';
@@ -16,6 +16,12 @@ router.get('/me', userController.getProfile);
 
 // PATCH /users/me — I-3: Update Profile (I-4 careerGoals, I-5 socialLinks included)
 router.patch('/me', authorize('STUDENT'), validateRequest(updateProfileSchema), userController.updateProfile);
+
+// GET /users/me/settings — W19: Student settings
+router.get('/me/settings', authorize('STUDENT'), userController.getSettings);
+
+// PATCH /users/me/settings — W19: Update student settings
+router.patch('/me/settings', authorize('STUDENT'), validateRequest(updateSettingsSchema), userController.updateSettings);
 
 // G2: Resume upload
 router.post('/me/resume-upload', uploadLimiter, resumeUpload.single('file'), uploadResume);

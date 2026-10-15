@@ -1407,6 +1407,94 @@ test('day-one HTTP and persistence regressions', async t => {
         emailService.send = originalEmailSend;
       }
     });
+
+    await t.test('W19: student settings write path, strict partial schema without defaults, semester ownership and SetNull cascade', async () => {
+      // 1. Unauthenticated rejection
+      assert.equal((await req('PATCH', '/users/me/settings', '', { defaultSemesterId: sem.id })).status, 401);
+
+      // 2. Strict validation rejection on unknown fields
+      const badKeyRes = await req('PATCH', '/users/me/settings', a.token, { unknownField: true });
+      assert.equal(badKeyRes.status, 400);
+
+      const badPrefRes = await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { nonExistentNotification: true },
+      });
+      assert.equal(badPrefRes.status, 400);
+
+      const invalidUuidRes = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: 'not-a-uuid' });
+      assert.equal(invalidUuidRes.status, 400);
+
+      // 3. Foreign semester ownership validation: Student B cannot claim Student A's semester
+      const foreignSemRes = await req('PATCH', '/users/me/settings', b.token, { defaultSemesterId: sem.id });
+      assert.equal(foreignSemRes.status, 404);
+
+      // Nonexistent semester UUID
+      const nonExistentSemRes = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: randomUUID() });
+      assert.equal(nonExistentSemRes.status, 404);
+
+      // 4. Partial notification preferences: modifying one preference must NOT reset existing false preferences
+      // First, set emailNotifications to false
+      const patch1 = await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { emailNotifications: false },
+      });
+      assert.equal(patch1.status, 200);
+      const data1 = (await patch1.json() as any).data;
+      assert.equal(data1.notificationPreferences.emailNotifications, false);
+      assert.equal(data1.notificationPreferences.assignmentReminders, true);
+      assert.equal(data1.notificationPreferences.examReminders, true);
+
+      // Second, set examReminders to false without passing emailNotifications
+      const patch2 = await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { examReminders: false },
+      });
+      assert.equal(patch2.status, 200);
+      const data2 = (await patch2.json() as any).data;
+      // emailNotifications MUST remain false! (not overwritten to true by schema defaults)
+      assert.equal(data2.notificationPreferences.emailNotifications, false, 'Pre-existing false preference must be preserved');
+      assert.equal(data2.notificationPreferences.examReminders, false);
+      assert.equal(data2.notificationPreferences.assignmentReminders, true);
+
+      // 5. Default semester assignment and clearing
+      const setSemRes = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: sem.id });
+      assert.equal(setSemRes.status, 200);
+      const setSemData = (await setSemRes.json() as any).data;
+      assert.equal(setSemData.defaultSemesterId, sem.id);
+      assert.equal(setSemData.defaultSemester.id, sem.id);
+
+      // Clear default semester by passing null
+      const clearSemRes = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: null });
+      assert.equal(clearSemRes.status, 200);
+      const clearSemData = (await clearSemRes.json() as any).data;
+      assert.equal(clearSemData.defaultSemesterId, null);
+
+      // 6. onDelete: SetNull cascade verification
+      // Create a temporary semester for Student A
+      const tempSem = await create('/semesters', a.token, {
+        name: `Cascade Test ${randomUUID()}`,
+        startDate: '2027-01-01T00:00:00Z',
+        endDate: '2027-05-31T00:00:00Z',
+      });
+      // Point settings to tempSem
+      const assignTemp = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: tempSem.id });
+      assert.equal(assignTemp.status, 200);
+      assert.equal((await assignTemp.json() as any).data.defaultSemesterId, tempSem.id);
+
+      // Delete the semester
+      const delRes = await req('DELETE', `/semesters/${tempSem.id}`, a.token);
+      assert.equal(delRes.status, 200);
+
+      // Verify that database foreign key onDelete: SetNull automatically set defaultSemesterId to null
+      const settingsAfterDelete = await prisma.studentSettings.findUniqueOrThrow({ where: { userId: a.id } });
+      assert.equal(settingsAfterDelete.defaultSemesterId, null, 'Foreign key onDelete: SetNull must cascade to null');
+
+      // 7. GET /users/me/settings returns current preferences and default semester
+      const getSettingsRes = await req('GET', '/users/me/settings', a.token);
+      assert.equal(getSettingsRes.status, 200);
+      const getSettingsData = (await getSettingsRes.json() as any).data;
+      assert.equal(getSettingsData.notificationPreferences.emailNotifications, false);
+      assert.equal(getSettingsData.notificationPreferences.examReminders, false);
+      assert.equal(getSettingsData.defaultSemesterId, null);
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });

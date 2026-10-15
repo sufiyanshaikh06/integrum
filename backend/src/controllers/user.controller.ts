@@ -22,6 +22,20 @@ export const userController = {
     const updated = await userService.updateProfile(req.user.id, req.body);
     ApiResponse.success(res, 'Profile updated successfully', updated);
   }),
+
+  // GET /users/me/settings — W19: Student settings
+  getSettings: asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized('Authentication required');
+    const settings = await userService.getSettings(req.user.id);
+    ApiResponse.success(res, 'User settings retrieved successfully', settings);
+  }),
+
+  // PATCH /users/me/settings — W19: Update student settings
+  updateSettings: asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user) throw ApiError.unauthorized('Authentication required');
+    const updated = await userService.updateSettings(req.user.id, req.body);
+    ApiResponse.success(res, 'Settings updated successfully', updated);
+  }),
 };
 
 // G2: POST /users/me/resume-upload
