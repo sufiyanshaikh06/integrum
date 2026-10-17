@@ -3,8 +3,10 @@ services:
     name: integrum-backend
     env: node
     plan: free
+    branch: fix/backend-closure-day1
     rootDir: .
     buildCommand: npm install && npm run build --workspace backend
+    preDeployCommand: npm run db:migrate --workspace backend
     startCommand: node backend/dist/server.js
     autoDeploy: true
     envVars:
@@ -13,9 +15,11 @@ services:
       - key: PORT
         value: 5000
       - key: CLIENT_URL
-        sync: false # Set to your Vercel frontend URL, e.g. https://integrum.vercel.app
+        sync: false # Set to your Vercel frontend URL, e.g. https://<app>.vercel.app
       - key: DATABASE_URL
-        sync: false # Set to your Supabase PostgreSQL connection string
+        sync: false # Supabase Transaction Pooler (port 6543, pgbouncer=true) for runtime queries
+      - key: DIRECT_URL
+        sync: false # Supabase Direct / Session Connection (port 5432) for Prisma migrations
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
@@ -31,7 +35,9 @@ services:
       - key: COOKIE_SECURE
         value: "true"
       - key: COOKIE_SAME_SITE
-        value: "none" # Use 'none' for direct cross-origin, or 'lax' if using Vercel rewrites
+        value: "lax" # Model B: Vercel proxy rewrites preserve same-origin cookie scope
+      - key: REMINDER_INTERVAL_MS
+        value: "60000"
       - key: AI_PROVIDER
         value: mock
       - key: STORAGE_PROVIDER

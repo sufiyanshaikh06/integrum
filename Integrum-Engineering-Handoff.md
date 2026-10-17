@@ -2832,9 +2832,9 @@ According to the approved project synopsis (Section 4: Software Requirements), t
 
 | Tier | Platform | Role & Configuration | Artifacts |
 |---|---|---|---|
-| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://<app>.vercel.app`).<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist`<br>Proxy Rewrites: `/api/:path* -> https://integrum-backend.onrender.com/api/:path*` | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
-| **Backend** | **Render** | Node.js / Express Web Service + continuous background reminder processor (`https://<api>.onrender.com`).<br>Build Command: `npm install && npm run build --workspace backend`<br>Start Command: `node backend/dist/server.js` | [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml) |
-| **Database** | **Supabase** | Managed PostgreSQL database (`aws-0-[region].pooler.supabase.com`). Dual connection topology: transaction pooler on port 6543 (runtime) and direct connection on port 5432 (Prisma migrations). | [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts) |
+| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://<app>.vercel.app`).<br>Root Directory: `.` (repository root)<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist`<br>Proxy Rewrites: `/api/:path* -> https://<assigned-render-host>/api/:path*` (updated with actual assigned Render URL) | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
+| **Backend** | **Render** | Node.js / Express Web Service + continuous background reminder processor.<br>Branch: `fix/backend-closure-day1`<br>Build Command: `npm install && npm run build --workspace backend` (runs `prisma generate && tsc`)<br>Pre-Deploy Command: `npm run db:migrate --workspace backend`<br>Start Command: `node backend/dist/server.js` | [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml) |
+| **Database** | **Supabase** | Managed PostgreSQL database (`aws-0-[region].pooler.supabase.com`). Dual connection topology: transaction pooler on port 6543 (runtime `DATABASE_URL`) and direct connection on port 5432 (migration `DIRECT_URL`). | [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts) |
 | **Version Control** | **GitHub** | Canonical Git repository (`https://github.com/sufiyanshaikh06/integrum`). Branch `fix/backend-closure-day1`. | Git repository |
 
 #### 26.3.1 Selected Architecture: Model B (Vercel Proxy Rewrites)
@@ -2842,12 +2842,14 @@ According to the approved project synopsis (Section 4: Software Requirements), t
 To provide reliable authentication across modern browsers (avoiding third-party cookie blocking on Safari and Chrome), **Model B: Vercel Proxy Rewrites** is the selected deployment architecture:
 
 1. **Proxy Routing in `vercel.json`:**
-   - The rewrite `/api/:path* -> https://integrum-backend.onrender.com/api/:path*` is placed **strictly before** the SPA fallback route `/(.*) -> /index.html`.
+   - The rewrite `/api/:path* -> https://<assigned-render-host>/api/:path*` is placed **strictly before** the SPA fallback route `/(.*) -> /index.html`.
+   - The destination is updated with the actual assigned Render URL before deploying Vercel.
    - The browser communicates exclusively with `https://<app>.vercel.app/api/v1/...`.
    - Vercel reverse-proxies requests to Render, maintaining **same-origin semantics** for the browser.
 
 2. **Cookie Lifetime & Serialized Header Specifications:**
    - **Express Configuration:** The server configures `res.cookie('refreshToken', token, { maxAge: 604800000, httpOnly: true, secure: true, sameSite: 'lax' })`. Express expects `maxAge` in **milliseconds** (`7 * 24 * 60 * 60 * 1000 = 604,800,000 ms`).
+   - **Render Configuration:** `COOKIE_SAME_SITE` is explicitly set to `lax` in `render.yaml` to match Model B.
    - **Serialized HTTP Header:** The Node.js cookie serializer converts milliseconds to integer **seconds** for the standard HTTP `Max-Age` attribute.
    - **Observed Header:**
      ```http
@@ -2871,13 +2873,9 @@ Supabase PostgreSQL utilizes PgBouncer for connection pooling. Running Prisma mi
      ```env
      DIRECT_URL="postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres"
      ```
-   - Consumed by Prisma CLI in [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts):
-     ```ts
-     datasource: {
-       url: process.env["DIRECT_URL"] || process.env["DATABASE_URL"],
-     }
-     ```
-   - Ensures `npx prisma migrate deploy` executes safely without PgBouncer transaction pooler lock errors.
+   - Declared as a required secret in `render.yaml` (`sync: false`).
+   - Consumed by Prisma CLI in [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts).
+   - **Production Requirement:** In production (`NODE_ENV === 'production'`), `backend/prisma.config.ts` **strictly requires** `DIRECT_URL` and refuses to run migrations if it is missing, preventing silent fallbacks to transaction pooling.
 
 #### 26.3.3 Scheduled Delivery vs. In-Process Processor Execution & Render Free Semantics
 
@@ -2902,31 +2900,49 @@ Supabase PostgreSQL utilizes PgBouncer for connection pooling. Running Prisma mi
 
 ---
 
-### 26.4 Verified Deployment Checkpoint & Cloud Hosting Readiness
+### 26.4 Verified Deployment Preparation & Step-by-Step Account Configuration Guide
 
-- **Native Windows Verification Results (100% Passing):**
-  - All **54/54 backend closure tests** passed.
-  - Production smoke and independent row-lock serialization passed.
-  - Full **13/13 real-browser workflow stages** passed in headless Google Chrome.
-  - Automatic reminder delivery via in-process background timer verified without manual invocation.
-  - Zero cross-tenant data leakage between Sufiyan Shaikh and Ahmed Khan.
-  - Disposable database dropped cleanly (`result.json: testsPassed: true, cleanupSucceeded: true`).
+The repository preparation at branch `fix/backend-closure-day1` is complete. To deploy the stack securely without pasting database credentials into chat, follow these interactive setup steps:
 
-- **Git / GitHub Remote Status:**
-  - Remote repository: `https://github.com/sufiyanshaikh06/integrum.git`
-  - Active branch: `fix/backend-closure-day1`
-  - Push authentication: Verified via `git push --dry-run origin fix/backend-closure-day1` (exit code 0).
+#### Step 1: Supabase Managed PostgreSQL
+1. Log in to [supabase.com](https://supabase.com) and navigate to your project.
+2. Go to **Project Settings** → **Database** → **Connection string**.
+3. Copy the two distinct connection strings:
+   - **Transaction Pooler (Port 6543):** Select "Transaction" mode with `pgbouncer=true`. Keep this for Render's `DATABASE_URL`.
+   - **Session Pooler / Direct Connection (Port 5432):** Select "Session" or "Direct" connection on port 5432. Keep this for Render's `DIRECT_URL`.
 
-- **Exact Blockers for Live Remote Deployment:**
-  Automated live deployment cannot be completed without the following external credentials:
-  1. **Supabase PostgreSQL Credentials:**
-     - `DATABASE_URL` (port 6543 transaction pooler)
-     - `DIRECT_URL` (port 5432 direct connection for Prisma migrations)
-     - Supabase access token (or project reference + database password) copied directly from the Supabase dashboard.
-  2. **Render Hosting Configuration:**
-     - Render API key or linked GitHub repository deployment on `render.com` using `render.yaml`.
-  3. **Vercel Hosting Configuration:**
-     - Vercel CLI token or linked GitHub repository deployment on `vercel.com` with root directory set to repository root and framework set to Vite.
+#### Step 2: Render Web Service Deployment
+1. Log in to [dashboard.render.com](https://dashboard.render.com).
+2. Click **New +** → **Blueprint** (or **Web Service**).
+3. Connect your GitHub repository `sufiyanshaikh06/integrum` and select branch `fix/backend-closure-day1`.
+4. Render will parse [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml):
+   - Service name: `integrum-backend`
+   - Build Command: `npm install && npm run build --workspace backend` (runs `prisma generate && tsc`)
+   - Pre-deploy Command: `npm run db:migrate --workspace backend` (executes `prisma migrate deploy` over port 5432)
+   - Start Command: `node backend/dist/server.js`
+5. Fill in the prompted secret environment variables in the Render dashboard:
+   - `DATABASE_URL`: Your Supabase transaction pooler URI (port 6543).
+   - `DIRECT_URL`: Your Supabase direct connection URI (port 5432).
+   - `CLIENT_URL`: `https://<your-vercel-domain>` (can be updated once Vercel is created).
+6. Click **Apply / Deploy**. Once deployed, copy your assigned Render service URL (e.g. `https://integrum-backend-xxxx.onrender.com`).
+
+#### Step 3: Vercel Frontend Deployment
+1. Update `destination` in [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) to match the assigned Render URL from Step 2:
+   ```json
+   "destination": "https://<your-assigned-render-url>/api/:path*"
+   ```
+2. Commit and push the updated `vercel.json` to branch `fix/backend-closure-day1`.
+3. In [vercel.com](https://vercel.com), click **Add New...** → **Project**, import `sufiyanshaikh06/integrum`, and select branch `fix/backend-closure-day1`.
+4. Keep the root directory as `.` (repository root). Vercel will automatically read `vercel.json` (`buildCommand: npm run build --workspace frontend`, `outputDirectory: frontend/dist`).
+5. Click **Deploy**. Vercel will build the frontend and serve it with the `/api/*` reverse proxy pointing to your live Render backend.
+
+#### Step 4: Live Verification
+Once both services are live:
+1. Verify backend health: `GET https://<your-assigned-render-url>/health` returning `{ status: "ok" }`.
+2. Open the deployed Vercel URL in your browser:
+   - Sign in with demo credentials: `sufiyan.shaikh@example.com` / `password123`.
+   - Verify `refreshToken` cookie is set with `SameSite=Lax; Secure; HttpOnly`.
+   - Verify browser navigation, task completion, and session persistence across page reload.
 
 
 

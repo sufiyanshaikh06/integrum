@@ -3,6 +3,16 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+const isProduction = process.env.NODE_ENV === "production";
+const migrationUrl = process.env["DIRECT_URL"] || (!isProduction ? process.env["DATABASE_URL"] : undefined);
+
+if (isProduction && !process.env["DIRECT_URL"]) {
+  throw new Error(
+    "DIRECT_URL is required for Prisma migrations in production (port 5432 direct connection). " +
+    "Do not use transaction pooling (DATABASE_URL) on port 6543 to run migrations."
+  );
+}
+
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
@@ -10,6 +20,6 @@ export default defineConfig({
     seed: "tsx ./prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DIRECT_URL"] || process.env["DATABASE_URL"],
+    url: migrationUrl,
   },
 });
