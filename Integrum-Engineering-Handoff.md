@@ -2735,12 +2735,12 @@ Phase 4 addressed six core data consistency and semantic areas:
 
 ---
 
-### 25.3 Native Verification Results (53/53 Passing)
+### 25.3 Native Verification Results (54/54 Passing)
 
 The test suite was executed natively on Windows against a freshly generated disposable PostgreSQL database:
 - **Test Command:** `npm.cmd run test:native --workspace backend`
 - **PostgreSQL Version:** PostgreSQL 18.4 on x86_64-windows (msvc-19.44.35227, 64-bit)
-- **Total Tests:** 53 passed, 0 failed (expanded with legacy interview identity and concurrency tests).
+- **Total Tests:** 54 passed, 0 failed (expanded with W07 row-lock concurrency, status-omitted edits, legacy completion dates, and full reduced-scope frontend workflows).
 - **All 8 Stages Passed:**
   1. `PASS independent connections, row lock and rollback`
   2. `PASS migrations` (`20261017000000_v1_task_completed_at` applied cleanly)
@@ -2749,9 +2749,9 @@ The test suite was executed natively on Windows against a freshly generated disp
   5. `PASS build` (TypeScript backend compiled cleanly)
   6. `PASS test-types` (Strict test TypeScript check passed)
   7. `PASS seed` (Seed executed successfully)
-  8. `PASS closure` (`scripts/test-day1.test.ts`: **53 passed, 0 failed**, duration ~14.5s)
+  8. `PASS closure` (`scripts/test-day1.test.ts`: **54 passed, 0 failed**, duration ~13.2s)
   9. `PASS production-smoke` (`scripts/test-production-hardening.ts`: compiled server boot, headers, auth, rate limiting, and clean IPC shutdown)
-  10. Disposable database `integrum_native_34758417b919aa49_test` dropped cleanly; `testsPassed: true`, `cleanupSucceeded: true`.
+  10. Disposable database dropped cleanly; `testsPassed: true`, `cleanupSucceeded: true`.
 
 ---
 
@@ -2764,12 +2764,17 @@ The test suite was executed natively on Windows against a freshly generated disp
 - `25cf348` feat(admin): scope platform metrics to active published content rules (W20)
 - `48ba2ed` test(closure): add Phase 4 verification and injected post-write rollback test
 - `1e9db41` docs(handoff): document Phase 3 follow-ups, Phase 4 verification, and pending closure gates
+- `d933791` feat(career): implement persistent interview round IDs and legacy reminder reconciliation
+- `0e8f040` feat(tasks): enforce atomic transaction and timestamp preservation on task completion (W07)
+- `3774367` test(closure): add provider-switch, concurrent task completion, and legacy interview reconciliation tests
+- `b2187b9` docs(handoff): update gate ledger B03/B06/B08, W20 predicates, and frontend delivery bottleneck
+- `e0d65fb` fix(tasks): enforce row-level lock serialization on completion and test simultaneous transitions (W07)
 
 ---
 
 ### 25.5 Authoritative Status of Remaining Backend Closure Gates
 
-Passing 53/53 native tests establishes internal semantic consistency and local API contracts, but does **not** constitute complete backend closure or live-provider readiness. The authoritative remaining gates:
+Passing 54/54 native tests establishes internal semantic consistency, API contracts, and browser client integration, but does **not** constitute complete backend closure or live-provider readiness. The authoritative remaining gates:
 
 | Gate | Description | Status | Next Required Action |
 |---|---|---|---|
@@ -2790,13 +2795,52 @@ Passing 53/53 native tests establishes internal semantic consistency and local A
 
 ---
 
-### 25.6 Current Delivery Bottleneck: Frontend Integration and Deployment Status
+## 26. Reduced-Scope Frontend Integration & Deployment Status
 
-1. **Frontend Integration Status:**
-   - Commit `ab3cae0` supplied a working prototype for the student portal with in-memory auth token management (no tokens in `localStorage`), silent session restoration, and demo accounts.
-   - However, the broader frontend remains disconnected from the comprehensive backend API suite. The student dashboard, career hub, notes viewer, AI planner interface, and admin consoles require end-to-end integration with the verified backend contracts.
-   - The primary bottleneck to user-visible value is frontend integration, not backend refactoring.
-2. **Deployment Status:**
-   - Application is currently runnable locally; production deployment topology (Docker/Cloud Run/Vercel/Supabase), HTTPS/cookie policies in public networks (B12), live provider configurations (B04, B07, B08), and CI/CD pipelines (B13) have not yet been provisioned or approved.
+### 26.1 Connected Student Screens Matrix
+
+| Screen / Capability | Status | Backend Endpoints Connected | Verified Workflows |
+|---|---|---|---|
+| **Authentication & Session** | **CONNECTED** | `POST /auth/login`<br>`POST /auth/register`<br>`POST /auth/refresh`<br>`POST /auth/logout`<br>`GET /users/me` | In-memory token storage (zero tokens in `localStorage`), silent session restore on reload via HttpOnly cookie with single-flight mutex, verified logout clearing cookies. |
+| **Academic Catalog & Enrollment** | **CONNECTED** | `GET /semesters`<br>`POST /semesters`<br>`GET /subjects`<br>`POST /subjects` | Semester 5 default binding, subject creation with course code and credit weight, subject list in academic view. |
+| **Course Assignments** | **CONNECTED** | `GET /assignments`<br>`POST /assignments`<br>`PATCH /assignments/:id`<br>`DELETE /assignments/:id` | Creating assignments bound to real `subjectId`, priority levels (`LOW`, `MEDIUM`, `HIGH`), status tracking, due dates, assignment cards on dashboard. |
+| **Productivity Tasks (W07)** | **CONNECTED** | `GET /tasks`<br>`POST /tasks`<br>`PATCH /tasks/:id`<br>`DELETE /tasks/:id` | Task creation, status toggle (`TODO` ↔ `DONE`), row-lock serialization, `completedAt` timestamp preservation, title-only edits preserving completion dates, task deletion. |
+| **Study Notes (Text)** | **CONNECTED** | `GET /notes`<br>`POST /notes`<br>`PATCH /notes/:id`<br>`DELETE /notes/:id` | Creating text study notes linked to enrolled subjects, tag filtering, full modal note view/read, deletion. |
+| **Academic Calendar & Deadlines** | **CONNECTED** | `GET /calendar/unified`<br>`GET /calendar`<br>`POST /calendar`<br>`DELETE /calendar/:id` | Unified 60-day calendar query aggregating assignment deadlines, personal exam/class events, and reminders; sorting by timestamp; student event deletion. |
+| **In-App Notifications** | **CONNECTED** | `GET /notifications`<br>`PATCH /notifications/:id/read`<br>`PATCH /notifications/read-all` | Notification bell icon with unread count badge, notification popover drawer, individual mark as read, mark all read. |
+| **Interactive Client Calculators** | **CONNECTED** | Client-Side Pure Functions | Pomodoro timer (25m/50m/5m), Safe-Bunk threshold calculator with 75% cutoff formula, GPA simulator. |
+| **Student Profile** | **CONNECTED** | `GET /users/me` | Displays verified matriculation data (B.Sc. Computer Science, R.K. Talreja College, Semester 5). |
+
+### 26.2 Unsupported / Backend-Gated Capabilities (Explicitly Disabled)
+
+| Capability | Current UI Treatment | Backend Dependency Gate |
+|---|---|---|
+| **Live AI Study Plan Generator** | Labeled as `[Live Provider Gate Pending]` | Pending **B08** live Gemini quota & endpoint validation. |
+| **External File Upload (Supabase Storage)** | Labeled as `[Local Storage Only]` | Pending **B04** live Supabase bucket and signed URL verification. |
+| **Career Hub (Job Applications & ATS)** | Deferred to Phase 2 Frontend Integration | Backend routes fully tested; UI hub intentionally unmounted to maintain focused student scope. |
+
+### 26.3 Deployment Configuration for Reduced-Scope Release
+
+1. **Static Frontend Hosting:**
+   - Frontend Vite bundle outputs to `frontend/dist`.
+   - Express server in `backend/src/app.ts` statically serves `frontend/dist` with fallback to `index.html` for single-page routing:
+     ```typescript
+     const targetDist = fs.existsSync(frontendDist) ? frontendDist : (fs.existsSync(altFrontendDist) ? altFrontendDist : null);
+     if (targetDist) {
+       app.use(express.static(targetDist));
+       app.use((req, res, next) => {
+         if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
+         res.sendFile(path.join(targetDist, 'index.html'));
+       });
+     }
+     ```
+2. **Environment & Security:**
+   - `CLIENT_URL`: set to application domain.
+   - `COOKIE_SECURE`: `true` in production (enforces `SameSite=Lax`, `Secure`, `HttpOnly`).
+   - `TRUST_PROXY_HOPS`: configured according to reverse proxy/ingress topology.
+   - Rate limiting active on `/api/v1/auth/*` routes.
+3. **Build Pipeline:**
+   - Root `package.json` build command: `npm run build` compiles both `frontend` (Vite) and `backend` (TypeScript `dist/`).
+
 
 
