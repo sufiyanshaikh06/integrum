@@ -3,10 +3,9 @@ services:
     name: integrum-backend
     env: node
     plan: free
-    branch: fix/backend-closure-day1
+    branch: main
     rootDir: .
     buildCommand: npm install && npm run build --workspace backend
-    preDeployCommand: npm run db:migrate --workspace backend
     startCommand: node backend/dist/server.js
     autoDeploy: true
     envVars:

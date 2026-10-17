@@ -2832,10 +2832,10 @@ According to the approved project synopsis (Section 4: Software Requirements), t
 
 | Tier | Platform | Role & Configuration | Artifacts |
 |---|---|---|---|
-| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://<app>.vercel.app`).<br>Root Directory: `.` (repository root)<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist`<br>Proxy Rewrites: `/api/:path* -> https://<assigned-render-host>/api/:path*` (updated with actual assigned Render URL) | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
-| **Backend** | **Render** | Node.js / Express Web Service + continuous background reminder processor.<br>Branch: `fix/backend-closure-day1`<br>Build Command: `npm install && npm run build --workspace backend` (runs `prisma generate && tsc`)<br>Pre-Deploy Command: `npm run db:migrate --workspace backend`<br>Start Command: `node backend/dist/server.js` | [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml) |
+| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://<app>.vercel.app`).<br>Production Branch: `main`<br>Root Directory: `.` (repository root)<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist`<br>Proxy Rewrites: `/api/:path* -> https://<assigned-render-host>/api/:path*` (updated with actual assigned Render URL) | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
+| **Backend** | **Render** | Node.js / Express Web Service + continuous background reminder processor.<br>Plan: Free<br>Production Branch: `main`<br>Build Command: `npm install && npm run build --workspace backend` (runs `prisma generate && tsc`)<br>Start Command: `node backend/dist/server.js` | [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml) |
 | **Database** | **Supabase** | Managed PostgreSQL database (`aws-0-[region].pooler.supabase.com`). Dual connection topology: transaction pooler on port 6543 (runtime `DATABASE_URL`) and direct connection on port 5432 (migration `DIRECT_URL`). | [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts) |
-| **Version Control** | **GitHub** | Canonical Git repository (`https://github.com/sufiyanshaikh06/integrum`). Branch `fix/backend-closure-day1`. | Git repository |
+| **Version Control** | **GitHub** | Canonical Git repository (`https://github.com/sufiyanshaikh06/integrum`). Production Branch: `main`. | Git repository |
 
 #### 26.3.1 Selected Architecture: Model B (Vercel Proxy Rewrites)
 
@@ -2857,7 +2857,7 @@ To provide reliable authentication across modern browsers (avoiding third-party 
      ```
    - This reconciles the documentation: Express code uses `604800000` ms, while the emitted wire header is `Max-Age=604800` s.
 
-#### 26.3.2 Supabase Database Connection Separation (Runtime vs. Migration)
+#### 26.3.2 Supabase Database Connection Separation & Controlled Free-Tier Migration
 
 Supabase PostgreSQL utilizes PgBouncer for connection pooling. Running Prisma migrations through transaction pooling causes migration failures because PgBouncer in transaction mode does not support session-level advisory locks or prepared statements. The configuration strictly separates these two channels:
 
@@ -2873,9 +2873,12 @@ Supabase PostgreSQL utilizes PgBouncer for connection pooling. Running Prisma mi
      ```env
      DIRECT_URL="postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres"
      ```
-   - Declared as a required secret in `render.yaml` (`sync: false`).
-   - Consumed by Prisma CLI in [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts).
-   - **Production Requirement:** In production (`NODE_ENV === 'production'`), `backend/prisma.config.ts` **strictly requires** `DIRECT_URL` and refuses to run migrations if it is missing, preventing silent fallbacks to transaction pooling.
+   - **Render Free Tier Accommodation:** Render's `preDeployCommand` is a paid-service feature and is unavailable on the Free tier.
+   - **Controlled Pre-Release Migration:** Migrations are executed via a controlled command using `DIRECT_URL` from the verified local checkout or CI prior to releasing the backend:
+     ```bash
+     DIRECT_URL="<supabase-direct-url>" npm run db:migrate --workspace backend
+     ```
+   - **Production Guard:** In production (`NODE_ENV === 'production'`), [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts) strictly requires `DIRECT_URL` and aborts if missing, preventing silent fallbacks to transaction pooling.
 
 #### 26.3.3 Scheduled Delivery vs. In-Process Processor Execution & Render Free Semantics
 
@@ -2902,23 +2905,32 @@ Supabase PostgreSQL utilizes PgBouncer for connection pooling. Running Prisma mi
 
 ### 26.4 Verified Deployment Preparation & Step-by-Step Account Configuration Guide
 
-The repository preparation at branch `fix/backend-closure-day1` is complete. To deploy the stack securely without pasting database credentials into chat, follow these interactive setup steps:
+Production deployments deploy strictly from branch `main`. Follow these interactive setup steps:
 
 #### Step 1: Supabase Managed PostgreSQL
 1. Log in to [supabase.com](https://supabase.com) and navigate to your project.
 2. Go to **Project Settings** → **Database** → **Connection string**.
 3. Copy the two distinct connection strings:
    - **Transaction Pooler (Port 6543):** Select "Transaction" mode with `pgbouncer=true`. Keep this for Render's `DATABASE_URL`.
-   - **Session Pooler / Direct Connection (Port 5432):** Select "Session" or "Direct" connection on port 5432. Keep this for Render's `DIRECT_URL`.
+   - **Session Pooler / Direct Connection (Port 5432):** Select "Session" or "Direct" connection on port 5432. Keep this for Render's `DIRECT_URL` and pre-release migrations.
 
-#### Step 2: Render Web Service Deployment
+#### Step 2: Controlled Database Migration
+Before deploying the backend on Render, run the controlled migration command from this verified repository with `DIRECT_URL` set (keeping credentials local and out of chat):
+```bash
+# In your terminal (powershell / bash):
+$env:DIRECT_URL="postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres"
+npm run db:migrate --workspace backend
+```
+Prisma will connect directly over port 5432 and apply all pending migrations safely.
+
+#### Step 3: Render Web Service Deployment
 1. Log in to [dashboard.render.com](https://dashboard.render.com).
 2. Click **New +** → **Blueprint** (or **Web Service**).
-3. Connect your GitHub repository `sufiyanshaikh06/integrum` and select branch `fix/backend-closure-day1`.
+3. Connect your GitHub repository `sufiyanshaikh06/integrum` and select branch **`main`**.
 4. Render will parse [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml):
    - Service name: `integrum-backend`
+   - Branch: `main`
    - Build Command: `npm install && npm run build --workspace backend` (runs `prisma generate && tsc`)
-   - Pre-deploy Command: `npm run db:migrate --workspace backend` (executes `prisma migrate deploy` over port 5432)
    - Start Command: `node backend/dist/server.js`
 5. Fill in the prompted secret environment variables in the Render dashboard:
    - `DATABASE_URL`: Your Supabase transaction pooler URI (port 6543).
@@ -2926,17 +2938,17 @@ The repository preparation at branch `fix/backend-closure-day1` is complete. To 
    - `CLIENT_URL`: `https://<your-vercel-domain>` (can be updated once Vercel is created).
 6. Click **Apply / Deploy**. Once deployed, copy your assigned Render service URL (e.g. `https://integrum-backend-xxxx.onrender.com`).
 
-#### Step 3: Vercel Frontend Deployment
-1. Update `destination` in [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) to match the assigned Render URL from Step 2:
+#### Step 4: Vercel Frontend Deployment
+1. Update `destination` in [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) to match the assigned Render URL from Step 3:
    ```json
    "destination": "https://<your-assigned-render-url>/api/:path*"
    ```
-2. Commit and push the updated `vercel.json` to branch `fix/backend-closure-day1`.
-3. In [vercel.com](https://vercel.com), click **Add New...** → **Project**, import `sufiyanshaikh06/integrum`, and select branch `fix/backend-closure-day1`.
+2. Commit and push the updated `vercel.json` directly to branch `main`.
+3. In [vercel.com](https://vercel.com), click **Add New...** → **Project**, import `sufiyanshaikh06/integrum`, and select production branch **`main`**.
 4. Keep the root directory as `.` (repository root). Vercel will automatically read `vercel.json` (`buildCommand: npm run build --workspace frontend`, `outputDirectory: frontend/dist`).
 5. Click **Deploy**. Vercel will build the frontend and serve it with the `/api/*` reverse proxy pointing to your live Render backend.
 
-#### Step 4: Live Verification
+#### Step 5: Live Verification
 Once both services are live:
 1. Verify backend health: `GET https://<your-assigned-render-url>/health` returning `{ status: "ok" }`.
 2. Open the deployed Vercel URL in your browser:
