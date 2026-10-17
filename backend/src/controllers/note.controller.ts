@@ -119,7 +119,7 @@ export const streamNoteFile = asyncHandler(async (req: Request, res: Response) =
   const studentProfileId = req.user?.studentProfile?.id;
   if (!studentProfileId) throw ApiError.forbidden('Only students can access note files');
 
-  const fileId = await noteService.getFileId(studentProfileId, req.params.noteId as string);
-  const provider = getStorageProvider();
-  await sendPrivateFile(res, provider, fileId);
+  const attachment = await noteService.getFileAttachment(studentProfileId, req.params.noteId as string);
+  const provider = getStorageProvider(attachment.provider);
+  await sendPrivateFile(res, provider, attachment.fileId);
 });

@@ -104,16 +104,22 @@ export const userService = {
     if (result.count !== 1) throw ApiError.conflict('Profile changed during upload; retry');
   },
 
-  // G2: Get resume fileId for student profile
-  async getResumeFileId(userId: string): Promise<string> {
+  // G2: Get resume attachment and recorded provider for student profile
+  async getResumeAttachment(userId: string): Promise<{ fileId: string; provider: string | null }> {
     const profile = await prisma.studentProfile.findUnique({
       where: { userId },
-      select: { uploadedResumeFileId: true },
+      select: { uploadedResumeFileId: true, resumeStorageProvider: true },
     });
     if (!profile?.uploadedResumeFileId) {
       throw ApiError.notFound('No resume file uploaded');
     }
-    return profile.uploadedResumeFileId;
+    return { fileId: profile.uploadedResumeFileId, provider: profile.resumeStorageProvider };
+  },
+
+  // G2: Get resume fileId for student profile
+  async getResumeFileId(userId: string): Promise<string> {
+    const attachment = await this.getResumeAttachment(userId);
+    return attachment.fileId;
   },
 
   // W19: Student settings

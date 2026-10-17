@@ -105,7 +105,10 @@ export const noteService = {
     await this.getNoteById(studentProfileId, noteId); // verify ownership
 
     const deleted = await prisma.note.delete({ where: { id: noteId } });
-    if (deleted.fileId) await cleanupFile(getStorageProvider(), deleted.fileId);
+    if (deleted.fileId) {
+      const provider = getStorageProvider(deleted.fileStorageProvider);
+      await cleanupFile(provider, deleted.fileId);
+    }
   },
 
   async attachFile(studentProfileId: string, noteId: string, fileId: string, expectedFileId: string | null) {
@@ -117,11 +120,16 @@ export const noteService = {
     if (result.count !== 1) throw ApiError.conflict('Note changed during upload; retry');
   },
 
-  async getFileId(studentProfileId: string, noteId: string): Promise<string> {
+  async getFileAttachment(studentProfileId: string, noteId: string): Promise<{ fileId: string; provider: string | null }> {
     const note = await this.getNoteById(studentProfileId, noteId);
     if (!note.fileId) {
       throw ApiError.notFound('No file attached to this note');
     }
-    return note.fileId;
+    return { fileId: note.fileId, provider: note.fileStorageProvider };
+  },
+
+  async getFileId(studentProfileId: string, noteId: string): Promise<string> {
+    const attachment = await this.getFileAttachment(studentProfileId, noteId);
+    return attachment.fileId;
   },
 };

@@ -76,7 +76,7 @@ export const streamResume = asyncHandler(async (req: Request, res: Response) => 
   const userId = req.user?.id;
   if (!userId) throw ApiError.unauthorized('Authentication required');
 
-  const fileId = await userService.getResumeFileId(userId);
-  const provider = getStorageProvider();
-  await sendPrivateFile(res, provider, fileId);
+  const attachment = await userService.getResumeAttachment(userId);
+  const provider = getStorageProvider(attachment.provider);
+  await sendPrivateFile(res, provider, attachment.fileId);
 });
