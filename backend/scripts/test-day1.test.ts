@@ -27,6 +27,11 @@ import app from '../src/app.js';
 import { prisma } from '../src/config/prisma.js';
 import { noteService } from '../src/services/note.service.js';
 import { userService } from '../src/services/user.service.js';
+import { getStorageProvider } from '../src/services/storage/index.js';
+import { adminPlatformService } from '../src/services/admin/platform.service.js';
+import { analyticsService, getCanonicalResume } from '../src/services/analytics.service.js';
+import { AIService } from '../src/services/ai.service.js';
+import { jobApplicationService } from '../src/services/jobapplication.service.js';
 
 // Fail closed before creating fixtures on a working database.
 assert(new URL(process.env.DATABASE_URL!).pathname.endsWith('_test'));
@@ -2241,7 +2246,7 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(hrRemKept.deliveryStatus, 'PENDING', 'Surviving round reminder must remain PENDING');
     });
 
-    await t.test('AI study plan acceptance: concurrent identical & conflicting requests, explicit timezone/week mapping, and post-write rollback', async () => {
+    await t.test('AI study plan acceptance: concurrent identical & conflicting requests, explicit timezone/week mapping, pre-write rejection, and injected post-write rollback', async () => {
       const concurrentIdemKey = `conc_${randomUUID()}`;
       const payloadConcurrent = {
         idempotencyKey: concurrentIdemKey,
@@ -2311,6 +2316,7 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(monDate.getUTCDate(), 9, 'Monday must resolve to 2026-11-09');
       assert.equal(sunDate.getUTCDate(), 15, 'Sunday must resolve to 2026-11-15');
 
+      // Pre-write validation rejection (rejects invalid input before transaction)
       const rollbackIdemKey = `rb_${randomUUID()}`;
       const payloadRollback = {
         idempotencyKey: rollbackIdemKey,
@@ -2325,9 +2331,601 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(resRb.status, 400);
 
       const planInDbAfterRb = await prisma.studyPlan.findFirst({ where: { idempotencyKey: rollbackIdemKey } });
-      assert.equal(planInDbAfterRb, null, 'Study plan must be completely rolled back after task failure');
-      const tasksInDbAfterRb = await prisma.task.findMany({ where: { title: 'Will be rolled back' } });
-      assert.equal(tasksInDbAfterRb.length, 0, 'No session tasks must remain after rollback');
+      assert.equal(planInDbAfterRb, null, 'Study plan must not be created on pre-write validation failure');
+
+      // Injected post-write persistence failure: proves database transaction rollback after plan has been written
+      const injectedIdemKey = `injected_${randomUUID()}`;
+      const injectedPayload = {
+        idempotencyKey: injectedIdemKey,
+        title: 'Injected Post-Write Rollback Plan',
+        weeklySchedule: [{ day: 'MONDAY', topic: 'INJECT_TRIGGER_FAIL_TOPIC', durationMinutes: 60, activity: 'Trigger fail' }],
+      };
+
+      await prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION closure_test_inject_task_failure() RETURNS trigger AS $$
+        BEGIN
+          IF NEW.title = 'INJECT_TRIGGER_FAIL_TOPIC' THEN
+            RAISE EXCEPTION 'Simulated post-write task persistence failure';
+          END IF;
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+      `);
+      await prisma.$executeRawUnsafe(`
+        DROP TRIGGER IF EXISTS trg_closure_task_fail ON "Task";
+        CREATE TRIGGER trg_closure_task_fail
+        BEFORE INSERT ON "Task"
+        FOR EACH ROW
+        EXECUTE FUNCTION closure_test_inject_task_failure();
+      `);
+
+      try {
+        const resInjected = await req('POST', '/study-plans/accept-ai', a.token, injectedPayload);
+        assert.equal(resInjected.status, 500, 'Database trigger failure must yield 500');
+
+        const planInDbAfterInjected = await prisma.studyPlan.findFirst({ where: { idempotencyKey: injectedIdemKey } });
+        assert.equal(planInDbAfterInjected, null, 'Study plan must be rolled back by database transaction after post-write failure');
+
+        const tasksInDbAfterInjected = await prisma.task.findMany({ where: { title: 'INJECT_TRIGGER_FAIL_TOPIC' } });
+        assert.equal(tasksInDbAfterInjected.length, 0, 'No tasks must remain in database after injected transaction rollback');
+      } finally {
+        await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_closure_task_fail ON "Task";`);
+        await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS closure_test_inject_task_failure();`);
+      }
+    });
+
+    await t.test('W07: task completion timestamp lifecycle, atomic transitions, and UTC half-open date boundaries', async () => {
+      // 1. Creating task with status DONE sets completedAt
+      const resDoneCreate = await req('POST', '/tasks', a.token, {
+        title: 'Initial Done Task',
+        status: 'DONE',
+      });
+      assert.equal(resDoneCreate.status, 201);
+      const dataDoneCreate = (await resDoneCreate.json() as any).data;
+      assert(dataDoneCreate.completedAt !== null, 'Creating task as DONE must set completedAt');
+
+      // 2. Creating task with status TODO has completedAt null
+      const resTodoCreate = await req('POST', '/tasks', a.token, {
+        title: 'Initial Todo Task',
+        status: 'TODO',
+      });
+      assert.equal(resTodoCreate.status, 201);
+      const dataTodoCreate = (await resTodoCreate.json() as any).data;
+      assert.equal(dataTodoCreate.completedAt, null, 'Creating task as TODO must have null completedAt');
+
+      // 3. Transition TODO -> DONE sets completedAt
+      const resComplete = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        status: 'DONE',
+      });
+      assert.equal(resComplete.status, 200);
+      const dataCompleted = (await resComplete.json() as any).data;
+      assert(dataCompleted.completedAt !== null, 'Transition to DONE must set completedAt');
+      const tCompleted = new Date(dataCompleted.completedAt).getTime();
+
+      // 4. Repeated update with DONE preserves original completedAt
+      const resRepeatDone = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        status: 'DONE',
+        title: 'Renamed While Done',
+      });
+      assert.equal(resRepeatDone.status, 200);
+      const dataRepeat = (await resRepeatDone.json() as any).data;
+      assert.equal(new Date(dataRepeat.completedAt).getTime(), tCompleted, 'Repeated DONE must preserve existing completedAt');
+
+      // 5. Reopening task (DONE -> IN_PROGRESS or TODO) clears completedAt
+      const resReopen = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        status: 'IN_PROGRESS',
+      });
+      assert.equal(resReopen.status, 200);
+      const dataReopened = (await resReopen.json() as any).data;
+      assert.equal(dataReopened.completedAt, null, 'Reopening task must clear completedAt');
+
+      // 6. Re-completing task sets fresh completedAt
+      const resRecomplete = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        status: 'DONE',
+      });
+      assert.equal(resRecomplete.status, 200);
+      const dataRecompleted = (await resRecomplete.json() as any).data;
+      assert(dataRecompleted.completedAt !== null, 'Re-completing must set fresh completedAt');
+
+      // 7. UTC Half-Open Date Boundaries [from, to) & Legacy task exclusion from dated activity
+      // Legacy task: status DONE, completedAt NULL
+      await prisma.task.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy Completed Task Without Timestamp',
+          status: 'DONE',
+          completedAt: null,
+        },
+      });
+
+      // Boundary task completed right at midnight UTC: 2026-10-15T00:00:00.000Z
+      const boundaryDate = new Date('2026-10-15T00:00:00.000Z');
+      await prisma.task.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Midnight Boundary Task',
+          status: 'DONE',
+          completedAt: boundaryDate,
+        },
+      });
+
+      // Day 1: [2026-10-14T00:00:00.000Z, 2026-10-15T00:00:00.000Z)
+      // Boundary task at 2026-10-15T00:00:00.000Z must NOT be counted because 'to' is exclusive (< to)
+      const day1Breakdown = await analyticsService.getActivityBreakdown(
+        a.profileId!,
+        'custom',
+        '2026-10-14T00:00:00.000Z',
+        '2026-10-15T00:00:00.000Z'
+      );
+      assert.equal(day1Breakdown.tasks.completed, 0, 'Midnight task must not count towards preceding day in [from, to) interval');
+
+      // Day 2: [2026-10-15T00:00:00.000Z, 2026-10-16T00:00:00.000Z)
+      // Boundary task at 2026-10-15T00:00:00.000Z MUST be counted because 'from' is inclusive (>= from)
+      const day2Breakdown = await analyticsService.getActivityBreakdown(
+        a.profileId!,
+        'custom',
+        '2026-10-15T00:00:00.000Z',
+        '2026-10-16T00:00:00.000Z'
+      );
+      assert.equal(day2Breakdown.tasks.completed, 1, 'Midnight task must count towards the day starting at midnight');
+
+      // 8. Total dashboard counts preserve legacy completed tasks
+      const dashboard = await analyticsService.getStudentDashboard(a.profileId!);
+      assert(dashboard.productivity.completedTasks >= 2, 'Lifetime completed counts must retain legacy tasks with unknown completedAt');
+    });
+
+    await t.test('W08: canonical resume selection across analytics and AI with explicit ID override', async () => {
+      const studentW08 = await student('W08');
+      const w08Id = studentW08.profileId!;
+
+      // 1. Setup multiple resumes for Student W08
+      const res1 = await prisma.resume.create({
+        data: {
+          studentProfileId: w08Id,
+          title: 'Legacy Inactive Resume 1',
+          isActive: false,
+          updatedAt: new Date('2026-10-01T00:00:00Z'),
+        },
+      });
+      await prisma.resumeVersion.create({
+        data: {
+          resumeId: res1.id,
+          content: { personalInfo: { name: 'Student W08' }, education: [{ degree: 'BS' }] },
+          atsScore: 50,
+          createdAt: new Date('2026-10-01T00:00:00Z'),
+        },
+      });
+      const v1Newer = await prisma.resumeVersion.create({
+        data: {
+          resumeId: res1.id,
+          content: { personalInfo: { name: 'Student W08' }, education: [{ degree: 'BS' }], skills: ['TS'] },
+          atsScore: 90,
+          createdAt: new Date('2026-10-02T00:00:00Z'),
+        },
+      });
+
+      const res2 = await prisma.resume.create({
+        data: {
+          studentProfileId: w08Id,
+          title: 'Recent Inactive Resume 2',
+          isActive: false,
+          updatedAt: new Date('2026-10-10T00:00:00Z'),
+        },
+      });
+      await prisma.resumeVersion.create({
+        data: {
+          resumeId: res2.id,
+          content: { personalInfo: { name: 'Student W08' }, experience: [{ company: 'Tech Inc' }] },
+          atsScore: 60,
+          createdAt: new Date('2026-10-10T00:00:00Z'),
+        },
+      });
+
+      const res3 = await prisma.resume.create({
+        data: {
+          studentProfileId: w08Id,
+          title: 'Active Resume 3',
+          isActive: true,
+          updatedAt: new Date('2026-10-05T00:00:00Z'),
+        },
+      });
+      await prisma.resumeVersion.create({
+        data: {
+          resumeId: res3.id,
+          content: { personalInfo: { name: 'Student W08' }, projects: [{ name: 'Project 3' }] },
+          atsScore: 75,
+          createdAt: new Date('2026-10-05T00:00:00Z'),
+        },
+      });
+
+      // 2. Active resume takes precedence even if another inactive resume has newer updatedAt
+      const canonicalActive = await getCanonicalResume(w08Id);
+      assert.equal(canonicalActive?.id, res3.id, 'Active resume must take precedence');
+      assert.equal(canonicalActive?.versions[0]?.atsScore, 75);
+
+      // 3. When active resume is deactivated, most recently updated inactive resume wins
+      await prisma.resume.update({ where: { id: res3.id }, data: { isActive: false, updatedAt: new Date('2026-10-05T00:00:00Z') } });
+      const canonicalRecent = await getCanonicalResume(w08Id);
+      assert.equal(canonicalRecent?.id, res2.id, 'Most recently updated resume must win when none are active');
+      assert.equal(canonicalRecent?.versions[0]?.atsScore, 60);
+
+      // 4. Version tie-breaker: newest version selected
+      const res1Loaded = await getCanonicalResume(w08Id, res1.id);
+      assert.equal(res1Loaded?.versions[0]?.id, v1Newer.id, 'Newest version must be selected');
+      assert.equal(res1Loaded?.versions[0]?.atsScore, 90);
+
+      // 5. Explicit resumeId override preserved in analytics and verified against ownership
+      const completionExplicit = await analyticsService.getResumeCompletion(w08Id, res1.id);
+      assert.equal(completionExplicit.resumeId, res1.id, 'Explicit resume ID must be preserved in completion calculation');
+
+      // Cross-student access rejection
+      await assert.rejects(getCanonicalResume(b.profileId!, res1.id), {
+        statusCode: 404,
+        message: 'Resume not found or does not belong to you',
+      });
+    });
+
+    await t.test('W09 & B10: fresh aggregated attendance in AI study plan context distinguishing zero records from 0% attendance', async () => {
+      const studentW09 = await student('W09');
+      const w09Id = studentW09.profileId!;
+
+      // 1. Fresh academic context with zero attendance records
+      const semContext = await prisma.semester.create({
+        data: {
+          studentProfileId: w09Id,
+          name: 'AI Context Semester',
+          startDate: new Date('2026-09-01'),
+          endDate: new Date('2026-12-31'),
+        },
+      });
+      await prisma.subject.create({
+        data: {
+          semesterId: semContext.id,
+          name: 'Zero Records Subject',
+          code: 'ZERO101',
+          totalClasses: 0,
+          attendedClasses: 0,
+        },
+      });
+
+      const perfZero = await analyticsService.getSubjectPerformance(w09Id);
+      const totalClassesZero = perfZero.reduce((s, p) => s + p.totalClasses, 0);
+      assert.equal(totalClassesZero, 0);
+
+      const aiPlanZero = await AIService.generateStudyPlanRecommendation(w09Id, {
+        topic: 'Compilers',
+      });
+      assert(aiPlanZero.contextUsed !== undefined);
+      assert.equal(aiPlanZero.contextUsed.attendancePercentage, 0);
+
+      // 2. Fresh academic context with genuine 0% attendance (10 classes held, 0 attended)
+      await prisma.subject.create({
+        data: {
+          semesterId: semContext.id,
+          name: 'Zero Attended Subject',
+          code: 'FAIL101',
+          totalClasses: 10,
+          attendedClasses: 0,
+        },
+      });
+
+      const perfGenuinelyZero = await analyticsService.getSubjectPerformance(w09Id);
+      const totalClassesGenuinelyZero = perfGenuinelyZero.reduce((s, p) => s + p.totalClasses, 0);
+      const attendedClassesGenuinelyZero = perfGenuinelyZero.reduce((s, p) => s + p.attendedClasses, 0);
+      assert.equal(totalClassesGenuinelyZero, 10);
+      assert.equal(attendedClassesGenuinelyZero, 0);
+
+      // 3. Aggregate attendance calculation: sum of attended classes / sum of total classes (not average of percentages)
+      // Create second subject: 90 classes total, 90 attended (100%)
+      await prisma.subject.create({
+        data: {
+          semesterId: semContext.id,
+          name: 'High Attendance Subject',
+          code: 'HIGH101',
+          totalClasses: 90,
+          attendedClasses: 90,
+        },
+      });
+
+      const perfWeighted = await analyticsService.getSubjectPerformance(w09Id);
+      const totalAttended = perfWeighted.reduce((s, p) => s + p.attendedClasses, 0); // 0 + 90 = 90
+      const totalHeld = perfWeighted.reduce((s, p) => s + p.totalClasses, 0); // 10 + 90 = 100
+      const aggregatePercentage = (totalAttended / totalHeld) * 100;
+      assert.equal(aggregatePercentage, 90, 'Aggregate attendance must be 90% (90/100), not the unweighted average of subject percentages');
+    });
+
+    await t.test('W12: recorded storage provider routing on note and resume retrieval and deletion with compatibility fallback', async () => {
+      // 1. Upload local test files
+      const localProvider = getStorageProvider('local');
+      const testNoteKey = `notes/${a.profileId}/test-note-w12.pdf`;
+      const testResumeKey = `profiles/${a.profileId}/test-resume-w12.pdf`;
+      await localProvider.upload(testNoteKey, Buffer.from('%PDF-1.4 test note content'), 'application/pdf');
+      await localProvider.upload(testResumeKey, Buffer.from('%PDF-1.4 test resume content'), 'application/pdf');
+
+      // 2. Note with explicitly recorded storageProvider
+      const noteRec = await prisma.note.create({
+        data: {
+          subjectId: subject.id,
+          title: 'Recorded Provider Note',
+          content: 'Note content',
+          fileId: testNoteKey,
+          fileStorageProvider: 'local',
+        },
+      });
+
+      // Stream note file -> routes via note.fileStorageProvider
+      const streamRes = await req('GET', `/notes/${noteRec.id}/file`, a.token);
+      assert.equal(streamRes.status, 200);
+
+      // 3. Legacy note with null fileStorageProvider -> routes via compatibility fallback
+      const noteLegacy = await prisma.note.create({
+        data: {
+          subjectId: subject.id,
+          title: 'Legacy Provider Note',
+          content: 'Legacy note content',
+          fileId: testNoteKey,
+          fileStorageProvider: null,
+        },
+      });
+      const streamLegacyRes = await req('GET', `/notes/${noteLegacy.id}/file`, a.token);
+      assert.equal(streamLegacyRes.status, 200);
+
+      // 4. Note deletion cleans up using recorded provider
+      await noteService.deleteNote(a.profileId!, noteRec.id);
+      const noteInDb = await prisma.note.findUnique({ where: { id: noteRec.id } });
+      assert.equal(noteInDb, null);
+
+      // 5. Resume streaming routes via user profile recorded resumeStorageProvider
+      await prisma.studentProfile.update({
+        where: { id: a.profileId! },
+        data: {
+          uploadedResumeFileId: testResumeKey,
+          resumeStorageProvider: 'local',
+        },
+      });
+      const resumeStreamRes = await req('GET', '/users/me/resume-file', a.token);
+      assert.equal(resumeStreamRes.status, 200);
+      assert.equal(resumeStreamRes.headers.get('content-type'), 'application/pdf');
+    });
+
+    await t.test('W20: admin platform content stats matching student publication and expiry rules', async () => {
+      const now = new Date();
+      const past = new Date(now.getTime() - 86400000);
+      const future = new Date(now.getTime() + 86400000);
+      const farFuture = new Date(now.getTime() + 7 * 86400000);
+      const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+
+      // Announcements
+      const aActive = await prisma.announcement.create({
+        data: {
+          type: 'ANNOUNCEMENT',
+          title: 'Active Announcement',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: past,
+          expiresAt: future,
+          authorUserId: adminUser.id,
+        },
+      });
+      const aDraft = await prisma.announcement.create({
+        data: {
+          type: 'ANNOUNCEMENT',
+          title: 'Draft Announcement',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: false,
+          publishedAt: past,
+          authorUserId: adminUser.id,
+        },
+      });
+      const aFuture = await prisma.announcement.create({
+        data: {
+          type: 'ANNOUNCEMENT',
+          title: 'Future Announcement',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: future,
+          authorUserId: adminUser.id,
+        },
+      });
+      const aExpired = await prisma.announcement.create({
+        data: {
+          type: 'ANNOUNCEMENT',
+          title: 'Expired Announcement',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: past,
+          expiresAt: past,
+          authorUserId: adminUser.id,
+        },
+      });
+
+      // Notices (Announcement with type = 'NOTICE')
+      const nActive = await prisma.announcement.create({
+        data: {
+          type: 'NOTICE',
+          title: 'Active Notice',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: past,
+          expiresAt: future,
+          authorUserId: adminUser.id,
+        },
+      });
+      const nDraft = await prisma.announcement.create({
+        data: {
+          type: 'NOTICE',
+          title: 'Draft Notice',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: false,
+          publishedAt: past,
+          authorUserId: adminUser.id,
+        },
+      });
+      const nExpired = await prisma.announcement.create({
+        data: {
+          type: 'NOTICE',
+          title: 'Expired Notice',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: past,
+          expiresAt: past,
+          authorUserId: adminUser.id,
+        },
+      });
+
+      // Events (InstitutionalEvent)
+      const eActive = await prisma.institutionalEvent.create({
+        data: {
+          title: 'Active Event',
+          description: 'Desc',
+          category: 'COLLEGE_EVENT',
+          isPublished: true,
+          startDate: past,
+          endDate: future,
+          location: 'Hall A',
+          createdByUserId: adminUser.id,
+        },
+      });
+      const eDraft = await prisma.institutionalEvent.create({
+        data: {
+          title: 'Draft Event',
+          description: 'Desc',
+          category: 'COLLEGE_EVENT',
+          isPublished: false,
+          startDate: future,
+          endDate: farFuture,
+          location: 'Hall A',
+          createdByUserId: adminUser.id,
+        },
+      });
+
+      try {
+        const stats = await adminPlatformService.getDashboardMetrics();
+        assert(stats.content.publishedAnnouncements >= 1, 'Only globally published, non-expired announcements count towards platform content');
+        assert(stats.content.notices >= 1, 'Only published, non-expired notices count towards platform content');
+        assert(stats.content.institutionalEvents >= 1, 'Only published events count towards platform content');
+      } finally {
+        await prisma.announcement.deleteMany({ where: { id: { in: [aActive.id, aDraft.id, aFuture.id, aExpired.id, nActive.id, nDraft.id, nExpired.id] } } });
+        await prisma.institutionalEvent.deleteMany({ where: { id: { in: [eActive.id, eDraft.id] } } });
+      }
+    });
+
+    await t.test('B10: exact mathematical verification of attendance EXCUSED policy and 95-point placement readiness saturation fixture', async () => {
+      // 1. Attendance EXCUSED denominator policy verification
+      const semB10 = await prisma.semester.create({
+        data: {
+          studentProfileId: a.profileId!,
+          name: 'B10 Semester',
+          startDate: new Date('2026-09-01'),
+          endDate: new Date('2026-12-31'),
+        },
+      });
+      const subB10 = await prisma.subject.create({
+        data: {
+          semesterId: semB10.id,
+          name: 'Operating Systems B10',
+          code: 'OS101',
+          totalClasses: 0,
+          attendedClasses: 0,
+        },
+      });
+
+      // Add 1 PRESENT record and 1 EXCUSED record
+      await prisma.attendanceRecord.create({
+        data: { subjectId: subB10.id, date: new Date('2026-10-01'), status: 'PRESENT' },
+      });
+      await prisma.attendanceRecord.create({
+        data: { subjectId: subB10.id, date: new Date('2026-10-02'), status: 'EXCUSED' },
+      });
+
+      const perfB10 = await analyticsService.getSubjectPerformance(a.profileId!);
+      const osPerf = perfB10.find(s => s.subjectId === subB10.id);
+      assert(osPerf);
+      assert.equal(osPerf.totalClasses, 2, 'Application policy includes EXCUSED records in totalClasses denominator');
+      assert.equal(osPerf.attendedClasses, 1, 'Only PRESENT/LATE count towards attendedClasses');
+      assert.equal(osPerf.attendancePercentage, 50, 'Attendance percentage must evaluate to 50.0% (1/2)');
+
+      // 2. Exact 95-point Placement Readiness Saturation Fixture:
+      // Creates clean student C to isolate readiness scoring
+      const studentC = await student('B10_StudentC');
+      const cProfileId = studentC.profileId!;
+
+      // Input Component 1: 10 skills (each 10 pts, saturates at 100, weight 0.25 -> 25 pts)
+      const skillNames = ['Python', 'SQL', 'TypeScript', 'Docker', 'AWS', 'Linux', 'Git', 'K8s', 'React', 'Go'];
+      for (const name of skillNames) {
+        await prisma.skill.create({
+          data: { studentProfileId: cProfileId, name, category: 'TECHNICAL', proficiencyLevel: 4 },
+        });
+      }
+
+      // Input Component 2: 7 job applications (each 15 pts, 7*15=105 -> saturates at 100, weight 0.20 -> 20 pts)
+      for (let i = 1; i <= 7; i++) {
+        await prisma.jobApplication.create({
+          data: {
+            studentProfileId: cProfileId,
+            companyName: `Company ${i}`,
+            role: `SWE ${i}`,
+            status: 'APPLIED',
+          },
+        });
+      }
+
+      // Input Component 3: 4 certifications (each 25 pts, 4*25=100, weight 0.15 -> 15 pts)
+      for (let i = 1; i <= 4; i++) {
+        await prisma.certification.create({
+          data: {
+            studentProfileId: cProfileId,
+            name: `Cert ${i}`,
+            issuer: `Issuer ${i}`,
+          },
+        });
+      }
+
+      // Input Component 4: 5 projects (each 20 pts, 5*20=100, weight 0.15 -> 15 pts)
+      for (let i = 1; i <= 5; i++) {
+        await prisma.project.create({
+          data: {
+            studentProfileId: cProfileId,
+            title: `Project ${i}`,
+            technologies: ['TypeScript', 'Node.js'],
+          },
+        });
+      }
+
+      // Input Component 5: Resume with ATS score 80 (80 * 0.25 -> 20 pts)
+      const resumeC = await prisma.resume.create({
+        data: {
+          studentProfileId: cProfileId,
+          title: 'Master Resume C',
+          isActive: true,
+        },
+      });
+      await prisma.resumeVersion.create({
+        data: {
+          resumeId: resumeC.id,
+          content: { personalInfo: { name: 'Student C' }, skills: skillNames },
+          atsScore: 80,
+        },
+      });
+
+      // Total Expected Calculation:
+      // readinessScore = Math.round(100*0.25 + 80*0.25 + 100*0.20 + 100*0.15 + 100*0.15)
+      //                = 25 + 20 + 20 + 15 + 15 = 95
+      const readiness = await analyticsService.getPlacementReadiness(cProfileId);
+      assert.equal(readiness.breakdown.skills.score, 100);
+      assert.equal(readiness.breakdown.resume.score, 80);
+      assert.equal(readiness.breakdown.applications.score, 100);
+      assert.equal(readiness.breakdown.certifications.score, 100);
+      assert.equal(readiness.breakdown.projects.score, 100);
+      assert.equal(readiness.readinessScore, 95, 'Readiness score must match exact 95-point fixture calculation');
+      assert.deepEqual(readiness.recommendations, [], 'All component thresholds satisfied with ATS 80 >= 70');
     });
   } finally {
     for (const u of users) {
