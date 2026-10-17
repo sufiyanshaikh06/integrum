@@ -4,8 +4,8 @@
 **Snapshot date:** 17 October 2026  
 **Repository:** https://github.com/sufiyanshaikh06/integrum  
 **Implementation branch:** `fix/backend-closure-day1`  
-**Latest code checkpoint:** `48ba2ed` (Phase 4 completed; Phase 3 accepted at `ec68594`)  
-**Status:** Phase 3 accepted (46/46 native tests, production smoke, DB cleanup); Phase 4 implemented and verified (52/52 native tests passing, clean smoke, clean DB cleanup); final backend closure and deployment approval remain pending B02, B03, B04, B07, B08.
+**Latest code checkpoint:** `10ecb2a` (Canonical Vercel + Render + Supabase configuration verified; 54/54 native tests; 13/13 browser workflow stages passed)  
+**Status:** Phase 3 accepted (`ec68594`); Phase 4 accepted (`e5a84f2` / `10ecb2a`); canonical multi-platform deployment topology configured for Vercel (frontend), Render (backend & continuous reminder processor), and Supabase (PostgreSQL); open gates remain B02–B04, B07, B08.
 
 > Read sections 1–3 before running commands. This document contains design rationale and decision summaries, implementation evidence, limitations, and next actions. It is not a claim of exhaustive security certification or a guarantee of zero defects. Commands involving merges, real databases, or publication have explicit prerequisites. Do not paste the entire document into a terminal.
 
