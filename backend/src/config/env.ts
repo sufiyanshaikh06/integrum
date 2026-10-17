@@ -14,6 +14,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(0).max(65535).default(5000),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  COOKIE_SECURE: z.coerce.boolean().optional(),
   AI_PROVIDER: z.enum(['mock', 'gemini']).default('mock'),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),

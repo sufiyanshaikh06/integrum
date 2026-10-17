@@ -85,6 +85,13 @@ Subsequent native Windows runs confirmed full resolution:
    - Latest disposable database: `integrum_native_7772534b3cf69a3c_test`.
    - Results: `testsPassed: true`, `cleanupSucceeded: true`, completed at `2026-10-17T03:08:55.004Z` on PostgreSQL 18.4 (x86_64-windows).
    - All 8 stages passed: independent connections, row lock/rollback, Prisma migrations, client generation, backend build, test typecheck, database seed, 52/52 closure tests, and compiled production smoke check.
+3. **Phase 4 Final Real-Browser Verification Checkpoint:**
+   - Closure suite expanded to **54 tests passed, 0 failed**.
+   - Production smoke: Passed with clean child IPC shutdown (`code: 0`).
+   - Headless Google Chrome Real-Browser Verification: **13/13 stages passed** covering static asset serving, SPA routing, 404 API error responses, reverse-proxy HTTPS cookies, student sign in, semester/subject creation, assignment creation, task creation with W07 atomic row-lock completion (`completedAt` verified in DB), study notes creation/view/delete, unified calendar agenda, in-app notifications read/unread toggle, page reload persistence, form validation error toasts without false success, Student B ownership isolation, and permanent logout.
+   - Latest disposable database: `integrum_native_3badc1a86280daf5_test`.
+   - Results: `testsPassed: true`, `cleanupSucceeded: true`, completed at `2026-10-17T04:15:45.246Z` on PostgreSQL 18.4 (x86_64-windows).
+   - All 9 runner stages passed cleanly.
 
 ### 1.2 The Windows fix
 
@@ -2801,15 +2808,15 @@ Passing 54/54 native tests establishes internal semantic consistency, API contra
 
 | Screen / Capability | Status | Backend Endpoints Connected | Verified Workflows |
 |---|---|---|---|
-| **Authentication & Session** | **CONNECTED** | `POST /auth/login`<br>`POST /auth/register`<br>`POST /auth/refresh`<br>`POST /auth/logout`<br>`GET /users/me` | In-memory token storage (zero tokens in `localStorage`), silent session restore on reload via HttpOnly cookie with single-flight mutex, verified logout clearing cookies. |
-| **Academic Catalog & Enrollment** | **CONNECTED** | `GET /semesters`<br>`POST /semesters`<br>`GET /subjects`<br>`POST /subjects` | Semester 5 default binding, subject creation with course code and credit weight, subject list in academic view. |
-| **Course Assignments** | **CONNECTED** | `GET /assignments`<br>`POST /assignments`<br>`PATCH /assignments/:id`<br>`DELETE /assignments/:id` | Creating assignments bound to real `subjectId`, priority levels (`LOW`, `MEDIUM`, `HIGH`), status tracking, due dates, assignment cards on dashboard. |
-| **Productivity Tasks (W07)** | **CONNECTED** | `GET /tasks`<br>`POST /tasks`<br>`PATCH /tasks/:id`<br>`DELETE /tasks/:id` | Task creation, status toggle (`TODO` ↔ `DONE`), row-lock serialization, `completedAt` timestamp preservation, title-only edits preserving completion dates, task deletion. |
-| **Study Notes (Text)** | **CONNECTED** | `GET /notes`<br>`POST /notes`<br>`PATCH /notes/:id`<br>`DELETE /notes/:id` | Creating text study notes linked to enrolled subjects, tag filtering, full modal note view/read, deletion. |
-| **Academic Calendar & Deadlines** | **CONNECTED** | `GET /calendar/unified`<br>`GET /calendar`<br>`POST /calendar`<br>`DELETE /calendar/:id` | Unified 60-day calendar query aggregating assignment deadlines, personal exam/class events, and reminders; sorting by timestamp; student event deletion. |
-| **In-App Notifications** | **CONNECTED** | `GET /notifications`<br>`PATCH /notifications/:id/read`<br>`PATCH /notifications/read-all` | Notification bell icon with unread count badge, notification popover drawer, individual mark as read, mark all read. |
-| **Interactive Client Calculators** | **CONNECTED** | Client-Side Pure Functions | Pomodoro timer (25m/50m/5m), Safe-Bunk threshold calculator with 75% cutoff formula, GPA simulator. |
-| **Student Profile** | **CONNECTED** | `GET /users/me` | Displays verified matriculation data (B.Sc. Computer Science, R.K. Talreja College, Semester 5). |
+| **Authentication & Session** | **Connected locally** | `POST /auth/login`<br>`POST /auth/register`<br>`POST /auth/refresh`<br>`POST /auth/logout`<br>`GET /users/me` | In-memory token storage (zero tokens in `localStorage`), silent session restore on reload via HttpOnly cookie with single-flight mutex, verified logout clearing cookies. |
+| **Student Personal Subjects** | **Connected locally** | `GET /semesters`<br>`POST /semesters`<br>`GET /subjects`<br>`POST /subjects` | Student-managed semester and subject tracking (personal subjects bound to semester). Institutional master catalog data (`MasterSubject`, `Course`, `Department`) and official student enrollment workflows are separate admin/institutional capabilities not covered by these student endpoints. |
+| **Course Assignments** | **Connected locally** | `GET /assignments`<br>`POST /assignments`<br>`PATCH /assignments/:id`<br>`DELETE /assignments/:id` | Creating assignments bound to real `subjectId`, priority levels (`LOW`, `MEDIUM`, `HIGH`), status tracking, due dates, assignment cards on dashboard. |
+| **Productivity Tasks (W07)** | **Connected locally** | `GET /tasks`<br>`POST /tasks`<br>`PATCH /tasks/:id`<br>`DELETE /tasks/:id` | Task creation, status toggle (`TODO` ↔ `DONE`), row-lock serialization, `completedAt` timestamp preservation, title-only edits preserving completion dates, task deletion. |
+| **Study Notes (Text)** | **Connected locally** | `GET /notes`<br>`POST /notes`<br>`PATCH /notes/:id`<br>`DELETE /notes/:id` | Creating text study notes linked to enrolled subjects, tag filtering, full modal note view/read, deletion. |
+| **Academic Calendar & Deadlines** | **Connected locally** | `GET /calendar/unified`<br>`GET /calendar`<br>`POST /calendar`<br>`DELETE /calendar/:id` | Unified agenda aggregation supporting sources: `PERSONAL` (student events), `ASSIGNMENT` (due dates), `TASK` (due dates), `INTERVIEW` (job interview rounds), `INSTITUTIONAL` (published college events). Student event deletion verified. |
+| **In-App Notifications** | **Connected locally** | `GET /notifications`<br>`PATCH /notifications/:id/read`<br>`PATCH /notifications/read-all` | Notification bell icon with unread count badge, notification popover drawer, individual mark as read, mark all read. |
+| **Interactive Client Calculators** | **Connected locally** | Client-Side Pure Functions | Pomodoro timer (25m/50m/5m), Safe-Bunk threshold calculator with 75% cutoff formula, GPA simulator. |
+| **Student Profile & Settings** | **Connected locally** | `GET /users/me` | Displays student profile and matriculation info (B.Sc. CS, R.K. Talreja College, Semester 5). Clarification: The current UI displays user identity, institutional matriculation, and verification architecture notes; fine-grained user settings controls (custom notification switches, appearance preferences) remain static/default view and are not yet exposed as interactive form inputs. |
 
 ### 26.2 Unsupported / Backend-Gated Capabilities (Explicitly Disabled)
 

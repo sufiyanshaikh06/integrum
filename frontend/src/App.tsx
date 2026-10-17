@@ -137,6 +137,18 @@ export default function App() {
     return () => clearInterval(timer);
   }, [pomoIsRunning, pomoMinutes]);
 
+  // Refresh calendar agenda when calendar view is opened
+  useEffect(() => {
+    if (phase === 'app' && activeView === 'calendar') {
+      const now = new Date();
+      const start = new Date(now.getTime() - 7 * 86400000).toISOString();
+      const end = new Date(now.getTime() + 60 * 86400000).toISOString();
+      calendarApi.getUnifiedCalendar(start, end).then((cal) => {
+        setUnifiedCalendar(Array.isArray(cal) ? cal : []);
+      }).catch(() => {});
+    }
+  }, [activeView, phase]);
+
   const loadUserData = async () => {
     setLoadingData(true);
     try {
@@ -256,6 +268,11 @@ export default function App() {
       setIsAsgnModalOpen(false);
       const asgns = await academicApi.getAssignments();
       setAssignments(asgns || []);
+      const now = new Date();
+      const start = new Date(now.getTime() - 7 * 86400000).toISOString();
+      const end = new Date(now.getTime() + 60 * 86400000).toISOString();
+      const cal = await calendarApi.getUnifiedCalendar(start, end).catch(() => []);
+      setUnifiedCalendar(Array.isArray(cal) ? cal : []);
     } catch (err: any) {
       addToast(err.message || 'Failed to create assignment', 'error');
     }

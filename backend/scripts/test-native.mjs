@@ -105,6 +105,7 @@ try {
   await run('seed', ['--import', 'tsx', 'prisma/seed.ts']);
   await run('closure', ['--import', 'tsx', '--test', 'scripts/test-day1.test.ts']);
   await run('production-smoke', ['--import', 'tsx', 'scripts/test-production-hardening.ts']);
+  await run('browser-workflow', ['--import', 'tsx', 'scripts/test-browser-workflow.ts']);
   passed = true;
 } catch (error) {
   console.error(sanitize(error instanceof Error ? error.message : String(error)));
