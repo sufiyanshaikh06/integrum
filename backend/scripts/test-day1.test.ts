@@ -3200,6 +3200,159 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(readiness.readinessScore, 95, 'Readiness score must match exact 95-point fixture calculation');
       assert.deepEqual(readiness.recommendations, [], 'All component thresholds satisfied with ATS 80 >= 70');
     });
+
+    await t.test('Reduced-scope frontend workflows: semester/subject -> assignments -> tasks -> notes -> calendar -> notifications -> session restoration and isolation', async () => {
+      // 1. Semester and Subject binding for Assignments
+      const testSem = await create('/semesters', a.token, {
+        name: 'Fall 2026 CS Core',
+        startDate: '2026-08-01T00:00:00.000Z',
+        endDate: '2026-12-15T00:00:00.000Z',
+      });
+      const testSubj = await create('/subjects', a.token, {
+        semesterId: testSem.id,
+        name: 'Algorithms & Complexity',
+        code: 'CS401',
+        credits: 4,
+      });
+
+      // Assignment creation bound to subjectId
+      const testAsgn = await create('/assignments', a.token, {
+        subjectId: testSubj.id,
+        title: 'Dynamic Programming Problem Set',
+        dueDate: '2026-11-10T18:00:00.000Z',
+        priority: 'HIGH',
+        status: 'PENDING',
+      });
+      assert.equal(testAsgn.subjectId, testSubj.id);
+      assert.equal(testAsgn.status, 'PENDING');
+
+      // 2. Task lifecycle & row-lock completion toggle
+      const testTask = await create('/tasks', a.token, {
+        title: 'Complete Graph Theory Notes',
+        priority: 'MEDIUM',
+        status: 'TODO',
+      });
+      assert.equal(testTask.status, 'TODO');
+      assert.equal(testTask.completedAt, null);
+
+      // Toggle TODO -> DONE sets completedAt
+      const resDone = await req('PATCH', `/tasks/${testTask.id}`, a.token, { status: 'DONE' });
+      assert.equal(resDone.status, 200);
+      const dataDone = (await resDone.json() as any).data;
+      assert.equal(dataDone.status, 'DONE');
+      assert(dataDone.completedAt !== null);
+
+      // 3. Text Notes: creation, subject linking, tag filtering, and retrieval
+      const testNote = await create('/notes', a.token, {
+        subjectId: testSubj.id,
+        title: 'Master Theorem Cheatsheet',
+        content: 'T(n) = aT(n/b) + f(n). Cases 1, 2, and 3 asymptotic bounds.',
+        tags: ['algorithms', 'exam-prep'],
+      });
+      assert.equal(testNote.subjectId, testSubj.id);
+      assert.equal(testNote.title, 'Master Theorem Cheatsheet');
+
+      // List notes with subject filter
+      const resFilteredNotes = await req('GET', `/notes?subjectId=${testSubj.id}`, a.token);
+      assert.equal(resFilteredNotes.status, 200);
+      const filteredNotes = (await resFilteredNotes.json() as any).data;
+      assert(filteredNotes.some((n: any) => n.id === testNote.id));
+
+      // 4. Unified Calendar & Custom Events
+      const calEventDate = '2026-11-15T09:00:00.000Z';
+      const testEvent = await create('/calendar', a.token, {
+        title: 'Midterm Algorithms Exam',
+        description: 'Covers Divide & Conquer and Dynamic Programming',
+        date: calEventDate,
+        eventType: 'EXAM',
+      });
+      assert.equal(testEvent.eventType, 'EXAM');
+
+      // Unified calendar query (window within 90 days)
+      const calStart = '2026-11-01T00:00:00.000Z';
+      const calEnd = '2026-11-30T00:00:00.000Z';
+      const resUnified = await req('GET', `/calendar/unified?startDate=${encodeURIComponent(calStart)}&endDate=${encodeURIComponent(calEnd)}`, a.token);
+      assert.equal(resUnified.status, 200);
+      const unifiedData = (await resUnified.json() as any).data;
+      assert(Array.isArray(unifiedData), 'Unified calendar must return an array of items');
+      assert(unifiedData.some((item: any) => item.source === 'ASSIGNMENT' && item.sourceId === testAsgn.id), 'Unified calendar must include active assignment');
+      assert(unifiedData.some((item: any) => item.source === 'PERSONAL' && item.sourceId === testEvent.id), 'Unified calendar must include student exam event');
+
+      // 5. In-App Notifications
+      // Create a test notification for student A
+      const notif = await prisma.notification.create({
+        data: {
+          userId: a.id,
+          title: 'Assignment Deadline Approaching',
+          message: 'Dynamic Programming Problem Set is due soon.',
+          type: 'ASSIGNMENT_REMINDER',
+        },
+      });
+      const resNotifs = await req('GET', '/notifications', a.token);
+      assert.equal(resNotifs.status, 200);
+      const notifsList = (await resNotifs.json() as any).data;
+      assert(notifsList.some((n: any) => n.id === notif.id && !n.isRead));
+
+      // Mark single notification read
+      const resMarkRead = await req('PATCH', `/notifications/${notif.id}/read`, a.token);
+      assert.equal(resMarkRead.status, 200);
+      const markedNotif = (await resMarkRead.json() as any).data;
+      assert.equal(markedNotif.isRead, true);
+
+      // 6. Ownership Isolation: Student B cannot access or modify Student A's entities
+      const bNoteAccess = await req('GET', `/notes/${testNote.id}`, b.token);
+      assert.equal(bNoteAccess.status, 404, 'Student B cannot access Student A note');
+      const bTaskEdit = await req('PATCH', `/tasks/${testTask.id}`, b.token, { title: 'Hacked Title' });
+      assert.equal(bTaskEdit.status, 404, 'Student B cannot modify Student A task');
+      const bEventDelete = await req('DELETE', `/calendar/${testEvent.id}`, b.token);
+      assert.equal(bEventDelete.status, 404, 'Student B cannot delete Student A calendar event');
+
+      // 7. Failed Requests Handling
+      // Invalid window > 90 days returns 400
+      const invalidCalRes = await req('GET', `/calendar/unified?startDate=${encodeURIComponent('2026-01-01T00:00:00.000Z')}&endDate=${encodeURIComponent('2026-06-01T00:00:00.000Z')}`, a.token);
+      assert.equal(invalidCalRes.status, 400, 'Calendar window exceeding 90 days must return 400 Bad Request');
+
+      // 8. Silent Session Restoration & Logout
+      // Login with credentials captures set-cookie refreshToken
+      const loginRes = await fetch(`${base}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: `${prefix}_A@integrum.test`, password: 'ClosurePass123!' }),
+      });
+      assert.equal(loginRes.status, 200);
+      const setCookie = loginRes.headers.get('set-cookie');
+      assert(setCookie && setCookie.includes('refreshToken='), 'Login must issue HttpOnly refreshToken cookie');
+
+      // Silent restore session using refresh cookie
+      const refreshRes = await fetch(`${base}/auth/refresh`, {
+        method: 'POST',
+        headers: { Cookie: setCookie },
+      });
+      assert.equal(refreshRes.status, 200);
+      const refreshedToken = ((await refreshRes.json() as any).data).accessToken;
+      assert(refreshedToken, 'Session restoration must return valid access token');
+
+      // Restored token accesses user profile
+      const restoredProfileRes = await req('GET', '/users/me', refreshedToken);
+      assert.equal(restoredProfileRes.status, 200);
+      assert.equal((await restoredProfileRes.json() as any).data.id, a.id);
+
+      // Logout clears session
+      const logoutRes = await fetch(`${base}/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${refreshedToken}`, Cookie: setCookie },
+      });
+      assert.equal(logoutRes.status, 200);
+
+      // Cleanup created fixtures
+      await prisma.notification.deleteMany({ where: { userId: a.id } });
+      await prisma.calendarEvent.deleteMany({ where: { id: testEvent.id } });
+      await prisma.note.deleteMany({ where: { id: testNote.id } });
+      await prisma.task.deleteMany({ where: { id: testTask.id } });
+      await prisma.assignment.deleteMany({ where: { id: testAsgn.id } });
+      await prisma.subject.deleteMany({ where: { id: testSubj.id } });
+      await prisma.semester.deleteMany({ where: { id: testSem.id } });
+    });
   } finally {
     for (const u of users) {
       await prisma.user.delete({ where: { id: u.id } });
