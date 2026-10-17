@@ -63,41 +63,50 @@ export const taskService = {
   },
 
   async updateTask(studentProfileId: string, taskId: string, data: UpdateTaskInput) {
-    const existing = await this.getTaskById(studentProfileId, taskId);
-
     await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
 
-    const updateData: {
-      title?: string;
-      description?: string | null;
-      dueDate?: Date | null;
-      completedAt?: Date | null;
-      priority?: 'LOW' | 'MEDIUM' | 'HIGH';
-      status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
-      studyPlanId?: string | null;
-    } = {};
-    if (data.title !== undefined) updateData.title = data.title;
-    if (data.description !== undefined) updateData.description = data.description;
-    if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
-    if (data.priority !== undefined) updateData.priority = data.priority;
-    if (data.studyPlanId !== undefined) updateData.studyPlanId = data.studyPlanId;
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.task.findFirst({
+        where: {
+          id: taskId,
+          studentProfileId,
+        },
+      });
 
-    if (data.status !== undefined) {
-      updateData.status = data.status;
-      if (data.status === 'DONE') {
-        if (!existing.completedAt) {
-          updateData.completedAt = new Date();
-        }
-      } else {
-        if (existing.completedAt !== null || existing.status === 'DONE') {
+      if (!existing) {
+        throw ApiError.notFound('Task not found or does not belong to you');
+      }
+
+      const updateData: {
+        title?: string;
+        description?: string | null;
+        dueDate?: Date | null;
+        completedAt?: Date | null;
+        priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+        status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+        studyPlanId?: string | null;
+      } = {};
+      if (data.title !== undefined) updateData.title = data.title;
+      if (data.description !== undefined) updateData.description = data.description;
+      if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
+      if (data.priority !== undefined) updateData.priority = data.priority;
+      if (data.studyPlanId !== undefined) updateData.studyPlanId = data.studyPlanId;
+
+      if (data.status !== undefined) {
+        updateData.status = data.status;
+        if (data.status === 'DONE') {
+          // If already DONE with a completedAt timestamp, preserve it atomically (do not overwrite)
+          updateData.completedAt = existing.completedAt ?? new Date();
+        } else {
+          // Reopening to TODO or IN_PROGRESS clears completedAt
           updateData.completedAt = null;
         }
       }
-    }
 
-    return prisma.task.update({
-      where: { id: taskId },
-      data: updateData,
+      return tx.task.update({
+        where: { id: taskId },
+        data: updateData,
+      });
     });
   },
 
