@@ -331,16 +331,23 @@ async function main() {
       },
     });
 
-    // Execute active reminder processor tick
+    // Verify scheduled delivery via automatic in-process background timer
+    // (Do NOT manually call reminderService.processDueReminders())
     const { reminderService } = await import('../src/services/reminder.service.js');
-    const { processedCount } = await reminderService.processDueReminders();
-    assert(processedCount >= 1, 'Reminder processor must claim and process due reminder');
+    reminderService.startReminderProcessor(500); // 500ms timer tick
 
-    // Confirm reminder status transitioned to DELIVERED in database
-    const deliveredReminder = await prisma.reminder.findUnique({
-      where: { id: testReminder.id },
-    });
-    assert.equal(deliveredReminder?.deliveryStatus, 'DELIVERED', 'Reminder must be marked DELIVERED by processor');
+    let deliveredReminder: any = null;
+    const timerDeadline = Date.now() + 10000;
+    while (Date.now() < timerDeadline) {
+      deliveredReminder = await prisma.reminder.findUnique({
+        where: { id: testReminder.id },
+      });
+      if (deliveredReminder?.deliveryStatus === 'DELIVERED') break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    await reminderService.stopReminderProcessor();
+
+    assert.equal(deliveredReminder?.deliveryStatus, 'DELIVERED', 'Reminder must be automatically processed by in-process timer without manual invocation');
     assert(deliveredReminder?.deliveredAt instanceof Date, 'Reminder deliveredAt must be recorded');
 
     // Refresh notifications by reloading user data in browser

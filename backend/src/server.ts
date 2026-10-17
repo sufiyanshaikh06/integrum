@@ -7,7 +7,7 @@ const startServer = () => {
   const PORT = env.PORT || 5000;
 
   if (env.NODE_ENV !== 'test') {
-    reminderService.startReminderProcessor();
+    reminderService.startReminderProcessor(env.REMINDER_INTERVAL_MS);
   }
 
   const server = app.listen(PORT, () => {

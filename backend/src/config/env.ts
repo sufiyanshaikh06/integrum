@@ -5,6 +5,8 @@ dotenv.config();
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
+  DIRECT_URL: z.string().optional(),
+  REMINDER_INTERVAL_MS: z.coerce.number().int().min(100).default(60000),
   JWT_ACCESS_SECRET: z.string().min(1),
   JWT_REFRESH_SECRET: z.string().min(1),
   ACCESS_TOKEN_EXPIRES_IN: z.string().min(1),

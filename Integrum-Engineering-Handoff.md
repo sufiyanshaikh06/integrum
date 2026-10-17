@@ -2832,34 +2832,102 @@ According to the approved project synopsis (Section 4: Software Requirements), t
 
 | Tier | Platform | Role & Configuration | Artifacts |
 |---|---|---|---|
-| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://<app>.vercel.app`).<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist` | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
+| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://<app>.vercel.app`).<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist`<br>Proxy Rewrites: `/api/:path* -> https://integrum-backend.onrender.com/api/:path*` | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
 | **Backend** | **Render** | Node.js / Express Web Service + continuous background reminder processor (`https://<api>.onrender.com`).<br>Build Command: `npm install && npm run build --workspace backend`<br>Start Command: `node backend/dist/server.js` | [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml) |
-| **Database** | **Supabase** | Managed PostgreSQL database (`aws-0-[region].pooler.supabase.com`). Connection via `DATABASE_URL` with connection pooling enabled. | Prisma migrations |
-| **Version Control** | **GitHub** | Canonical Git repository (`https://github.com/sufiyanshaikh06/integrum`). | Git repository |
+| **Database** | **Supabase** | Managed PostgreSQL database (`aws-0-[region].pooler.supabase.com`). Dual connection topology: transaction pooler on port 6543 (runtime) and direct connection on port 5432 (Prisma migrations). | [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts) |
+| **Version Control** | **GitHub** | Canonical Git repository (`https://github.com/sufiyanshaikh06/integrum`). Branch `fix/backend-closure-day1`. | Git repository |
 
-#### 26.3.1 Authentication Cookie & CORS Topology
+#### 26.3.1 Selected Architecture: Model B (Vercel Proxy Rewrites)
 
-When hosting frontend and backend across distinct domains (`*.vercel.app` and `*.onrender.com`), cross-site cookie transmission rules apply:
+To provide reliable authentication across modern browsers (avoiding third-party cookie blocking on Safari and Chrome), **Model B: Vercel Proxy Rewrites** is the selected deployment architecture:
 
-1. **Option A — Vercel Reverse Proxy Rewrites (Recommended for Same-Origin Semantics):**
-   - Vercel rewrites `/api/:path*` directly to `https://<api>.onrender.com/api/:path*`.
-   - Browser interacts strictly with `https://<app>.vercel.app`.
-   - Cookie policy: `SameSite=Lax; HttpOnly; Secure`.
-   - Eliminates third-party cookie blocking and preflight CORS overhead.
+1. **Proxy Routing in `vercel.json`:**
+   - The rewrite `/api/:path* -> https://integrum-backend.onrender.com/api/:path*` is placed **strictly before** the SPA fallback route `/(.*) -> /index.html`.
+   - The browser communicates exclusively with `https://<app>.vercel.app/api/v1/...`.
+   - Vercel reverse-proxies requests to Render, maintaining **same-origin semantics** for the browser.
 
-2. **Option B — Direct Cross-Origin API Communication:**
-   - Frontend directly targets `VITE_API_URL=https://<api>.onrender.com/api/v1`.
-   - Backend `CLIENT_URL`: set to `https://<app>.vercel.app` with `credentials: true`.
-   - Cookie policy: `COOKIE_SAME_SITE=none` and `COOKIE_SECURE=true` (`SameSite=None; Secure; HttpOnly`).
-   - Browser sends `refreshToken` across cross-site fetch requests via `credentials: 'include'`.
+2. **Cookie Lifetime & Serialized Header Specifications:**
+   - **Express Configuration:** The server configures `res.cookie('refreshToken', token, { maxAge: 604800000, httpOnly: true, secure: true, sameSite: 'lax' })`. Express expects `maxAge` in **milliseconds** (`7 * 24 * 60 * 60 * 1000 = 604,800,000 ms`).
+   - **Serialized HTTP Header:** The Node.js cookie serializer converts milliseconds to integer **seconds** for the standard HTTP `Max-Age` attribute.
+   - **Observed Header:**
+     ```http
+     Set-Cookie: refreshToken=<token>; Max-Age=604800; Path=/; Expires=Sat, 24 Oct 2026 04:46:08 GMT; HttpOnly; Secure; SameSite=Lax
+     ```
+   - This reconciles the documentation: Express code uses `604800000` ms, while the emitted wire header is `Max-Age=604800` s.
 
-#### 26.3.2 Production Identity & Verification Fixtures
+#### 26.3.2 Supabase Database Connection Separation (Runtime vs. Migration)
+
+Supabase PostgreSQL utilizes PgBouncer for connection pooling. Running Prisma migrations through transaction pooling causes migration failures because PgBouncer in transaction mode does not support session-level advisory locks or prepared statements. The configuration strictly separates these two channels:
+
+1. **Runtime Application Queries (`DATABASE_URL` — Port 6543):**
+   - Targets the transaction pooler on port `6543`:
+     ```env
+     DATABASE_URL="postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true"
+     ```
+   - Consumed at runtime by `@prisma/adapter-pg` via a connection `Pool` in [`backend/src/config/prisma.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/src/config/prisma.ts).
+
+2. **Prisma Schema Migrations (`DIRECT_URL` — Port 5432):**
+   - Targets the direct database connection or session pooler on port `5432`:
+     ```env
+     DIRECT_URL="postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres"
+     ```
+   - Consumed by Prisma CLI in [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts):
+     ```ts
+     datasource: {
+       url: process.env["DIRECT_URL"] || process.env["DATABASE_URL"],
+     }
+     ```
+   - Ensures `npx prisma migrate deploy` executes safely without PgBouncer transaction pooler lock errors.
+
+#### 26.3.3 Scheduled Delivery vs. In-Process Processor Execution & Render Free Semantics
+
+1. **Automatic Scheduled Delivery Verification:**
+   - In-process timer runs via `reminderService.startReminderProcessor(env.REMINDER_INTERVAL_MS)` (default 60000ms, configurable).
+   - In `test-browser-workflow.ts` (Stage 9), scheduled delivery was verified **without manually calling `processDueReminders()`**. A due reminder was created, the in-process background timer ticked automatically, claimed the record, transitioned status to `DELIVERED`, and created the student notification.
+   - The browser UI then received the notification upon poll/reload and marked it read.
+
+2. **Render Free Tier Sleep Characteristics:**
+   - On the Render Free tier, web services spin down to sleep after **15 minutes** of zero incoming HTTP requests.
+   - While asleep, Node's process is paused, and the in-process `setInterval` timer **does not run**.
+   - Timely background reminder delivery during dormancy cannot be guaranteed by an in-process timer alone on a sleeping instance.
+   - When any incoming HTTP request arrives (from user activity or an external cron health ping), the instance wakes up (cold start ~30–50s).
+   - Upon wake-up, `reminderService.startReminderProcessor()` initializes and immediately sweeps overdue reminders that accumulated during dormancy, ensuring no notifications are permanently lost.
+
+#### 26.3.4 Production Identity & Verification Fixtures
 
 - **Primary Demo Account:** Sufiyan Shaikh (`sufiyan.shaikh@example.com` / `password123`) matriculated at R.K. Talreja College (B.Sc. Computer Science, Semester 5).
 - **Secondary Isolation Fixture:** Ahmed Khan (`ahmed.khan.*@example.com` / `Password123!`), utilized during automated browser verification to prove zero cross-tenant record leakage.
-- **Background Reminder Delivery:** Active `reminderService.processDueReminders()` processor picks up due reminders, transitions status to `DELIVERED` with `deliveredAt` timestamp, and generates an in-app `Notification` record in PostgreSQL for the student inbox.
 - **Display-Only Settings:** User profile and matriculation data are rendered; individual settings switches (email/SMS notifications) remain display-only in this release phase.
 - **Landing Design Notice:** The current React build uses the functional prototype landing hero; integration with the extended standalone landing HTML design remains tracked as a separate design task.
+
+---
+
+### 26.4 Verified Deployment Checkpoint & Cloud Hosting Readiness
+
+- **Native Windows Verification Results (100% Passing):**
+  - All **54/54 backend closure tests** passed.
+  - Production smoke and independent row-lock serialization passed.
+  - Full **13/13 real-browser workflow stages** passed in headless Google Chrome.
+  - Automatic reminder delivery via in-process background timer verified without manual invocation.
+  - Zero cross-tenant data leakage between Sufiyan Shaikh and Ahmed Khan.
+  - Disposable database dropped cleanly (`result.json: testsPassed: true, cleanupSucceeded: true`).
+
+- **Git / GitHub Remote Status:**
+  - Remote repository: `https://github.com/sufiyanshaikh06/integrum.git`
+  - Active branch: `fix/backend-closure-day1`
+  - Push authentication: Verified via `git push --dry-run origin fix/backend-closure-day1` (exit code 0).
+
+- **Exact Blockers for Live Remote Deployment:**
+  Automated live deployment cannot be completed without the following external credentials:
+  1. **Supabase PostgreSQL Credentials:**
+     - `DATABASE_URL` (port 6543 transaction pooler)
+     - `DIRECT_URL` (port 5432 direct connection for Prisma migrations)
+     - Supabase access token (or project reference + database password) copied directly from the Supabase dashboard.
+  2. **Render Hosting Configuration:**
+     - Render API key or linked GitHub repository deployment on `render.com` using `render.yaml`.
+  3. **Vercel Hosting Configuration:**
+     - Vercel CLI token or linked GitHub repository deployment on `vercel.com` with root directory set to repository root and framework set to Vite.
+
 
 
 
