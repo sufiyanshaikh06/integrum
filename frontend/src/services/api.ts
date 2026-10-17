@@ -253,3 +253,78 @@ export const reminderApi = {
     return apiRequest<any[]>('/reminders');
   },
 };
+
+export const noteApi = {
+  async getNotes(query?: { subjectId?: string; search?: string; tag?: string }) {
+    const params = new URLSearchParams();
+    if (query?.subjectId) params.append('subjectId', query.subjectId);
+    if (query?.search) params.append('search', query.search);
+    if (query?.tag) params.append('tag', query.tag);
+    const qs = params.toString();
+    return apiRequest<any[]>(`/notes${qs ? `?${qs}` : ''}`);
+  },
+
+  async getNoteById(id: string) {
+    return apiRequest<any>(`/notes/${id}`);
+  },
+
+  async createNote(data: {
+    subjectId: string;
+    title: string;
+    content?: string;
+    tags?: string[];
+  }) {
+    return apiRequest('/notes', { method: 'POST', body: data as any });
+  },
+
+  async updateNote(id: string, data: Partial<{
+    title: string;
+    content?: string;
+    tags?: string[];
+  }>) {
+    return apiRequest(`/notes/${id}`, { method: 'PATCH', body: data as any });
+  },
+
+  async deleteNote(id: string) {
+    return apiRequest(`/notes/${id}`, { method: 'DELETE' });
+  },
+};
+
+export const calendarApi = {
+  async getUnifiedCalendar(startDate: string, endDate: string) {
+    const params = new URLSearchParams({ startDate, endDate });
+    return apiRequest<any>(`/calendar/unified?${params.toString()}`);
+  },
+
+  async getCalendarEvents() {
+    return apiRequest<any[]>('/calendar');
+  },
+
+  async createCalendarEvent(data: {
+    title: string;
+    description?: string;
+    date: string;
+    endDate?: string;
+    eventType: 'EXAM' | 'HOLIDAY' | 'COLLEGE_EVENT' | 'CLASS';
+  }) {
+    return apiRequest('/calendar', { method: 'POST', body: data as any });
+  },
+
+  async deleteCalendarEvent(id: string) {
+    return apiRequest(`/calendar/${id}`, { method: 'DELETE' });
+  },
+};
+
+export const notificationApi = {
+  async getNotifications() {
+    return apiRequest<any[]>('/notifications');
+  },
+
+  async markAsRead(id: string) {
+    return apiRequest(`/notifications/${id}/read`, { method: 'PATCH' });
+  },
+
+  async markAllAsRead() {
+    return apiRequest('/notifications/read-all', { method: 'PATCH' });
+  },
+};

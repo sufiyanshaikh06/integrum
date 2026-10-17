@@ -4,6 +4,9 @@ import {
   academicApi,
   taskApi,
   reminderApi,
+  noteApi,
+  calendarApi,
+  notificationApi,
 } from './services/api';
 
 interface Toast {
@@ -16,7 +19,7 @@ export default function App() {
   // Phase & Navigation State
   const [phase, setPhase] = useState<'landing' | 'login' | 'app'>('landing');
   const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [activeView, setActiveView] = useState<'dashboard' | 'academic' | 'tasks' | 'tools' | 'profile'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'academic' | 'tasks' | 'notes' | 'calendar' | 'tools' | 'profile'>('dashboard');
   const [authChecking, setAuthChecking] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -27,7 +30,29 @@ export default function App() {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [reminders, setReminders] = useState<any[]>([]);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unifiedCalendar, setUnifiedCalendar] = useState<any[]>([]);
   const [loadingData, setLoadingData] = useState(false);
+
+  // Notes Modal & Filter State
+  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
+  const [newNoteTitle, setNewNoteTitle] = useState('');
+  const [newNoteSubjectId, setNewNoteSubjectId] = useState('');
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [newNoteTags, setNewNoteTags] = useState('');
+  const [selectedNote, setSelectedNote] = useState<any | null>(null);
+  const [noteFilterSubjectId, setNoteFilterSubjectId] = useState<string>('ALL');
+
+  // Calendar Modal State
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [newEventTitle, setNewEventTitle] = useState('');
+  const [newEventDesc, setNewEventDesc] = useState('');
+  const [newEventDate, setNewEventDate] = useState('2026-10-28T10:00');
+  const [newEventType, setNewEventType] = useState<'EXAM' | 'HOLIDAY' | 'COLLEGE_EVENT' | 'CLASS'>('EXAM');
+
+  // Notification Popover State
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
 
   // Forms & Modals
   const [loginEmail, setLoginEmail] = useState('sufiyan.shaikh@example.com');
@@ -115,12 +140,19 @@ export default function App() {
   const loadUserData = async () => {
     setLoadingData(true);
     try {
-      const [sems, subs, asgns, tsks, rems] = await Promise.all([
+      const now = new Date();
+      const start = new Date(now.getTime() - 7 * 86400000).toISOString();
+      const end = new Date(now.getTime() + 60 * 86400000).toISOString();
+
+      const [sems, subs, asgns, tsks, rems, nts, notifs, cal] = await Promise.all([
         academicApi.getSemesters().catch(() => []),
         academicApi.getSubjects().catch(() => []),
         academicApi.getAssignments().catch(() => []),
         taskApi.getTasks().catch(() => []),
         reminderApi.getReminders().catch(() => []),
+        noteApi.getNotes().catch(() => []),
+        notificationApi.getNotifications().catch(() => []),
+        calendarApi.getUnifiedCalendar(start, end).catch(() => []),
       ]);
 
       setSemesters(sems || []);
@@ -128,9 +160,13 @@ export default function App() {
       setAssignments(asgns || []);
       setTasks(tsks || []);
       setReminders(rems || []);
+      setNotes(nts || []);
+      setNotifications(notifs || []);
+      setUnifiedCalendar(Array.isArray(cal) ? cal : []);
 
-      if (subs && subs.length > 0 && !newAsgnSubjectId) {
-        setNewAsgnSubjectId(subs[0].id);
+      if (subs && subs.length > 0) {
+        if (!newAsgnSubjectId) setNewAsgnSubjectId(subs[0].id);
+        if (!newNoteSubjectId) setNewNoteSubjectId(subs[0].id);
       }
     } catch (err: any) {
       addToast(err.message || 'Error loading academic data', 'error');
@@ -310,6 +346,123 @@ export default function App() {
       addToast('Task removed', 'info');
     } catch (err: any) {
       addToast(err.message || 'Failed to delete task', 'error');
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // Text Notes Actions
+  // ─────────────────────────────────────────────────────────────
+  const handleCreateNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNoteTitle.trim()) {
+      addToast('Note title is required', 'error');
+      return;
+    }
+    if (!newNoteSubjectId) {
+      addToast('Please select an enrolled subject', 'error');
+      return;
+    }
+
+    try {
+      const tags = newNoteTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      await noteApi.createNote({
+        subjectId: newNoteSubjectId,
+        title: newNoteTitle.trim(),
+        content: newNoteContent.trim() || undefined,
+        tags: tags.length ? tags : undefined,
+      });
+      addToast('Study note created successfully!', 'success');
+      setNewNoteTitle('');
+      setNewNoteContent('');
+      setNewNoteTags('');
+      setIsNoteModalOpen(false);
+      const updatedNotes = await noteApi.getNotes();
+      setNotes(updatedNotes || []);
+    } catch (err: any) {
+      addToast(err.message || 'Failed to create note', 'error');
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      await noteApi.deleteNote(noteId);
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      if (selectedNote?.id === noteId) setSelectedNote(null);
+      addToast('Note deleted', 'info');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete note', 'error');
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // Calendar Actions
+  // ─────────────────────────────────────────────────────────────
+  const handleCreateCalendarEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEventTitle.trim()) {
+      addToast('Event title is required', 'error');
+      return;
+    }
+    if (!newEventDate) {
+      addToast('Event date and time is required', 'error');
+      return;
+    }
+
+    try {
+      await calendarApi.createCalendarEvent({
+        title: newEventTitle.trim(),
+        description: newEventDesc.trim() || undefined,
+        date: new Date(newEventDate).toISOString(),
+        eventType: newEventType,
+      });
+      addToast('Calendar event created!', 'success');
+      setNewEventTitle('');
+      setNewEventDesc('');
+      setIsEventModalOpen(false);
+      const now = new Date();
+      const start = new Date(now.getTime() - 7 * 86400000).toISOString();
+      const end = new Date(now.getTime() + 60 * 86400000).toISOString();
+      const cal = await calendarApi.getUnifiedCalendar(start, end);
+      setUnifiedCalendar(Array.isArray(cal) ? cal : []);
+    } catch (err: any) {
+      addToast(err.message || 'Failed to create calendar event', 'error');
+    }
+  };
+
+  const handleDeleteCalendarEvent = async (id: string) => {
+    try {
+      await calendarApi.deleteCalendarEvent(id);
+      setUnifiedCalendar((prev) => prev.filter((item) => item.sourceId !== id && item.id !== id));
+      addToast('Calendar event removed', 'info');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete calendar event', 'error');
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  // Notifications Actions
+  // ─────────────────────────────────────────────────────────────
+  const handleMarkNotifRead = async (id: string) => {
+    try {
+      await notificationApi.markAsRead(id);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      );
+    } catch (err: any) {
+      addToast(err.message || 'Could not update notification', 'error');
+    }
+  };
+
+  const handleMarkAllNotifsRead = async () => {
+    try {
+      await notificationApi.markAllAsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      addToast('All notifications marked as read', 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Could not update notifications', 'error');
     }
   };
 
@@ -613,6 +766,18 @@ export default function App() {
             >
               <span className="sb-icon">✅</span> Tasks ({tasks.length})
             </div>
+            <div
+              className={`sb-item ${activeView === 'notes' ? 'active' : ''}`}
+              onClick={() => { setActiveView('notes'); setSidebarOpen(false); }}
+            >
+              <span className="sb-icon">📝</span> Study Notes ({notes.length})
+            </div>
+            <div
+              className={`sb-item ${activeView === 'calendar' ? 'active' : ''}`}
+              onClick={() => { setActiveView('calendar'); setSidebarOpen(false); }}
+            >
+              <span className="sb-icon">📅</span> Calendar & Deadlines
+            </div>
           </div>
 
           <div className="sb-section">
@@ -654,13 +819,92 @@ export default function App() {
               {activeView === 'dashboard' && 'Student Dashboard'}
               {activeView === 'academic' && 'Courses & Assignments'}
               {activeView === 'tasks' && 'Productivity Tasks'}
+              {activeView === 'notes' && 'Study Notes & Summaries'}
+              {activeView === 'calendar' && 'Academic Calendar & Unified Deadlines'}
               {activeView === 'tools' && 'Interactive Calculators & Focus Tools'}
               {activeView === 'profile' && 'Student Profile'}
             </h2>
           </div>
 
-          <div className="hdr-right">
-            <span className="proto-badge">Working Prototype · 46 Tests Verified</span>
+          <div className="hdr-right" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span className="proto-badge">Working Prototype · 53 Tests Verified</span>
+
+            {/* In-App Notification Bell */}
+            <div style={{ position: 'relative' }}>
+              <button
+                className="btn-ghost"
+                style={{ fontSize: '1.2rem', padding: '6px 10px', position: 'relative', cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}
+                onClick={() => setIsNotifOpen((prev) => !prev)}
+                title="Notifications"
+              >
+                🔔
+                {notifications.filter((n) => !n.isRead).length > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 2,
+                      right: 2,
+                      background: 'var(--error)',
+                      color: '#fff',
+                      borderRadius: '999px',
+                      fontSize: '0.65rem',
+                      fontWeight: 800,
+                      padding: '1px 5px',
+                      minWidth: 16,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {notifications.filter((n) => !n.isRead).length}
+                  </span>
+                )}
+              </button>
+
+              {isNotifOpen && (
+                <div className="notif-popover">
+                  <div className="notif-header">
+                    <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>Notifications</span>
+                    {notifications.some((n) => !n.isRead) && (
+                      <button
+                        className="btn btn-xs btn-outline"
+                        onClick={handleMarkAllNotifsRead}
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="notif-list">
+                    {notifications.length === 0 ? (
+                      <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-3)', fontSize: '0.82rem' }}>
+                        No notifications yet.
+                      </div>
+                    ) : (
+                      notifications.map((n) => (
+                        <div
+                          key={n.id}
+                          className={`notif-item ${!n.isRead ? 'unread' : ''}`}
+                          onClick={() => !n.isRead && handleMarkNotifRead(n.id)}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div className="notif-title">{n.title}</div>
+                            {!n.isRead && <span className="badge b-warn" style={{ fontSize: '0.65rem' }}>New</span>}
+                          </div>
+                          <div className="notif-msg">{n.message}</div>
+                          <div className="notif-time">
+                            {new Date(n.triggerTime || n.createdAt).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="hdr-avatar" title={studentName}>SS</div>
             <button className="logout-btn" onClick={handleLogout}>Sign Out</button>
           </div>
@@ -921,6 +1165,227 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* ── VIEW: NOTES (TEXT STUDY NOTES) ── */}
+          {activeView === 'notes' && (
+            <div className="view active">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <div className="card-t" style={{ fontSize: '1.1rem' }}>Study Notes & Summaries</div>
+                  <div className="card-sub">Verified subject-bound revision notes stored in PostgreSQL</div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select
+                    className="form-select"
+                    style={{ width: 'auto', padding: '6px 12px', fontSize: '0.8rem' }}
+                    value={noteFilterSubjectId}
+                    onChange={(e) => setNoteFilterSubjectId(e.target.value)}
+                  >
+                    <option value="ALL">All Enrolled Subjects</option>
+                    {subjects.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.code ? `${s.code} · ` : ''}{s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="btn btn-sm btn-primary" onClick={() => setIsNoteModalOpen(true)}>+ New Note</button>
+                </div>
+              </div>
+
+              {/* Notes Grid */}
+              {(() => {
+                const filteredNotes = noteFilterSubjectId === 'ALL'
+                  ? notes
+                  : notes.filter((n) => n.subjectId === noteFilterSubjectId);
+
+                if (filteredNotes.length === 0) {
+                  return (
+                    <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                      <div style={{ fontSize: '2rem', marginBottom: 8 }}>📝</div>
+                      <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-1)' }}>No Study Notes Found</div>
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-3)', marginTop: 4, marginBottom: 16 }}>
+                        Create revision summaries and study materials linked to your enrolled subjects.
+                      </p>
+                      <button className="btn btn-sm btn-primary" onClick={() => setIsNoteModalOpen(true)}>+ Create First Note</button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="g3">
+                    {filteredNotes.map((note) => {
+                      const subj = subjects.find((s) => s.id === note.subjectId);
+                      return (
+                        <div key={note.id} className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%', marginBottom: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                            <span className="badge b-pri">{subj?.code || subj?.name || 'Subject'}</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>
+                              {new Date(note.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 6, color: 'var(--text-1)' }}>
+                            {note.title}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', flex: 1, whiteSpace: 'pre-wrap', lineHeight: 1.4, marginBottom: 12 }}>
+                            {note.content ? (note.content.length > 120 ? note.content.slice(0, 120) + '...' : note.content) : <em>No text content recorded.</em>}
+                          </div>
+                          {Array.isArray(note.tags) && note.tags.length > 0 && (
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 12 }}>
+                              {note.tags.map((tag: string, idx: number) => (
+                                <span key={idx} className="badge b-info" style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
+                                  #{tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 'auto' }}>
+                            <button
+                              className="btn btn-xs btn-outline"
+                              onClick={() => setSelectedNote(note)}
+                            >
+                              View Note
+                            </button>
+                            <button
+                              className="btn btn-xs btn-ghost"
+                              style={{ color: 'var(--error)' }}
+                              onClick={() => handleDeleteNote(note.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* ── VIEW: CALENDAR & DEADLINES ── */}
+          {activeView === 'calendar' && (
+            <div className="view active">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <div className="card-t" style={{ fontSize: '1.1rem' }}>Academic Calendar & Unified Deadlines</div>
+                  <div className="card-sub">Combined schedule across assignment due dates, college events, exams, and reminders</div>
+                </div>
+                <button className="btn btn-sm btn-primary" onClick={() => setIsEventModalOpen(true)}>+ Add Event</button>
+              </div>
+
+              {/* Schedule Stats Banner */}
+              <div className="g3" style={{ marginBottom: 20 }}>
+                <div className="card" style={{ marginBottom: 0, padding: 14 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase' }}>Upcoming Assignments</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--warning)', marginTop: 4 }}>
+                    {unifiedCalendar.filter((i: any) => i.source === 'ASSIGNMENT').length}
+                  </div>
+                </div>
+                <div className="card" style={{ marginBottom: 0, padding: 14 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase' }}>Academic Events & Exams</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--info)', marginTop: 4 }}>
+                    {unifiedCalendar.filter((i: any) => i.source === 'PERSONAL' || i.source === 'INSTITUTIONAL').length}
+                  </div>
+                </div>
+                <div className="card" style={{ marginBottom: 0, padding: 14 }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase' }}>Interviews & Reminders</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success)', marginTop: 4 }}>
+                    {unifiedCalendar.filter((i: any) => i.source === 'TASK' || i.source === 'INTERVIEW').length}
+                  </div>
+                </div>
+              </div>
+
+              {/* Unified Timeline Agenda */}
+              {(() => {
+                const combinedItems = [...unifiedCalendar].sort(
+                  (a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+                );
+
+                if (combinedItems.length === 0) {
+                  return (
+                    <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                      <div style={{ fontSize: '2rem', marginBottom: 8 }}>📅</div>
+                      <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-1)' }}>No Scheduled Deadlines in Active Window</div>
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-3)', marginTop: 4, marginBottom: 16 }}>
+                        Add an assignment with a due date or create a custom exam/college event to build your schedule.
+                      </p>
+                      <button className="btn btn-sm btn-primary" onClick={() => setIsEventModalOpen(true)}>+ Add Calendar Event</button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+                    <table className="tbl">
+                      <thead>
+                        <tr>
+                          <th>Date & Time</th>
+                          <th>Category</th>
+                          <th>Title & Details</th>
+                          <th style={{ textAlign: 'right' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {combinedItems.map((item: any) => {
+                          const dateObj = new Date(item.startDate);
+                          const isExam = item.category === 'EXAM' || item.source === 'PERSONAL';
+                          const isAsgn = item.source === 'ASSIGNMENT';
+                          const isInst = item.source === 'INSTITUTIONAL';
+
+                          const typeBadgeClass = isExam
+                            ? 'b-err'
+                            : isAsgn
+                            ? 'b-warn'
+                            : isInst
+                            ? 'b-info'
+                            : 'b-ok';
+
+                          return (
+                            <tr key={item.id}>
+                              <td style={{ whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.83rem' }}>
+                                {dateObj.toLocaleDateString(undefined, {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                                <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 400 }}>
+                                  {dateObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`badge ${typeBadgeClass}`}>
+                                  {item.source}: {item.category}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: 600, fontSize: '0.86rem' }}>{item.title}</div>
+                                {item.description && (
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>{item.description}</div>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                {item.source === 'PERSONAL' ? (
+                                  <button
+                                    className="btn btn-xs btn-outline"
+                                    style={{ color: 'var(--error)' }}
+                                    onClick={() => handleDeleteCalendarEvent(item.sourceId)}
+                                  >
+                                    ✕
+                                  </button>
+                                ) : (
+                                  <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>Auto-Synced</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1225,6 +1690,175 @@ export default function App() {
               <div className="modal-footer">
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIsSubjModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn btn-sm btn-primary">Save Subject</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: CREATE STUDY NOTE ── */}
+      {isNoteModalOpen && (
+        <div className="modal-overlay open">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>Create Study Note</h3>
+              <button className="modal-close" onClick={() => setIsNoteModalOpen(false)}>✕</button>
+            </div>
+            <form onSubmit={handleCreateNote}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Note Title</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. Binary Search Trees & AVL Rotations"
+                    value={newNoteTitle}
+                    onChange={(e) => setNewNoteTitle(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Enrolled Subject Course</label>
+                  <select
+                    className="form-select"
+                    value={newNoteSubjectId}
+                    onChange={(e) => setNewNoteSubjectId(e.target.value)}
+                    required
+                  >
+                    {subjects.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.code ? `${s.code} · ` : ''}{s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Tags (Comma-separated)</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. exam, algorithms, unit-2"
+                    value={newNoteTags}
+                    onChange={(e) => setNewNoteTags(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Notes Content (Markdown/Text)</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={6}
+                    placeholder="Key concepts, formulas, definitions, and code snippets..."
+                    value={newNoteContent}
+                    onChange={(e) => setNewNoteContent(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIsNoteModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-sm btn-primary">Save Note</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: VIEW STUDY NOTE ── */}
+      {selectedNote && (
+        <div className="modal-overlay open">
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <h3>{selectedNote.title}</h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginTop: 2 }}>
+                  Subject: {subjects.find((s) => s.id === selectedNote.subjectId)?.name || 'Subject Course'}
+                </div>
+              </div>
+              <button className="modal-close" onClick={() => setSelectedNote(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {Array.isArray(selectedNote.tags) && selectedNote.tags.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                  {selectedNote.tags.map((tag: string, idx: number) => (
+                    <span key={idx} className="badge b-info">#{tag}</span>
+                  ))}
+                </div>
+              )}
+              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.88rem', color: 'var(--text-1)' }}>
+                {selectedNote.content || <em>No text content recorded.</em>}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                style={{ color: 'var(--error)' }}
+                onClick={() => handleDeleteNote(selectedNote.id)}
+              >
+                Delete Note
+              </button>
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => setSelectedNote(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: ADD CALENDAR EVENT ── */}
+      {isEventModalOpen && (
+        <div className="modal-overlay open">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>Add Calendar Event</h3>
+              <button className="modal-close" onClick={() => setIsEventModalOpen(false)}>✕</button>
+            </div>
+            <form onSubmit={handleCreateCalendarEvent}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Event Title</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. Midterm Theory Examination"
+                    value={newEventTitle}
+                    onChange={(e) => setNewEventTitle(e.target.value)}
+                    required
+                  />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group">
+                    <label className="form-label">Event Type</label>
+                    <select
+                      className="form-select"
+                      value={newEventType}
+                      onChange={(e) => setNewEventType(e.target.value as any)}
+                    >
+                      <option value="EXAM">Exam</option>
+                      <option value="CLASS">Class / Lecture</option>
+                      <option value="COLLEGE_EVENT">College Event</option>
+                      <option value="HOLIDAY">Holiday</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Date & Time</label>
+                    <input
+                      className="form-input"
+                      type="datetime-local"
+                      value={newEventDate}
+                      onChange={(e) => setNewEventDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description (Optional)</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={3}
+                    placeholder="Hall ticket requirements, venue room number, or preparation scope..."
+                    value={newEventDesc}
+                    onChange={(e) => setNewEventDesc(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setIsEventModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn btn-sm btn-primary">Save Event</button>
               </div>
             </form>
           </div>
