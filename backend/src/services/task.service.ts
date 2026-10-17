@@ -66,13 +66,25 @@ export const taskService = {
     await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
 
     return prisma.$transaction(async (tx) => {
-      const existing = await tx.task.findFirst({
-        where: {
-          id: taskId,
-          studentProfileId,
-        },
-      });
+      // Row-level lock via SELECT ... FOR UPDATE to serialize concurrent updates
+      const rows = await tx.$queryRaw<Array<{
+        id: string;
+        studentProfileId: string;
+        title: string;
+        description: string | null;
+        dueDate: Date | null;
+        completedAt: Date | null;
+        priority: 'LOW' | 'MEDIUM' | 'HIGH';
+        status: 'TODO' | 'IN_PROGRESS' | 'DONE';
+        studyPlanId: string | null;
+      }>>`
+        SELECT id, "studentProfileId", title, description, "dueDate", "completedAt", priority, status, "studyPlanId"
+        FROM "Task"
+        WHERE id = ${taskId} AND "studentProfileId" = ${studentProfileId}
+        FOR UPDATE
+      `;
 
+      const existing = rows[0];
       if (!existing) {
         throw ApiError.notFound('Task not found or does not belong to you');
       }
@@ -95,13 +107,20 @@ export const taskService = {
       if (data.status !== undefined) {
         updateData.status = data.status;
         if (data.status === 'DONE') {
-          // If already DONE with a completedAt timestamp, preserve it atomically (do not overwrite)
-          updateData.completedAt = existing.completedAt ?? new Date();
+          if (existing.status === 'DONE') {
+            // Already DONE: preserve existing timestamp (including null for legacy completed tasks)
+            updateData.completedAt = existing.completedAt;
+          } else {
+            // Transitioning from TODO/IN_PROGRESS -> DONE: set fresh completion timestamp
+            updateData.completedAt = new Date();
+          }
         } else {
-          // Reopening to TODO or IN_PROGRESS clears completedAt
+          // Explicit reopening to TODO or IN_PROGRESS: clear completion timestamp
           updateData.completedAt = null;
         }
       }
+      // Note: When data.status is undefined (e.g. title-only edit), updateData.status and
+      // updateData.completedAt are omitted from the update payload, preserving existing completedAt.
 
       return tx.task.update({
         where: { id: taskId },

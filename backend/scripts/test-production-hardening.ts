@@ -30,14 +30,14 @@ const exited = once(child, 'exit');
 let output = '';
 assert(child.stdout && child.stderr, 'Compiled server output pipes exist');
 child.stdout.on('data', data => { output += data.toString(); });
-child.stderr.on('data', () => {});
+child.stderr.on('data', data => { output += data.toString(); });
 const base = 'http://127.0.0.1:5099/api/v1';
 try {
   for (let i = 0; i < 100 && !output.includes('Server is running'); i++) {
     assert.equal(child.exitCode, null, 'Compiled server exited before listening');
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  assert(output.includes('Server is running'), 'Compiled server did not start');
+  assert(output.includes('Server is running'), `Compiled server did not start. Output: ${output}`);
   const health = await fetch(base + '/health');
   assert.equal(health.status, 200);
   assert.equal((await health.json() as any).data.database, 'connected');

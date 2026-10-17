@@ -2544,8 +2544,18 @@ test('day-one HTTP and persistence regressions', async t => {
       const dataRecompleted = (await resRecomplete.json() as any).data;
       assert(dataRecompleted.completedAt !== null, 'Re-completing must set fresh completedAt');
 
-      // Concurrency protection: Repeated and concurrent completion requests preserve original timestamp
+      // Concurrency protection & Semantics:
+      // (a) Title-only edit to a completed task preserves completedAt when status is omitted
       const origCompletedAt = dataRecompleted.completedAt;
+      const resTitleOnly = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        title: 'Title Only Edit While Done',
+      });
+      assert.equal(resTitleOnly.status, 200);
+      const dataTitleOnly = (await resTitleOnly.json() as any).data;
+      assert.equal(dataTitleOnly.status, 'DONE');
+      assert.equal(dataTitleOnly.completedAt, origCompletedAt, 'Status-omitted edit must preserve completedAt');
+
+      // (b) Repeated and concurrent completion requests preserve original timestamp
       const concurrentResults = await Promise.all([
         req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, { status: 'DONE' }),
         req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, { status: 'DONE', title: 'Concurrent Edit While Done' }),
@@ -2556,7 +2566,82 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(concurrentResults[2].status, 200);
       const afterConcurrent = await prisma.task.findUniqueOrThrow({ where: { id: dataTodoCreate.id } });
       assert.equal(afterConcurrent.status, 'DONE');
-      assert.equal(afterConcurrent.completedAt?.toISOString(), origCompletedAt, 'Concurrent and repeated DONE requests must preserve original completedAt');
+      assert.equal(afterConcurrent.completedAt?.toISOString(), origCompletedAt, 'Concurrent repeated DONE requests must preserve original completedAt');
+
+      // (c) Simultaneous first-time TODO -> DONE transitions with row-level lock serialization
+      const resSimulTask = await req('POST', '/tasks', a.token, {
+        title: 'Simultaneous TODO to DONE Task',
+        status: 'TODO',
+      });
+      assert.equal(resSimulTask.status, 201);
+      const simulTaskId = (await resSimulTask.json() as any).data.id;
+
+      const simulResults = await Promise.all([
+        req('PATCH', `/tasks/${simulTaskId}`, a.token, { status: 'DONE' }),
+        req('PATCH', `/tasks/${simulTaskId}`, a.token, { status: 'DONE' }),
+        req('PATCH', `/tasks/${simulTaskId}`, a.token, { status: 'DONE' }),
+        req('PATCH', `/tasks/${simulTaskId}`, a.token, { status: 'DONE' }),
+      ]);
+      assert.equal(simulResults[0].status, 200);
+      assert.equal(simulResults[1].status, 200);
+      assert.equal(simulResults[2].status, 200);
+      assert.equal(simulResults[3].status, 200);
+
+      const simulTimestamps = await Promise.all(simulResults.map(async r => ((await r.json() as any).data.completedAt)));
+      const firstTimestamp = simulTimestamps[0];
+      assert(firstTimestamp !== null, 'First-time completion must set non-null completedAt');
+      for (let i = 1; i < simulTimestamps.length; i++) {
+        assert.equal(
+          simulTimestamps[i],
+          firstTimestamp,
+          `Simultaneous initial TODO -> DONE requests must serialize via row-lock and return identical completedAt (request ${i} differed)`
+        );
+      }
+
+      // (d) Preserve unknown completion dates on legacy DONE tasks unless reopened and completed again
+      const legacyDoneTask = await prisma.task.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy DONE Task for Semantics Test',
+          status: 'DONE',
+          completedAt: null,
+        },
+      });
+
+      // Title-only edit must leave completedAt as null
+      const resLegacyTitleEdit = await req('PATCH', `/tasks/${legacyDoneTask.id}`, a.token, {
+        title: 'Legacy Title Edited',
+      });
+      assert.equal(resLegacyTitleEdit.status, 200);
+      const dataLegacyTitle = (await resLegacyTitleEdit.json() as any).data;
+      assert.equal(dataLegacyTitle.completedAt, null, 'Editing title on legacy DONE task must preserve null completedAt');
+
+      // Repeated DONE must leave completedAt as null
+      const resLegacyDoneAgain = await req('PATCH', `/tasks/${legacyDoneTask.id}`, a.token, {
+        status: 'DONE',
+        title: 'Legacy Re-asserted DONE',
+      });
+      assert.equal(resLegacyDoneAgain.status, 200);
+      const dataLegacyDoneAgain = (await resLegacyDoneAgain.json() as any).data;
+      assert.equal(dataLegacyDoneAgain.completedAt, null, 'Re-asserting DONE on legacy task must preserve null completedAt');
+
+      // Explicit reopening clears completedAt (remains null)
+      const resLegacyReopened = await req('PATCH', `/tasks/${legacyDoneTask.id}`, a.token, {
+        status: 'TODO',
+      });
+      assert.equal(resLegacyReopened.status, 200);
+      const dataLegacyReopened = (await resLegacyReopened.json() as any).data;
+      assert.equal(dataLegacyReopened.status, 'TODO');
+      assert.equal(dataLegacyReopened.completedAt, null);
+
+      // Re-completing previously reopened task sets a fresh non-null completedAt
+      const resLegacyRecompleted = await req('PATCH', `/tasks/${legacyDoneTask.id}`, a.token, {
+        status: 'DONE',
+      });
+      assert.equal(resLegacyRecompleted.status, 200);
+      const dataLegacyRecompleted = (await resLegacyRecompleted.json() as any).data;
+      assert.equal(dataLegacyRecompleted.status, 'DONE');
+      assert(dataLegacyRecompleted.completedAt !== null, 'Re-completing a reopened legacy task must set fresh non-null completedAt');
 
       // 7. UTC Half-Open Date Boundaries [from, to) & Legacy task exclusion from dated activity
       // Legacy task: status DONE, completedAt NULL
