@@ -113,7 +113,7 @@ export class GeminiProvider implements IAIProvider {
 You are Integrum's academic assistant. Create a realistic study plan for a student.
 
 Student Context:
-- Current Attendance: ${context.attendancePercentage.toFixed(1)}%
+- Current Attendance: ${context.hasAttendanceData ? `${context.attendancePercentage.toFixed(1)}%` : 'No attendance data recorded yet'}
 - Enrolled Subjects: ${context.subjects.map(s => s.name).join(', ') || 'None'}
 - Target Goals: ${context.goals || 'None specified'}
 

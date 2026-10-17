@@ -35,6 +35,10 @@ export const generatedStudyPlanOutputSchema = z.object({
     title: z.string(),
     description: z.string(),
   })),
+  contextUsed: z.object({
+    attendancePercentage: z.number(),
+    subjectsCount: z.number(),
+  }).optional(),
 });
 
 export const generatedResumeAnalysisOutputSchema = z.object({

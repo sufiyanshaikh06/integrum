@@ -6,6 +6,9 @@ export interface StudyPlanContext {
   targetDate?: string | undefined;
   goals?: string | undefined;
   attendancePercentage: number;
+  hasAttendanceData?: boolean;
+  totalClasses?: number;
+  attendedClasses?: number;
   subjects: { name: string; targetGrade: number | null }[];
 }
 

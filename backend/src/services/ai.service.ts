@@ -6,6 +6,7 @@ import { IAIProvider, StudyPlanContext, ResumeContent, NoteContent } from './ai/
 import { MockProvider } from './ai/mock.provider.js';
 import { GeminiProvider } from './ai/gemini.provider.js';
 import { noteService } from './note.service.js';
+import { analyticsService, getCanonicalResume } from './analytics.service.js';
 import {
   generatedStudyPlanOutputSchema,
   generatedResumeAnalysisOutputSchema,
@@ -137,17 +138,27 @@ export class AIService {
     );
 
     try {
-      const analytics = await prisma.studentAnalytics.findUnique({ where: { studentProfileId } });
-      const subjects = await prisma.subject.findMany({
-        where: { semester: { studentProfileId } },
-        select: { name: true, targetGrade: true }
-      });
+      const [subjectPerformance, subjects] = await Promise.all([
+        analyticsService.getSubjectPerformance(studentProfileId),
+        prisma.subject.findMany({
+          where: { semester: { studentProfileId } },
+          select: { name: true, targetGrade: true }
+        }),
+      ]);
+
+      const totalClasses = subjectPerformance.reduce((sum, s) => sum + s.totalClasses, 0);
+      const attendedClasses = subjectPerformance.reduce((sum, s) => sum + s.attendedClasses, 0);
+      const hasAttendanceData = totalClasses > 0;
+      const attendancePercentage = hasAttendanceData ? (attendedClasses / totalClasses) * 100 : 0;
 
       const context: StudyPlanContext = {
         topic: input.topic,
         targetDate: input.targetDate,
         goals: input.goals,
-        attendancePercentage: analytics?.attendancePercentage ?? 0,
+        attendancePercentage,
+        hasAttendanceData,
+        totalClasses,
+        attendedClasses,
         subjects,
       };
 
@@ -172,19 +183,14 @@ export class AIService {
 
   // ─── Resume Analysis ─────────────────────────────────────────────────────────
 
-  static async analyzeResume(studentProfileId: string, resumeId: string) {
+  static async analyzeResume(studentProfileId: string, resumeId?: string) {
     const executionLog = await this.logExecutionStart(studentProfileId, AIModule.RESUME, 'analyzeResume');
 
     try {
-      const resume = await prisma.resume.findFirst({
-        where: { id: resumeId, studentProfileId }
-      });
+      const resume = await getCanonicalResume(studentProfileId, resumeId);
       if (!resume) throw ApiError.notFound('Resume not found or does not belong to the user');
 
-      const latestVersion = await prisma.resumeVersion.findFirst({
-        where: { resumeId: resume.id },
-        orderBy: { createdAt: 'desc' }
-      });
+      const latestVersion = resume.versions[0];
       if (!latestVersion) throw ApiError.notFound('No versions found for this resume');
 
       const content = latestVersion.content as unknown as ResumeContent;
