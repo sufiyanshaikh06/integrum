@@ -18,7 +18,7 @@ import express from 'express';
 import { z } from 'zod';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { readFile, readdir, rm } from 'node:fs/promises';
+import { access, readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { validateRequest } from '../src/middleware/validateRequest.js';
 import { LocalStorageProvider } from '../src/services/storage/local.storage.js';
@@ -551,8 +551,9 @@ test('day-one HTTP and persistence regressions', async t => {
         assert.deepEqual((await r.json() as any).data.map((v: any) => v.id), [placement.id]);
       }
       const list = await req('GET', route + '/internships', a.token);
-      assert.deepEqual((await list.json() as any).data.map((v: any) => v.id), [internship.id]);
-      assert.deepEqual(placement.interviewHistory, history);
+      assert.ok(placement.interviewHistory[0]?.id, 'Persistent ID must be assigned on creation');
+      const { id: _assignedId, ...roundWithoutId } = placement.interviewHistory[0];
+      assert.deepEqual([roundWithoutId], history);
       assert.equal(placement.interviewRound, 'HR');
       for (const method of ['GET', 'PATCH', 'DELETE']) {
         assert.equal((await req(method, `${route}/${placement.id}`, b.token, method === 'PATCH' ? { eligibilityStatus: 'NOT_ELIGIBLE' } : undefined)).status, 404);
@@ -1817,8 +1818,13 @@ test('day-one HTTP and persistence regressions', async t => {
         orderBy: { occurrenceKey: 'asc' },
       });
       assert.equal(jobReminders.length, 2, 'Must create a reminder for each individual interview round');
-      assert.equal(jobReminders[0]!.occurrenceKey, 'round-0');
-      assert.equal(jobReminders[1]!.occurrenceKey, 'round-1');
+      const r0Id = jobAppData.interviewHistory[0]?.id;
+      const r1Id = jobAppData.interviewHistory[1]?.id;
+      assert.ok(r0Id, 'Round 0 must receive a persistent id');
+      assert.ok(r1Id, 'Round 1 must receive a persistent id');
+      const occKeys = jobReminders.map(r => r.occurrenceKey);
+      assert(occKeys.includes(`round-${r0Id}`), 'Reminder must use persistent round 0 id');
+      assert(occKeys.includes(`round-${r1Id}`), 'Reminder must use persistent round 1 id');
 
       // 2. Parent record update: rescheduling assignment moves reminder triggerAt
       const newAsgnDate = new Date(Date.now() + 96 * 3600 * 1000);
@@ -2246,6 +2252,117 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(hrRemKept.deliveryStatus, 'PENDING', 'Surviving round reminder must remain PENDING');
     });
 
+    await t.test('interview round identity: legacy reconciliation without duplicate delivery, persistent one-time IDs, and reorder/deletion resilience', async () => {
+      const studentInt = await student('InterviewIdentity');
+      const date1 = new Date(Date.now() + 72 * 3600 * 1000);
+      const date2 = new Date(Date.now() + 120 * 3600 * 1000);
+
+      // 1. Simulate legacy application created without IDs in interviewHistory
+      const legacyApp = await prisma.jobApplication.create({
+        data: {
+          studentProfileId: studentInt.profileId!,
+          companyName: 'Legacy Systems Inc',
+          role: 'Site Reliability Engineer',
+          interviewHistory: [
+            { round: 'Technical Screening', date: date1.toISOString() },
+            { round: 'Architecture Review', date: date2.toISOString() },
+          ],
+        },
+      });
+
+      // Seed legacy reminders with array-position keys (round-0, round-1)
+      const rem0 = await prisma.reminder.create({
+        data: {
+          studentProfileId: studentInt.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: legacyApp.id,
+          occurrenceKey: 'round-0',
+          title: 'Legacy Round 0 Reminder',
+          triggerAt: new Date(date1.getTime() - 24 * 3600 * 1000),
+          deliveryStatus: 'PENDING',
+        },
+      });
+      const rem1 = await prisma.reminder.create({
+        data: {
+          studentProfileId: studentInt.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: legacyApp.id,
+          occurrenceKey: 'round-1',
+          title: 'Legacy Round 1 Reminder',
+          triggerAt: new Date(date2.getTime() - 24 * 3600 * 1000),
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      // 2. Client updates application without providing IDs (e.g. editing notes)
+      const updateRes = await req('PATCH', `/job-applications/${legacyApp.id}`, studentInt.token, {
+        notes: 'Updated notes on legacy application',
+      });
+      assert.equal(updateRes.status, 200);
+      const updatedApp = (await updateRes.json() as any).data;
+
+      // Both rounds must acquire persistent IDs
+      const r0Id = updatedApp.interviewHistory[0]?.id;
+      const r1Id = updatedApp.interviewHistory[1]?.id;
+      assert.ok(r0Id, 'Legacy Round 0 must acquire persistent ID on update');
+      assert.ok(r1Id, 'Legacy Round 1 must acquire persistent ID on update');
+      assert.notEqual(r0Id, r1Id, 'Rounds must receive distinct persistent IDs');
+
+      // Legacy reminders must be reconciled to persistent round keys without creating duplicate reminders
+      const allReminders = await prisma.reminder.findMany({
+        where: {
+          studentProfileId: studentInt.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: legacyApp.id,
+        },
+      });
+      assert.equal(allReminders.length, 2, 'Reconciliation must not duplicate reminders (exactly 2 must exist)');
+      const rem0Updated = await prisma.reminder.findUniqueOrThrow({ where: { id: rem0.id } });
+      const rem1Updated = await prisma.reminder.findUniqueOrThrow({ where: { id: rem1.id } });
+      assert.equal(rem0Updated.occurrenceKey, `round-${r0Id}`, 'Legacy rem0 must migrate occurrenceKey to round-id');
+      assert.equal(rem1Updated.occurrenceKey, `round-${r1Id}`, 'Legacy rem1 must migrate occurrenceKey to round-id');
+      assert.equal(rem0Updated.deliveryStatus, 'PENDING');
+      assert.equal(rem1Updated.deliveryStatus, 'PENDING');
+
+      // 3. Reorder rounds: swap Round 1 and Round 0 in interviewHistory
+      const reorderRes = await req('PATCH', `/job-applications/${legacyApp.id}`, studentInt.token, {
+        interviewHistory: [
+          { id: r1Id, round: 'Architecture Review', date: date2.toISOString() },
+          { id: r0Id, round: 'Technical Screening', date: date1.toISOString() },
+        ],
+      });
+      assert.equal(reorderRes.status, 200);
+
+      // Verify that reordering does NOT cancel, recreate, or desync reminders
+      const remsAfterReorder = await prisma.reminder.findMany({
+        where: {
+          studentProfileId: studentInt.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: legacyApp.id,
+        },
+      });
+      assert.equal(remsAfterReorder.length, 2);
+      const rem0AfterReorder = await prisma.reminder.findUniqueOrThrow({ where: { id: rem0.id } });
+      const rem1AfterReorder = await prisma.reminder.findUniqueOrThrow({ where: { id: rem1.id } });
+      assert.equal(rem0AfterReorder.deliveryStatus, 'PENDING');
+      assert.equal(rem1AfterReorder.deliveryStatus, 'PENDING');
+      assert.equal(rem0AfterReorder.occurrenceKey, `round-${r0Id}`);
+      assert.equal(rem1AfterReorder.occurrenceKey, `round-${r1Id}`);
+
+      // 4. Delete one round: delete Round 0, keep Round 1
+      const deleteRoundRes = await req('PATCH', `/job-applications/${legacyApp.id}`, studentInt.token, {
+        interviewHistory: [
+          { id: r1Id, round: 'Architecture Review', date: date2.toISOString() },
+        ],
+      });
+      assert.equal(deleteRoundRes.status, 200);
+
+      const rem0AfterDelete = await prisma.reminder.findUniqueOrThrow({ where: { id: rem0.id } });
+      const rem1AfterDelete = await prisma.reminder.findUniqueOrThrow({ where: { id: rem1.id } });
+      assert.equal(rem0AfterDelete.deliveryStatus, 'CANCELLED', 'Deleted round reminder must transition to CANCELLED');
+      assert.equal(rem1AfterDelete.deliveryStatus, 'PENDING', 'Retained round reminder must remain PENDING');
+    });
+
     await t.test('AI study plan acceptance: concurrent identical & conflicting requests, explicit timezone/week mapping, pre-write rejection, and injected post-write rollback', async () => {
       const concurrentIdemKey = `conc_${randomUUID()}`;
       const payloadConcurrent = {
@@ -2426,6 +2543,20 @@ test('day-one HTTP and persistence regressions', async t => {
       assert.equal(resRecomplete.status, 200);
       const dataRecompleted = (await resRecomplete.json() as any).data;
       assert(dataRecompleted.completedAt !== null, 'Re-completing must set fresh completedAt');
+
+      // Concurrency protection: Repeated and concurrent completion requests preserve original timestamp
+      const origCompletedAt = dataRecompleted.completedAt;
+      const concurrentResults = await Promise.all([
+        req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, { status: 'DONE' }),
+        req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, { status: 'DONE', title: 'Concurrent Edit While Done' }),
+        req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, { status: 'DONE' }),
+      ]);
+      assert.equal(concurrentResults[0].status, 200);
+      assert.equal(concurrentResults[1].status, 200);
+      assert.equal(concurrentResults[2].status, 200);
+      const afterConcurrent = await prisma.task.findUniqueOrThrow({ where: { id: dataTodoCreate.id } });
+      assert.equal(afterConcurrent.status, 'DONE');
+      assert.equal(afterConcurrent.completedAt?.toISOString(), origCompletedAt, 'Concurrent and repeated DONE requests must preserve original completedAt');
 
       // 7. UTC Half-Open Date Boundaries [from, to) & Legacy task exclusion from dated activity
       // Legacy task: status DONE, completedAt NULL
@@ -2686,6 +2817,50 @@ test('day-one HTTP and persistence regressions', async t => {
       const resumeStreamRes = await req('GET', '/users/me/resume-file', a.token);
       assert.equal(resumeStreamRes.status, 200);
       assert.equal(resumeStreamRes.headers.get('content-type'), 'application/pdf');
+
+      // 6. Demonstrate retrieval AND deletion of existing recorded records after default provider switch
+      const origProvider = env.STORAGE_PROVIDER;
+      try {
+        // Switch global default provider to 'supabase'
+        (env as any).STORAGE_PROVIDER = 'supabase';
+
+        // Note recorded as 'local'
+        const testSwitchNoteKey = `notes/${a.profileId}/switch-note-w12.pdf`;
+        await localProvider.upload(testSwitchNoteKey, Buffer.from('%PDF-1.4 switch test note content'), 'application/pdf');
+
+        const switchNote = await prisma.note.create({
+          data: {
+            subjectId: subject.id,
+            title: 'Provider Switch Note',
+            content: 'Content',
+            fileId: testSwitchNoteKey,
+            fileStorageProvider: 'local',
+          },
+        });
+
+        // (a) Retrieval must route to recorded 'local' provider even though env default is 'supabase'
+        const switchStreamRes = await req('GET', `/notes/${switchNote.id}/file`, a.token);
+        assert.equal(switchStreamRes.status, 200, 'Must retrieve local file successfully even when default provider is switched');
+
+        // (b) Profile resume retrieval must also route to recorded 'local' provider
+        const switchResumeRes = await req('GET', '/users/me/resume-file', a.token);
+        assert.equal(switchResumeRes.status, 200, 'Must retrieve local resume successfully even when default provider is switched');
+
+        // (c) Deletion must route to recorded 'local' provider and delete file from local storage
+        await noteService.deleteNote(a.profileId!, switchNote.id);
+        const switchNoteInDb = await prisma.note.findUnique({ where: { id: switchNote.id } });
+        assert.equal(switchNoteInDb, null, 'Note record must be deleted from DB');
+        const switchLocalPath = (localProvider as LocalStorageProvider).getLocalPath(testSwitchNoteKey);
+        let existsLocally = true;
+        try {
+          await access(switchLocalPath);
+        } catch {
+          existsLocally = false;
+        }
+        assert.equal(existsLocally, false, 'Deletion must clean up file via recorded provider after default switch');
+      } finally {
+        (env as any).STORAGE_PROVIDER = origProvider;
+      }
     });
 
     await t.test('W20: admin platform content stats matching student publication and expiry rules', async () => {
@@ -2694,6 +2869,7 @@ test('day-one HTTP and persistence regressions', async t => {
       const future = new Date(now.getTime() + 86400000);
       const farFuture = new Date(now.getTime() + 7 * 86400000);
       const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      const baselineStats = await adminPlatformService.getDashboardMetrics();
 
       // Announcements
       const aActive = await prisma.announcement.create({
@@ -2808,9 +2984,21 @@ test('day-one HTTP and persistence regressions', async t => {
 
       try {
         const stats = await adminPlatformService.getDashboardMetrics();
-        assert(stats.content.publishedAnnouncements >= 1, 'Only globally published, non-expired announcements count towards platform content');
-        assert(stats.content.notices >= 1, 'Only published, non-expired notices count towards platform content');
-        assert(stats.content.institutionalEvents >= 1, 'Only published events count towards platform content');
+        assert.equal(
+          stats.content.publishedAnnouncements - baselineStats.content.publishedAnnouncements,
+          1,
+          'Exactly 1 active unexpired announcement should be added (draft, future, expired excluded)'
+        );
+        assert.equal(
+          stats.content.notices - baselineStats.content.notices,
+          1,
+          'Exactly 1 active unexpired notice should be added (draft, expired excluded)'
+        );
+        assert.equal(
+          stats.content.institutionalEvents - baselineStats.content.institutionalEvents,
+          1,
+          'Exactly 1 published institutional event should be added (draft excluded)'
+        );
       } finally {
         await prisma.announcement.deleteMany({ where: { id: { in: [aActive.id, aDraft.id, aFuture.id, aExpired.id, nActive.id, nDraft.id, nExpired.id] } } });
         await prisma.institutionalEvent.deleteMany({ where: { id: { in: [eActive.id, eDraft.id] } } });
