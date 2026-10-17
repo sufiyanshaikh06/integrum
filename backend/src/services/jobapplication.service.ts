@@ -1,21 +1,46 @@
+import { randomUUID } from 'crypto';
 import { ApplicationType, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { CreateJobApplicationInput, UpdateJobApplicationInput } from '../schemas/jobapplication.schema.js';
 import { ApiError } from '../utils/ApiError.js';
 import { reminderService } from './reminder.service.js';
 
-function normalizeInterviewHistory(history: any): any {
+function normalizeInterviewHistory(history: any, existingHistory?: any): any {
   if (!Array.isArray(history)) return history ?? Prisma.DbNull;
+
+  const existingMap = new Map<number, string>();
+  if (Array.isArray(existingHistory)) {
+    existingHistory.forEach((item, idx) => {
+      if (item && typeof item === 'object') {
+        const id = item.id || item.roundId;
+        if (id) existingMap.set(idx, id);
+      }
+    });
+  }
+
   return history.map((item, index) => {
     if (!item || typeof item !== 'object') return item;
-    const persistentId = item.id || item.roundId;
-    if (persistentId) {
+    // 1. Explicit ID in payload takes precedence
+    const explicitId = item.id || item.roundId;
+    if (explicitId) {
       return {
         ...item,
-        id: persistentId,
+        id: explicitId,
       };
     }
-    return item;
+    // 2. Existing persistent ID from previous record if preserving identity
+    const existingId = existingMap.get(index);
+    if (existingId) {
+      return {
+        ...item,
+        id: existingId,
+      };
+    }
+    // 3. Assign stable ID once on creation / new submission
+    return {
+      ...item,
+      id: randomUUID(),
+    };
   });
 }
 
@@ -102,12 +127,21 @@ export const jobApplicationService = {
   },
 
   async updateApplication(studentProfileId: string, applicationId: string, data: UpdateJobApplicationInput) {
-    await this.getApplicationById(studentProfileId, applicationId);
+    const existing = await this.getApplicationById(studentProfileId, applicationId);
 
     const updateData: Prisma.JobApplicationUpdateInput = {};
     if (data.applicationType !== undefined) updateData.applicationType = data.applicationType;
     if (data.eligibilityStatus !== undefined) updateData.eligibilityStatus = data.eligibilityStatus;
-    if (data.interviewHistory !== undefined) updateData.interviewHistory = normalizeInterviewHistory(data.interviewHistory);
+    if (data.interviewHistory !== undefined) {
+      updateData.interviewHistory = normalizeInterviewHistory(data.interviewHistory, existing.interviewHistory);
+    } else if (Array.isArray(existing.interviewHistory)) {
+      const needsIdBackfill = (existing.interviewHistory as any[]).some(
+        (r) => r && typeof r === 'object' && !r.id && !r.roundId
+      );
+      if (needsIdBackfill) {
+        updateData.interviewHistory = normalizeInterviewHistory(existing.interviewHistory);
+      }
+    }
     if (data.companyName !== undefined) updateData.companyName = data.companyName;
     if (data.role !== undefined) updateData.role = data.role;
     if (data.applicationUrl !== undefined) updateData.applicationUrl = data.applicationUrl;
@@ -141,6 +175,25 @@ export const jobApplicationService = {
             const roundDate = round?.date ? new Date(round.date) : null;
             const roundKey = round?.id ? (round.id.startsWith('round-') ? round.id : `round-${round.id}`) : `round-${i}`;
             activeKeys.add(roundKey);
+
+            // Reconcile legacy reminder if one existed with index key `round-${i}`
+            const legacyKey = `round-${i}`;
+            if (roundKey !== legacyKey) {
+              const legacyReminder = await tx.reminder.findFirst({
+                where: {
+                  studentProfileId,
+                  sourceType: 'INTERVIEW',
+                  sourceId: updated.id,
+                  occurrenceKey: legacyKey,
+                },
+              });
+              if (legacyReminder) {
+                await tx.reminder.update({
+                  where: { id: legacyReminder.id },
+                  data: { occurrenceKey: roundKey },
+                });
+              }
+            }
 
             await reminderService.syncSourceReminder(tx, {
               studentProfileId,
