@@ -1,3 +1,6 @@
+import { env } from '../config/env.js';
+import { getStorageProvider } from './storage/index.js';
+import { cleanupFile } from './storage/file-transfer.js';
 import { prisma } from '../config/prisma.js';
 import { CreateNoteInput, UpdateNoteInput } from '../schemas/note.schema.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -29,21 +32,33 @@ export const noteService = {
     });
   },
 
-  async getNotes(studentProfileId: string, subjectId?: string, tag?: string) {
+  async getNotes(studentProfileId: string, subjectId?: string, tag?: string, search?: string) {
     // If subjectId is provided, verify it. Otherwise, get all notes for the student's subjects
     if (subjectId) {
       await this.verifySubjectOwnership(studentProfileId, subjectId);
     }
 
-    return prisma.note.findMany({
-      where: {
-        subject: subjectId ? { id: subjectId } : {
-          semester: {
-            studentProfileId,
-          },
+    const where: any = {
+      subject: subjectId ? { id: subjectId } : {
+        semester: {
+          studentProfileId,
         },
-        ...(tag ? { tags: { has: tag } } : {}),
       },
+    };
+
+    if (tag) {
+      where.tags = { has: tag };
+    }
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { content: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    return prisma.note.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: { subject: { select: { name: true } } },
     });
@@ -89,8 +104,32 @@ export const noteService = {
   async deleteNote(studentProfileId: string, noteId: string) {
     await this.getNoteById(studentProfileId, noteId); // verify ownership
 
-    await prisma.note.delete({
-      where: { id: noteId },
+    const deleted = await prisma.note.delete({ where: { id: noteId } });
+    if (deleted.fileId) {
+      const provider = getStorageProvider(deleted.fileStorageProvider);
+      await cleanupFile(provider, deleted.fileId);
+    }
+  },
+
+  async attachFile(studentProfileId: string, noteId: string, fileId: string, expectedFileId: string | null) {
+    await this.getNoteById(studentProfileId, noteId); // ownership check
+    const result = await prisma.note.updateMany({
+      where: { id: noteId, fileId: expectedFileId },
+      data: { fileId, fileStorageProvider: env.STORAGE_PROVIDER },
     });
+    if (result.count !== 1) throw ApiError.conflict('Note changed during upload; retry');
+  },
+
+  async getFileAttachment(studentProfileId: string, noteId: string): Promise<{ fileId: string; provider: string | null }> {
+    const note = await this.getNoteById(studentProfileId, noteId);
+    if (!note.fileId) {
+      throw ApiError.notFound('No file attached to this note');
+    }
+    return { fileId: note.fileId, provider: note.fileStorageProvider };
+  },
+
+  async getFileId(studentProfileId: string, noteId: string): Promise<string> {
+    const attachment = await this.getFileAttachment(studentProfileId, noteId);
+    return attachment.fileId;
   },
 };

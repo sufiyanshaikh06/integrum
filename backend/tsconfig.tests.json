@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["src/**/*", "scripts/test-day1.test.ts", "scripts/test-production-hardening.ts", "scripts/test-browser-workflow.ts", "scripts/retry-storage-cleanup.ts"]
+}

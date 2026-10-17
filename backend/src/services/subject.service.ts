@@ -1,14 +1,45 @@
+import type { Prisma } from '@prisma/client';
+import { lockOwnedSubject, validateAttendanceTotals } from './attendance-consistency.js';
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
 import { semesterService } from './semester.service.js';
 
+const catalogFields = { id: true, courseId: true, name: true, code: true, credits: true, semesterNumber: true, description: true } as const;
+async function lockProfile(tx: Prisma.TransactionClient, id: string) {
+  await tx.$queryRaw`SELECT "id" FROM "StudentProfile" WHERE "id" = ${id} FOR UPDATE`;
+  const profile = await tx.studentProfile.findUnique({ where: { id } });
+  if (!profile) throw ApiError.notFound('Student profile not found');
+  return profile;
+}
+async function validateCatalog(tx: Prisma.TransactionClient, id: string, courseId: string | null) {
+  await tx.$queryRaw`SELECT "id" FROM "MasterSubject" WHERE "id" = ${id} FOR SHARE`;
+  const master = await tx.masterSubject.findUnique({ where: { id } });
+  if (!master) throw ApiError.notFound('Syllabus subject not found');
+  if (!courseId || master.courseId !== courseId) throw ApiError.conflict('Select a syllabus subject from your enrolled course');
+}
 export const subjectService = {
+  async listSyllabus(studentProfileId: string, page: number, limit: number) {
+    const profile = await prisma.studentProfile.findUnique({ where: { id: studentProfileId }, select: { courseId: true } });
+    if (!profile) throw ApiError.notFound('Student profile not found');
+    if (!profile.courseId) return { items: [], pagination: { page, limit, total: 0, totalPages: 0 } };
+    const where = { courseId: profile.courseId };
+    const [total, items] = await prisma.$transaction([
+      prisma.masterSubject.count({ where }),
+      prisma.masterSubject.findMany({ where, select: catalogFields, orderBy: [{ semesterNumber: 'asc' }, { code: 'asc' }, { id: 'asc' }], skip: (page - 1) * limit, take: limit }),
+    ]);
+    return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  },
   async createSubject(studentProfileId: string, data: any) {
     // Enforce ownership boundary
     await semesterService.getSemesterById(studentProfileId, data.semesterId);
 
-    return prisma.subject.create({
+    validateAttendanceTotals(data.totalClasses ?? 0, data.attendedClasses ?? 0);
+    return prisma.$transaction(async tx => {
+    const profile = await lockProfile(tx, studentProfileId);
+    if (data.masterSubjectId) await validateCatalog(tx, data.masterSubjectId, profile.courseId);
+    return tx.subject.create({
       data: {
+        masterSubjectId: data.masterSubjectId ?? null,
         semesterId: data.semesterId,
         name: data.name,
         code: data.code,
@@ -18,7 +49,9 @@ export const subjectService = {
         attendedClasses: data.attendedClasses ?? 0,
         attendanceGoal: data.attendanceGoal,
       },
+      include: { masterSubject: { select: catalogFields } },
     });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async getSubjects(studentProfileId: string, semesterId?: string) {
@@ -30,7 +63,7 @@ export const subjectService = {
     }
     return prisma.subject.findMany({
       where: whereClause,
-      include: { semester: { select: { id: true, name: true } } },
+      include: { semester: { select: { id: true, name: true } }, masterSubject: { select: catalogFields } },
       orderBy: { createdAt: 'desc' },
     });
   },
@@ -44,6 +77,7 @@ export const subjectService = {
       include: {
         semester: { select: { id: true, name: true } },
         assignments: true,
+        masterSubject: { select: catalogFields },
       }
     });
 
@@ -54,9 +88,8 @@ export const subjectService = {
   },
 
   async updateSubject(studentProfileId: string, subjectId: string, data: any) {
-    await this.getSubjectById(studentProfileId, subjectId);
-
     const updateData: any = {};
+    if (data.masterSubjectId !== undefined) updateData.masterSubjectId = data.masterSubjectId;
     if (data.name !== undefined) updateData.name = data.name;
     if (data.code !== undefined) updateData.code = data.code;
     if (data.credits !== undefined) updateData.credits = data.credits;
@@ -65,10 +98,18 @@ export const subjectService = {
     if (data.attendedClasses !== undefined) updateData.attendedClasses = data.attendedClasses;
     if (data.attendanceGoal !== undefined) updateData.attendanceGoal = data.attendanceGoal;
 
-    return prisma.subject.update({
-      where: { id: subjectId },
-      data: updateData,
-    });
+    return prisma.$transaction(async tx => {
+      const profile = await lockProfile(tx, studentProfileId);
+      const subject = await lockOwnedSubject(tx, studentProfileId, subjectId);
+      if (data.masterSubjectId) await validateCatalog(tx, data.masterSubjectId, profile.courseId);
+      if (data.totalClasses !== undefined || data.attendedClasses !== undefined) {
+        if (await tx.attendanceRecord.count({ where: { subjectId } })) {
+          throw ApiError.conflict('Attendance totals are calculated from individual records; edit those records instead');
+        }
+        validateAttendanceTotals(data.totalClasses ?? subject.totalClasses, data.attendedClasses ?? subject.attendedClasses);
+      }
+      return tx.subject.update({ where: { id: subjectId }, data: updateData, include: { masterSubject: { select: catalogFields } } });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async deleteSubject(studentProfileId: string, subjectId: string) {

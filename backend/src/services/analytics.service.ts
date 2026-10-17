@@ -1,6 +1,99 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
+import { ApiError } from '../utils/ApiError.js';
+
+const percentage = (part: number, total: number) => total > 0 ? part / total * 100 : 0;
+
+// A completion indicator, not an ATS/quality score. Empty placeholders do not count.
+function hasContent(value: Prisma.JsonValue | undefined): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.some(hasContent);
+  if (value && typeof value === 'object') return Object.values(value).some(hasContent);
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+// Canonical resume selector: active first, then most recently updated, then ID asc.
+// Versions ordered by createdAt desc, then ID desc.
+// If explicitResumeId is passed, ownership is verified and that specific resume is loaded.
+export async function getCanonicalResume(studentProfileId: string, explicitResumeId?: string | null) {
+  if (explicitResumeId) {
+    const resume = await prisma.resume.findFirst({
+      where: { id: explicitResumeId, studentProfileId },
+      include: {
+        versions: {
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+        },
+      },
+    });
+    if (!resume) throw ApiError.notFound('Resume not found or does not belong to you');
+    return resume;
+  }
+
+  return prisma.resume.findFirst({
+    where: { studentProfileId },
+    orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+    include: {
+      versions: {
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 1,
+      },
+    },
+  });
+}
 
 export const analyticsService = {
+  async getSubjectPerformance(studentProfileId: string) {
+    const subjects = await prisma.subject.findMany({
+      where: { semester: { studentProfileId } },
+      include: { assignments: { select: { status: true } }, attendanceRecords: { select: { status: true } } },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+    return subjects.map(subject => {
+      // Preserve the existing attendance policy: PRESENT/LATE count as attended;
+      // all records (including EXCUSED) count in the denominator.
+      const useRecords = subject.totalClasses === 0 && subject.attendanceRecords.length > 0;
+      const totalClasses = useRecords ? subject.attendanceRecords.length : subject.totalClasses;
+      const attendedClasses = useRecords
+        ? subject.attendanceRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length
+        : subject.attendedClasses;
+      const totalAssignments = subject.assignments.length;
+      const completedAssignments = subject.assignments.filter(a => a.status === 'SUBMITTED' || a.status === 'GRADED').length;
+      return {
+        subjectId: subject.id, subjectName: subject.name, semesterId: subject.semesterId,
+        totalClasses, attendedClasses, attendancePercentage: percentage(attendedClasses, totalClasses),
+        totalAssignments, completedAssignments,
+        assignmentCompletionRate: percentage(completedAssignments, totalAssignments),
+      };
+    });
+  },
+
+  async getResumeCompletion(studentProfileId: string, explicitResumeId?: string | null) {
+    const resume = await getCanonicalResume(studentProfileId, explicitResumeId);
+    const raw = resume?.versions[0]?.content;
+    const content = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const sections = ['personalInfo', 'education', 'experience', 'skills', 'projects'] as const;
+    const completedSections = sections.filter(key => {
+      const value = content[key];
+      return key === 'personalInfo'
+        ? !!value && typeof value === 'object' && !Array.isArray(value) && hasContent(value)
+        : Array.isArray(value) && hasContent(value);
+    });
+    return { resumeId: resume?.id ?? null, completedSections,
+      missingSections: sections.filter(key => !completedSections.includes(key)),
+      score: percentage(completedSections.length, sections.length) };
+  },
+
+  async getInternshipStats(studentProfileId: string) {
+    const applications = await prisma.jobApplication.findMany({
+      where: { studentProfileId, applicationType: 'INTERNSHIP' }, select: { status: true },
+    });
+    const applicationsByStatus = { APPLIED: 0, INTERVIEWING: 0, OFFERED: 0, REJECTED: 0 };
+    for (const application of applications) applicationsByStatus[application.status]++;
+    return { totalApplications: applications.length, applicationsByStatus,
+      interviewCount: applicationsByStatus.INTERVIEWING, offerCount: applicationsByStatus.OFFERED,
+      offerRate: percentage(applicationsByStatus.OFFERED, applications.length) };
+  },
   async getStudentDashboard(studentProfileId: string) {
     // ---------------------------------------------------------
     // 1. Productivity Metrics
@@ -39,39 +132,11 @@ export const analyticsService = {
     // ---------------------------------------------------------
     // 3. Academic Metrics
     // ---------------------------------------------------------
-    // Need to fetch semesters to get subjects and assignments
-    const semesters = await prisma.semester.findMany({
-      where: { studentProfileId },
-      include: {
-        subjects: {
-          include: {
-            assignments: true,
-            attendanceRecords: true,
-          }
-        }
-      }
-    });
-
-    let totalClasses = 0;
-    let attendedClasses = 0;
-    let totalAssignments = 0;
-    let completedAssignments = 0;
-
-    for (const semester of semesters) {
-      for (const subject of semester.subjects) {
-        totalClasses += subject.totalClasses;
-        attendedClasses += subject.attendedClasses;
-        
-        // Also fallback to attendance records if manual subject totals aren't used
-        if (subject.totalClasses === 0 && subject.attendanceRecords.length > 0) {
-          totalClasses += subject.attendanceRecords.length;
-          attendedClasses += subject.attendanceRecords.filter(r => ['PRESENT', 'LATE'].includes(r.status)).length;
-        }
-
-        totalAssignments += subject.assignments.length;
-        completedAssignments += subject.assignments.filter(a => ['SUBMITTED', 'GRADED'].includes(a.status)).length;
-      }
-    }
+    const subjects = await this.getSubjectPerformance(studentProfileId);
+    const totalClasses = subjects.reduce((sum, s) => sum + s.totalClasses, 0);
+    const attendedClasses = subjects.reduce((sum, s) => sum + s.attendedClasses, 0);
+    const totalAssignments = subjects.reduce((sum, s) => sum + s.totalAssignments, 0);
+    const completedAssignments = subjects.reduce((sum, s) => sum + s.completedAssignments, 0);
 
     const attendancePercentage = totalClasses > 0 ? (attendedClasses / totalClasses) * 100 : 0;
     const assignmentCompletionRate = totalAssignments > 0 ? (completedAssignments / totalAssignments) * 100 : 0;
@@ -81,6 +146,9 @@ export const analyticsService = {
       select: { progressPercentage: true, status: true },
     });
     const totalStudyPlans = studyPlans.length;
+    const completedStudyPlans = studyPlans.filter(p => p.status === 'COMPLETED').length;
+    const studyPlanGoalAchievementRate = percentage(completedStudyPlans, totalStudyPlans);
+    const resumeCompletion = await this.getResumeCompletion(studentProfileId);
     const averageStudyPlanProgress = totalStudyPlans > 0 
       ? studyPlans.reduce((sum, p) => sum + p.progressPercentage, 0) / totalStudyPlans 
       : 0;
@@ -141,6 +209,8 @@ export const analyticsService = {
         assignmentCompletionRate,
         totalStudyPlans,
         averageStudyPlanProgress,
+        completedStudyPlans,
+        studyPlanGoalAchievementRate,
       },
       productivity: {
         totalTasks,
@@ -151,6 +221,8 @@ export const analyticsService = {
         completedReminders,
       },
       career: {
+        resumeCompletionScore: resumeCompletion.score,
+        resumeCompletion,
         totalApplications,
         applicationsByStatus,
         interviewCount,
@@ -218,12 +290,9 @@ export const analyticsService = {
   //   Projects: 15% — demonstrates applied experience
   //
   async getPlacementReadiness(studentProfileId: string) {
-    const [skills, resumes, applications, certifications, projects] = await Promise.all([
+    const [skills, resume, applications, certifications, projects] = await Promise.all([
       prisma.skill.findMany({ where: { studentProfileId } }),
-      prisma.resume.findMany({
-        where: { studentProfileId },
-        include: { versions: { orderBy: { createdAt: 'desc' }, take: 1 } },
-      }),
+      getCanonicalResume(studentProfileId),
       prisma.jobApplication.findMany({ where: { studentProfileId } }),
       prisma.certification.findMany({ where: { studentProfileId } }),
       prisma.project.findMany({ where: { studentProfileId } }),
@@ -232,7 +301,7 @@ export const analyticsService = {
     // Each component is scaled 0–100 independently before weighting
     const skillScore = Math.min(skills.length * 10, 100); // saturates at 10 skills
     const resumeScore =
-      resumes.length > 0 ? Math.min(resumes[0]?.versions?.[0]?.atsScore ?? 0, 100) : 0;
+      resume?.versions[0]?.atsScore != null ? Math.min(resume.versions[0].atsScore, 100) : 0;
     const applicationScore = Math.min(applications.length * 15, 100);
     const certificationScore = Math.min(certifications.length * 25, 100);
     const projectScore = Math.min(projects.length * 20, 100);
@@ -245,12 +314,13 @@ export const analyticsService = {
         projectScore * 0.15,
     );
 
+    const hasResume = resume !== null;
     const recommendations: string[] = [
       ...(skills.length < 5 ? ['Add more skills to your profile (aim for at least 5)'] : []),
-      ...(resumes.length === 0
+      ...(!hasResume
         ? ['Create a resume — it contributes 25% of the readiness score']
         : []),
-      ...(resumeScore < 70 && resumes.length > 0
+      ...(resumeScore < 70 && hasResume
         ? ['Run AI analysis on your resume to improve the ATS score (currently below 70)']
         : []),
       ...(certifications.length === 0 ? ['Add relevant certifications'] : []),
@@ -265,7 +335,7 @@ export const analyticsService = {
       note: 'Readiness score is a product-defined heuristic (not a validated employability measure). Weights: Skills 25%, Resume ATS 25%, Applications 20%, Certifications 15%, Projects 15%.',
       breakdown: {
         skills: { score: skillScore, count: skills.length },
-        resume: { score: resumeScore, hasResume: resumes.length > 0 },
+        resume: { score: resumeScore, hasResume },
         applications: { score: applicationScore, count: applications.length },
         certifications: { score: certificationScore, count: certifications.length },
         projects: { score: projectScore, count: projects.length },
@@ -276,10 +346,10 @@ export const analyticsService = {
 
   // ─── AN-3: Daily/Weekly/Custom Activity Breakdown ─────────────────────────
   //
-  // KNOWN LIMITATION (tasks): Tasks are counted by updatedAt, not by a
-  // dedicated completedAt timestamp. A task completed earlier but edited
-  // within the window may be miscounted. A future migration adding
-  // Task.completedAt would eliminate this ambiguity.
+  // Activity uses UTC half-open [from, to) intervals.
+  // Tasks are queried strictly by completedAt. Legacy tasks with null completedAt
+  // are excluded from dated windows to prevent mutable updatedAt pollution,
+  // but remain included in lifetime dashboard metrics.
   //
   async getActivityBreakdown(
     studentProfileId: string,
@@ -289,20 +359,24 @@ export const analyticsService = {
   ) {
     const now = new Date();
     let from: Date;
-    const to: Date = endDate ? new Date(endDate) : now;
+    let to: Date;
 
     if (period === 'daily') {
-      // Calendar day start in local-equivalent UTC
       from = startDate
         ? new Date(startDate)
-        : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+      to = endDate
+        ? new Date(endDate)
+        : new Date(from.getTime() + 24 * 60 * 60 * 1000);
     } else if (period === 'weekly') {
       from = startDate
         ? new Date(startDate)
         : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      to = endDate ? new Date(endDate) : now;
     } else {
       // 'custom' — both dates guaranteed present by Zod schema validation
       from = new Date(startDate!);
+      to = new Date(endDate!);
     }
 
     const [tasksCompleted, attendanceRecords] = await Promise.all([
@@ -310,15 +384,14 @@ export const analyticsService = {
         where: {
           studentProfileId,
           status: 'DONE',
-          // NOTE: using updatedAt as a proxy for completion time — see limitation above
-          updatedAt: { gte: from, lte: to },
+          completedAt: { gte: from, lt: to },
         },
-        select: { id: true, title: true, updatedAt: true },
+        select: { id: true, title: true, completedAt: true },
       }),
       prisma.attendanceRecord.findMany({
         where: {
           subject: { semester: { studentProfileId } },
-          date: { gte: from, lte: to },
+          date: { gte: from, lt: to },
         },
         select: { status: true },
       }),
@@ -335,7 +408,7 @@ export const analyticsService = {
       to: to.toISOString(),
       tasks: {
         completed: tasksCompleted.length,
-        note: 'Counted by updatedAt; see analytics service for known limitation.',
+        note: 'Daily activity uses UTC start-inclusive, end-exclusive boundaries. Counted by completedAt timestamp; legacy tasks with unknown completion dates are excluded from dated activity breakdown but retained in total task counts.',
       },
       attendance: {
         totalRecords: attendanceRecords.length,

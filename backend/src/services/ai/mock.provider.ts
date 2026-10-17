@@ -20,6 +20,14 @@ export class MockProvider implements IAIProvider {
       title: `${context.topic} Mastery Plan`,
       recommendedTargetDate: context.targetDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
       overview: `A structured plan to master ${context.topic} while balancing ${context.subjects.length} current subjects.`,
+      weeklySchedule: [
+        { day: 'MONDAY', topic: context.topic, durationMinutes: 45, activity: 'Review core concepts' },
+        { day: 'WEDNESDAY', topic: context.topic, durationMinutes: 45, activity: 'Practice problems' },
+        { day: 'FRIDAY', topic: context.topic, durationMinutes: 30, activity: 'Recall and self-assessment' },
+      ],
+      revisionPlan: [{ topic: context.topic, strategy: 'Active recall and spaced repetition', frequency: 'Twice per week' }],
+      topicPriorities: [{ topic: context.topic, priority: 'HIGH', reason: 'The requested focus of this study plan' }],
+      goalRecommendations: [context.goals?.trim() || `Complete a practice exercise on ${context.topic}`, 'Review mistakes after each study session'],
       suggestedTasks: [
         { title: 'Core Concepts', description: `Review fundamental principles of ${context.topic}` },
         { title: 'Practice Exercises', description: 'Complete 3 problem sets' },

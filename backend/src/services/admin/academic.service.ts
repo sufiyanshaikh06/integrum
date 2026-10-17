@@ -185,6 +185,7 @@ export const adminAcademicService = {
 
   async deleteDepartment(actorUserId: string, id: string, ipAddress?: string) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Department" WHERE "id" = ${id} FOR UPDATE`;
       const department = await tx.department.findUnique({
         where: { id },
         include: { _count: { select: { courses: true } } },
@@ -192,10 +193,20 @@ export const adminAcademicService = {
 
       if (!department) throw ApiError.notFound('Department not found');
 
-      // Restrictive Deletion Guard: Cannot delete department containing courses
+      // Restrictive Deletion Guard 1: Cannot delete department containing courses
       if (department._count.courses > 0) {
         throw ApiError.conflict(
           `Cannot delete department "${department.name}" because it contains ${department._count.courses} course(s). Please delete or reassign all courses first.`
+        );
+      }
+
+      // Restrictive Deletion Guard 2: Cannot delete department with targeted academic resources
+      const resourceCount = await tx.academicResource.count({
+        where: { departmentId: id },
+      });
+      if (resourceCount > 0) {
+        throw ApiError.conflict(
+          `Cannot delete department "${department.name}" because it contains ${resourceCount} targeted academic resource(s). Please delete or reassign all resources first.`
         );
       }
 
@@ -213,7 +224,7 @@ export const adminAcademicService = {
       });
 
       return deleted;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -378,6 +389,7 @@ export const adminAcademicService = {
 
   async deleteCourse(actorUserId: string, id: string, ipAddress?: string) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Course" WHERE "id" = ${id} FOR UPDATE`;
       const course = await tx.course.findUnique({
         where: { id },
         include: {
@@ -401,6 +413,16 @@ export const adminAcademicService = {
         );
       }
 
+      // Restrictive Deletion Guard 3: Cannot delete course with targeted academic resources
+      const resourceCount = await tx.academicResource.count({
+        where: { courseId: id },
+      });
+      if (resourceCount > 0) {
+        throw ApiError.conflict(
+          `Cannot delete course "${course.name}" because it contains ${resourceCount} targeted academic resource(s). Please delete or reassign all resources first.`
+        );
+      }
+
       const deleted = await tx.course.delete({ where: { id } });
 
       await tx.adminAuditLog.create({
@@ -415,7 +437,7 @@ export const adminAcademicService = {
       });
 
       return deleted;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -558,12 +580,16 @@ export const adminAcademicService = {
     ipAddress?: string
   ) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "MasterSubject" WHERE "id" = ${id} FOR UPDATE`;
       const existing = await tx.masterSubject.findUnique({
         where: { id },
         include: { course: true },
       });
       if (!existing) throw ApiError.notFound('Master subject not found');
 
+      if (data.courseId && data.courseId !== existing.courseId && await tx.subject.count({ where: { masterSubjectId: id } })) {
+        throw ApiError.conflict('Cannot move a syllabus subject while student subjects reference it');
+      }
       const targetCourseId = data.courseId || existing.courseId;
       const targetCourse =
         data.courseId && data.courseId !== existing.courseId
@@ -623,11 +649,12 @@ export const adminAcademicService = {
       });
 
       return updated;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async deleteMasterSubject(actorUserId: string, id: string, ipAddress?: string) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "MasterSubject" WHERE "id" = ${id} FOR UPDATE`;
       const masterSubject = await tx.masterSubject.findUnique({
         where: { id },
         include: { _count: { select: { studentSubjects: true } } },
@@ -656,7 +683,7 @@ export const adminAcademicService = {
       });
 
       return deleted;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -767,6 +794,7 @@ export const adminAcademicService = {
     ipAddress?: string
   ) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AcademicTerm" WHERE "id" = ${id} FOR UPDATE`;
       const existing = await tx.academicTerm.findUnique({ where: { id } });
       if (!existing) throw ApiError.notFound('Academic term not found');
 
@@ -801,11 +829,12 @@ export const adminAcademicService = {
       });
 
       return updated;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async deleteAcademicTerm(actorUserId: string, id: string, ipAddress?: string) {
     return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "AcademicTerm" WHERE "id" = ${id} FOR UPDATE`;
       const term = await tx.academicTerm.findUnique({
         where: { id },
         include: { _count: { select: { semesters: true } } },
@@ -834,6 +863,6 @@ export const adminAcademicService = {
       });
 
       return deleted;
-    });
+    }, { isolationLevel: 'ReadCommitted' });
   },
 };

@@ -16,3 +16,18 @@ export const updateProfileSchema = z.object({
     }).optional(),
   }),
 });
+
+export const updateSettingsSchema = z.object({
+  body: z.object({
+    notificationPreferences: z.object({
+      assignmentReminders: z.boolean().optional(),
+      examReminders: z.boolean().optional(),
+      interviewReminders: z.boolean().optional(),
+      certificationReminders: z.boolean().optional(),
+      systemAnnouncements: z.boolean().optional(),
+      emailNotifications: z.boolean().optional(),
+    }).strict().optional(),
+    defaultSemesterId: z.string().uuid().nullable().optional(),
+  }).strict(),
+});
+

@@ -5,6 +5,8 @@ import { validateRequest } from '../middleware/validateRequest.js';
 import { getAnalyticsQuerySchema, getActivityQuerySchema } from '../schemas/analytics.schema.js';
 import {
   getStudentDashboard,
+  getSubjectPerformance,
+  getInternshipStats,
   getSkillsProgress,
   getPlacementReadiness,
   getActivityBreakdown,
@@ -14,6 +16,9 @@ const router = Router();
 
 // All analytics routes require authentication and STUDENT role
 router.use(authenticate, authorize('STUDENT'));
+
+router.get('/subject-performance', getSubjectPerformance);
+router.get('/internship-stats', getInternshipStats);
 
 router.get('/dashboard', validateRequest(getAnalyticsQuerySchema), getStudentDashboard);
 

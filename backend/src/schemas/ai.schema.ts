@@ -14,10 +14,31 @@ export const generatedStudyPlanOutputSchema = z.object({
   title: z.string(),
   recommendedTargetDate: z.string(),
   overview: z.string(),
+  weeklySchedule: z.array(z.object({
+    day: z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY']),
+    topic: z.string().trim().min(1),
+    durationMinutes: z.number().int().min(1).max(1440),
+    activity: z.string().trim().min(1),
+  })).min(1).max(49),
+  revisionPlan: z.array(z.object({
+    topic: z.string().trim().min(1),
+    strategy: z.string().trim().min(1),
+    frequency: z.string().trim().min(1),
+  })).min(1).max(50),
+  topicPriorities: z.array(z.object({
+    topic: z.string().trim().min(1),
+    priority: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+    reason: z.string().trim().min(1),
+  })).min(1).max(50),
+  goalRecommendations: z.array(z.string().trim().min(1)).min(1).max(50),
   suggestedTasks: z.array(z.object({
     title: z.string(),
     description: z.string(),
   })),
+  contextUsed: z.object({
+    attendancePercentage: z.number(),
+    subjectsCount: z.number(),
+  }).optional(),
 });
 
 export const generatedResumeAnalysisOutputSchema = z.object({

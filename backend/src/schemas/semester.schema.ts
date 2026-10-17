@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const createSemesterSchema = z.object({
   body: z.object({
+    academicTermId: z.string().uuid().nullable().optional(),
     name: z.string().min(2, 'Name must be at least 2 characters'),
     startDate: z.string().datetime(),
     endDate: z.string().datetime(),
@@ -13,6 +14,7 @@ export const createSemesterSchema = z.object({
 
 export const updateSemesterSchema = z.object({
   body: z.object({
+    academicTermId: z.string().uuid().nullable().optional(),
     name: z.string().min(2).optional(),
     startDate: z.string().datetime().optional(),
     endDate: z.string().datetime().optional(),
@@ -24,5 +26,12 @@ export const updateSemesterSchema = z.object({
   }, {
     message: "End date must be after start date",
     path: ["endDate"],
+  }),
+});
+
+export const academicTermLookupSchema = z.object({
+  query: z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
   }),
 });

@@ -22,6 +22,7 @@ export const adminPlatformService = {
   // ───────────────────────────────────────────────────────────────────────────
 
   async getDashboardMetrics() {
+    const now = new Date();
     const [
       // Users
       totalUsers,
@@ -89,10 +90,24 @@ export const adminPlatformService = {
       prisma.feedback.count({ where: { status: 'RESOLVED' } }),
       prisma.feedback.count({ where: { status: 'DISMISSED' } }),
 
-      // Content
-      prisma.announcement.count({ where: { isPublished: true, type: 'ANNOUNCEMENT' } }),
-      prisma.announcement.count({ where: { type: 'NOTICE' } }),
-      prisma.institutionalEvent.count(),
+      // Content: Globally eligible published content matching student publication/expiry rules
+      prisma.announcement.count({
+        where: {
+          type: 'ANNOUNCEMENT',
+          isPublished: true,
+          publishedAt: { lte: now, not: null },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      }),
+      prisma.announcement.count({
+        where: {
+          type: 'NOTICE',
+          isPublished: true,
+          publishedAt: { lte: now, not: null },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        },
+      }),
+      prisma.institutionalEvent.count({ where: { isPublished: true } }),
       prisma.academicResource.count(),
     ]);
 

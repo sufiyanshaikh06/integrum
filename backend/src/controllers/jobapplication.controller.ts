@@ -1,3 +1,4 @@
+import { ApplicationType } from '@prisma/client';
 import { Request, Response } from 'express';
 import { jobApplicationService } from '../services/jobapplication.service.js';
 import { ApiResponse } from '../utils/ApiResponse.js';
@@ -24,7 +25,13 @@ export const getApplications = asyncHandler(async (req: Request, res: Response) 
     throw ApiError.forbidden('Only students can view job applications');
   }
 
-  const applications = await jobApplicationService.getApplications(studentProfileId);
+  // Fixed category routes take precedence over an optional query filter.
+  const applicationType = req.path === '/internships'
+    ? ApplicationType.INTERNSHIP
+    : req.path === '/placements'
+      ? ApplicationType.PLACEMENT
+      : req.query.applicationType as ApplicationType | undefined;
+  const applications = await jobApplicationService.getApplications(studentProfileId, applicationType);
   
   ApiResponse.success(res, 'Job applications retrieved successfully', applications, HTTP_STATUS.OK);
 });

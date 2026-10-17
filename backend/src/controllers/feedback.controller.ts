@@ -46,4 +46,33 @@ export const feedbackController = {
       HTTP_STATUS.CREATED
     );
   }),
+
+  /**
+   * GET /api/v1/feedback
+   * Allows authenticated student to view their submitted feedback tickets.
+   * Internal admin notes and staff IDs are strictly omitted.
+   */
+  getMyFeedback: asyncHandler(async (req: Request, res: Response) => {
+    const studentProfileId = req.user?.studentProfile?.id;
+    if (!studentProfileId) {
+      throw ApiError.forbidden('Only registered students can view feedback');
+    }
+
+    const items = await prisma.feedback.findMany({
+      where: { studentProfileId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        category: true,
+        subject: true,
+        message: true,
+        status: true,
+        resolvedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    ApiResponse.success(res, 'Feedback retrieved successfully', items);
+  }),
 };

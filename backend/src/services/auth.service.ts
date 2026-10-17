@@ -5,6 +5,7 @@ import { hashPassword, comparePassword } from '../utils/password.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import { ensureStudentBaseline } from './admin/user.service.js';
 import { adminPlatformService } from './admin/platform.service.js';
+import { emailService } from './email.service.js';
 
 // ─────────────────────────────────────────────────────────────
 // Token helpers
@@ -21,18 +22,6 @@ function generateSecureToken(): [string, string] {
 }
 
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
-
-// ─────────────────────────────────────────────────────────────
-// Development-mode "email" transport
-// In production, swap this for a real email provider (Resend, SES, etc.)
-// ─────────────────────────────────────────────────────────────
-function sendDevelopmentEmail(to: string, subject: string, body: string) {
-  console.log('\n📧 [DEV EMAIL]');
-  console.log(`  To: ${to}`);
-  console.log(`  Subject: ${subject}`);
-  console.log(`  Body:\n  ${body}`);
-  console.log('─'.repeat(60));
-}
 
 // ─────────────────────────────────────────────────────────────
 // Auth Service
@@ -59,7 +48,7 @@ export const authService = {
     const [rawVerificationToken, hashedVerificationToken] = generateSecureToken();
     const verificationExpires = new Date(Date.now() + TOKEN_TTL_MS);
 
-    return prisma.$transaction(async (tx) => {
+    const registered = await prisma.$transaction(async (tx) => {
       // 1. Create User
       const user = await tx.user.create({
         data: {
@@ -77,19 +66,22 @@ export const authService = {
         lastName: data.lastName,
       });
 
-      // Send verification email (dev: logs to console)
-      sendDevelopmentEmail(
-        user.email,
-        'Verify your Integrum account',
-        `Your verification token is: ${rawVerificationToken}\n\nUse POST /api/v1/auth/verify-email with this token.\nExpires in 1 hour.`
-      );
-
       return {
         id: user.id,
         email: user.email,
         role: user.role,
       };
     });
+    // Commit the account before network I/O; delivery failures do not lose the account.
+    let verificationEmailSent = true;
+    try {
+      await emailService.send(registered.email, 'Verify your Integrum account',
+        `Your verification token is: ${rawVerificationToken}\n\nExpires in 1 hour.`);
+    } catch {
+      verificationEmailSent = false;
+      console.error('Registration verification email delivery failed');
+    }
+    return { ...registered, verificationEmailSent };
   },
 
   async login(data: any) {
@@ -110,14 +102,21 @@ export const authService = {
       throw ApiError.unauthorized('Invalid email or password');
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
-
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const sid = crypto.randomUUID();
+    const payload = { sub: user.id, email: user.email, role: user.role, sid, version: user.authVersion };
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
+    await prisma.$transaction(async tx => {
+      // Serialize login issuance with reset/revocation on the user row.
+      const locked = await tx.user.updateMany({
+        where: { id: user.id, passwordHash: user.passwordHash, authVersion: user.authVersion, isActive: true },
+        data: { lastLoginAt: new Date() },
+      });
+      if (locked.count !== 1) throw ApiError.unauthorized('Account changed; please log in again');
+      await tx.authSession.create({ data: { id: sid, userId: user.id,
+        refreshHash: crypto.createHash('sha256').update(refreshToken).digest('hex'),
+        expiresAt: new Date(verifyRefreshToken(refreshToken).exp! * 1000) } });
+    });
 
     return {
       user: {
@@ -132,7 +131,7 @@ export const authService = {
   },
 
   async refresh(refreshToken: string) {
-    let payload: any;
+    let payload: ReturnType<typeof verifyRefreshToken>;
     try {
       payload = verifyRefreshToken(refreshToken);
     } catch {
@@ -148,14 +147,24 @@ export const authService = {
       throw ApiError.forbidden('User account is inactive');
     }
 
-    const newPayload = { sub: user.id, email: user.email, role: user.role };
+    if (payload.version !== user.authVersion) throw ApiError.unauthorized('Session revoked');
+    const newPayload = { sub: user.id, email: user.email, role: user.role, sid: payload.sid!, version: user.authVersion };
     const newAccessToken = generateAccessToken(newPayload);
     const newRefreshToken = generateRefreshToken(newPayload);
 
+    const rotated = await prisma.authSession.updateMany({
+      where: { id: payload.sid!, userId: user.id,
+        refreshHash: crypto.createHash('sha256').update(refreshToken).digest('hex'),
+        expiresAt: { gt: new Date() } },
+      data: { refreshHash: crypto.createHash('sha256').update(newRefreshToken).digest('hex'),
+        expiresAt: new Date(verifyRefreshToken(newRefreshToken).exp! * 1000) },
+    });
+    if (rotated.count !== 1) throw ApiError.unauthorized('Refresh token already used or session revoked');
     return { accessToken: newAccessToken, refreshToken: newRefreshToken };
   },
 
-  async logout(_userId: string) {
+  async logout(userId: string, sessionId: string) {
+    await prisma.authSession.deleteMany({ where: { id: sessionId, userId } });
     return { success: true };
   },
 
@@ -185,11 +194,19 @@ export const authService = {
       },
     });
 
-    sendDevelopmentEmail(
+    try {
+    await emailService.send(
       email,
       'Reset your Integrum password',
       `Your password-reset token is: ${rawToken}\n\nUse POST /api/v1/auth/reset-password with this token.\nExpires in 1 hour. This token is single-use.`
     );
+
+    } catch {
+      // Conditional cleanup cannot erase a newer reset request's token.
+      await prisma.user.updateMany({ where: { id: user.id, passwordResetTokenHash: hashedToken },
+        data: { passwordResetTokenHash: null, passwordResetExpires: null } });
+      console.error('Password reset email delivery failed');
+    }
 
     return { message: genericMessage };
   },
@@ -214,14 +231,14 @@ export const authService = {
 
     const hashedPassword = await hashPassword(newPassword);
 
-    // Update password and invalidate the token (one-time use)
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        passwordHash: hashedPassword,
-        passwordResetTokenHash: null,
-        passwordResetExpires: null,
-      },
+    await prisma.$transaction(async tx => {
+      const updated = await tx.user.updateMany({
+        where: { id: user.id, passwordResetTokenHash: hashedToken, passwordResetExpires: { gt: new Date() } },
+        data: { passwordHash: hashedPassword, passwordResetTokenHash: null,
+          passwordResetExpires: null, authVersion: { increment: 1 } },
+      });
+      if (updated.count !== 1) throw ApiError.badRequest('Password reset token is invalid or has expired');
+      await tx.authSession.deleteMany({ where: { userId: user.id } });
     });
 
     return { message: 'Password has been reset successfully. Please log in.' };
@@ -234,30 +251,23 @@ export const authService = {
   async verifyEmail(rawToken: string) {
     const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-    const user = await prisma.user.findFirst({
+    // Single-use atomic conditional consumption
+    const updated = await prisma.user.updateMany({
       where: {
         verificationTokenHash: hashedToken,
         verificationExpires: { gt: new Date() },
+        isVerified: false,
       },
-    });
-
-    if (!user) {
-      throw ApiError.badRequest('Verification token is invalid or has expired');
-    }
-
-    if (user.isVerified) {
-      // Already verified — safe no-op
-      return { message: 'Email is already verified' };
-    }
-
-    await prisma.user.update({
-      where: { id: user.id },
       data: {
         isVerified: true,
         verificationTokenHash: null,
         verificationExpires: null,
       },
     });
+
+    if (updated.count === 0) {
+      throw ApiError.badRequest('Verification token is invalid or has expired');
+    }
 
     return { message: 'Email verified successfully' };
   },
@@ -273,19 +283,40 @@ export const authService = {
     const [rawToken, hashedToken] = generateSecureToken();
     const expires = new Date(Date.now() + TOKEN_TTL_MS);
 
-    await prisma.user.update({
-      where: { id: userId },
+    // Atomically set new token ONLY IF user remains unverified
+    const updated = await prisma.user.updateMany({
+      where: { id: userId, isVerified: false },
       data: {
         verificationTokenHash: hashedToken,
         verificationExpires: expires,
       },
     });
 
-    sendDevelopmentEmail(
-      user.email,
-      'Verify your Integrum account',
-      `Your new verification token is: ${rawToken}\n\nUse POST /api/v1/auth/verify-email with this token.\nExpires in 1 hour.`
-    );
+    // If verification completed concurrently or user not eligible, do not send email
+    if (updated.count === 0) {
+      return { message: 'Email is already verified' };
+    }
+
+    // External email delivery outside database transaction
+    try {
+      await emailService.send(
+        user.email,
+        'Verify your Integrum account',
+        `Your new verification token is: ${rawToken}\n\nUse POST /api/v1/auth/verify-email with this token.\nExpires in 1 hour.`
+      );
+    } catch (error) {
+      // Conditional rollback on delivery failure:
+      // Must only clear if verificationTokenHash is still this exact token
+      await prisma.user.updateMany({
+        where: { id: userId, verificationTokenHash: hashedToken },
+        data: {
+          verificationTokenHash: null,
+          verificationExpires: null,
+        },
+      });
+      console.error('Resend verification email delivery failed');
+      throw ApiError.serviceUnavailable('Failed to deliver verification email. Please try again.');
+    }
 
     return { message: 'Verification email resent' };
   },

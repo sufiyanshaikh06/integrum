@@ -5,7 +5,7 @@ export const createNoteSchema = z.object({
     subjectId: z.string().uuid(),
     title: z.string().min(1, 'Title is required').max(255),
     content: z.string().optional(),
-    fileUrl: z.string().url('Must be a valid URL').optional(),
+    fileUrl: z.string().optional(),
     tags: z.array(z.string()).optional(),
   }),
 });
@@ -14,7 +14,7 @@ export const updateNoteSchema = z.object({
   body: z.object({
     title: z.string().min(1).max(255).optional(),
     content: z.string().optional(),
-    fileUrl: z.string().url().optional(),
+    fileUrl: z.string().optional(),
     tags: z.array(z.string()).optional(),
   }).refine(data => Object.keys(data).length > 0, {
     message: 'At least one field must be provided to update',
@@ -23,3 +23,14 @@ export const updateNoteSchema = z.object({
 
 export type CreateNoteInput = z.infer<typeof createNoteSchema>['body'];
 export type UpdateNoteInput = z.infer<typeof updateNoteSchema>['body'];
+
+export const getNotesQuerySchema = z.object({
+  query: z.object({
+    subjectId: z.string().uuid().optional(),
+    tag: z.string().trim().min(1).optional(),
+    search: z.string().trim().min(1).max(100).optional(),
+  }).strict(),
+});
+
+export type GetNotesQuery = z.infer<typeof getNotesQuerySchema>['query'];
+

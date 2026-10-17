@@ -1,5 +1,22 @@
 import { z } from 'zod';
-import { ApplicationStatus } from '@prisma/client';
+import { ApplicationStatus, ApplicationType, EligibilityStatus } from '@prisma/client';
+
+// Replacing history with [] explicitly clears it.
+const careerFields = {
+  applicationType: z.nativeEnum(ApplicationType).optional(),
+  eligibilityStatus: z.nativeEnum(EligibilityStatus).optional(),
+  interviewHistory: z.array(z.object({
+    id: z.string().trim().max(100).optional(),
+    roundId: z.string().trim().max(100).optional(),
+    date: z.string().datetime(),
+    round: z.string().trim().min(1).max(200),
+    notes: z.string().max(5000).optional(),
+    outcome: z.string().max(500).optional(),
+  }).passthrough()).max(100).optional(),
+};
+export const listJobApplicationsSchema = z.object({
+  query: z.object({ applicationType: z.nativeEnum(ApplicationType).optional() }),
+});
 
 // C-6: Structured offer details
 const offerDetailsSchema = z.object({
@@ -12,6 +29,7 @@ const offerDetailsSchema = z.object({
 
 export const createJobApplicationSchema = z.object({
   body: z.object({
+    ...careerFields,
     companyName: z.string().min(1, 'Company name is required'),
     role: z.string().min(1, 'Role is required'),
     applicationUrl: z.string().url('Must be a valid URL').optional().or(z.literal('')),
@@ -28,6 +46,7 @@ export const createJobApplicationSchema = z.object({
 
 export const updateJobApplicationSchema = z.object({
   body: z.object({
+    ...careerFields,
     companyName: z.string().min(1, 'Company name cannot be empty').optional(),
     role: z.string().min(1, 'Role cannot be empty').optional(),
     applicationUrl: z.string().url('Must be a valid URL').optional().or(z.literal('')),

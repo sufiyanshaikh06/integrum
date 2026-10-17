@@ -12,9 +12,9 @@ function safeRate(numerator: number, denominator: number): number {
 
 // Helper to format ISO date string into grouping keys
 function formatPeriodKey(date: Date, period: 'daily' | 'weekly' | 'monthly'): string {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
 
   if (period === 'monthly') {
     return `${yyyy}-${mm}`;
@@ -22,7 +22,7 @@ function formatPeriodKey(date: Date, period: 'daily' | 'weekly' | 'monthly'): st
 
   if (period === 'weekly') {
     // ISO week number calculation
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
     const dayNum = d.getUTCDay() || 7;
     d.setUTCDate(d.getUTCDate() + 4 - dayNum);
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
@@ -31,6 +31,20 @@ function formatPeriodKey(date: Date, period: 'daily' | 'weekly' | 'monthly'): st
   }
 
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function institutionFilter(query: ReportQueryInput): Prisma.StudentProfileWhereInput {
+  return {
+    ...(query.courseId ? { courseId: query.courseId } : {}),
+    ...(query.departmentId ? { course: { departmentId: query.departmentId } } : {}),
+  };
+}
+
+function dateRange(query: ReportQueryInput) {
+  return {
+    ...(query.startDate ? { gte: new Date(query.startDate) } : {}),
+    ...(query.endDate ? { lte: new Date(query.endDate) } : {}),
+  };
 }
 
 export const adminReportService = {
@@ -60,7 +74,18 @@ export const adminReportService = {
   async getUserReport(query: ReportQueryInput) {
     await this.validateCrossFilters(query.departmentId, query.courseId);
 
-    const dateFilter: Prisma.UserWhereInput = {};
+    const scoped = Boolean(query.courseId || query.departmentId);
+    const studentFilter: Prisma.StudentProfileWhereInput = {
+      ...institutionFilter(query),
+      user: { role: 'STUDENT', createdAt: dateRange(query) },
+    };
+    const courseFilter: Prisma.CourseWhereInput = {
+      ...(query.courseId ? { id: query.courseId } : {}),
+      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+    };
+    const dateFilter: Prisma.UserWhereInput = scoped
+      ? { role: 'STUDENT', studentProfile: institutionFilter(query) }
+      : {};
     if (query.startDate || query.endDate) {
       dateFilter.createdAt = {
         ...(query.startDate ? { gte: new Date(query.startDate) } : {}),
@@ -83,7 +108,7 @@ export const adminReportService = {
     ] = await Promise.all([
       prisma.user.count({ where: dateFilter }),
       prisma.user.count({ where: { ...dateFilter, role: 'STUDENT' } }),
-      prisma.user.count({ where: { ...dateFilter, role: 'ADMIN' } }),
+      scoped ? Promise.resolve(0) : prisma.user.count({ where: { ...dateFilter, role: 'ADMIN' } }),
       prisma.user.count({ where: { ...dateFilter, isActive: true } }),
       prisma.user.count({ where: { ...dateFilter, isActive: false } }),
       prisma.user.count({ where: { ...dateFilter, isVerified: true } }),
@@ -94,21 +119,24 @@ export const adminReportService = {
         orderBy: { createdAt: 'asc' },
       }),
       prisma.department.findMany({
+        where: scoped ? { courses: { some: courseFilter } } : {},
         include: {
           courses: {
+            where: courseFilter,
             include: {
-              students: { select: { id: true } },
+              students: { where: studentFilter, select: { id: true } },
             },
           },
         },
       }),
       prisma.course.findMany({
+        where: courseFilter,
         include: {
-          students: { select: { id: true } },
+          students: { where: studentFilter, select: { id: true } },
         },
       }),
       prisma.studentProfile.count({
-        where: { courseId: null },
+        where: { AND: [studentFilter, { courseId: null }] },
       }),
     ]);
 
@@ -170,6 +198,9 @@ export const adminReportService = {
   async getAcademicReport(query: ReportQueryInput) {
     await this.validateCrossFilters(query.departmentId, query.courseId);
 
+    const bounded = Boolean(query.startDate || query.endDate);
+    const range = dateRange(query);
+    // Cohort uses current enrollment; dates select activity, not student registration.
     // Fetch relevant students with institutional hierarchy and operational academic data
     const studentProfiles = await prisma.studentProfile.findMany({
       where: {
@@ -186,8 +217,9 @@ export const adminReportService = {
           include: {
             subjects: {
               include: {
-                attendanceRecords: true,
-                assignments: true,
+                _count: { select: { attendanceRecords: true } },
+                attendanceRecords: { where: bounded ? { date: range } : {} },
+                assignments: { where: bounded ? { createdAt: range } : {} },
               },
             },
           },
@@ -201,6 +233,7 @@ export const adminReportService = {
     let totalAssignments = 0;
     let completedAssignments = 0;
     let totalAttendanceRecords = 0;
+    let subjectsWithExcludedManualTotals = 0;
 
     // Course and Department aggregate trackers
     const courseStats = new Map<
@@ -273,19 +306,22 @@ export const adminReportService = {
 
       for (const semester of student.semesters) {
         for (const subject of semester.subjects) {
-          totalStudentSubjects += 1;
+          if (!bounded || subject.attendanceRecords.length || subject.assignments.length) totalStudentSubjects += 1;
 
           let subjTotalClasses = subject.totalClasses;
           let subjAttendedClasses = subject.attendedClasses;
 
           // Fallback to individual records if totalClasses was 0 but records exist
-          if (subjTotalClasses === 0 && subject.attendanceRecords.length > 0) {
+          if (bounded || (subjTotalClasses === 0 && subject.attendanceRecords.length > 0)) {
             subjTotalClasses = subject.attendanceRecords.length;
             subjAttendedClasses = subject.attendanceRecords.filter((r) =>
               ['PRESENT', 'LATE'].includes(r.status)
             ).length;
           }
 
+          if (bounded && subject._count.attendanceRecords === 0 && subject.totalClasses > 0) {
+            subjectsWithExcludedManualTotals += 1;
+          }
           totalAttendanceRecords += subject.attendanceRecords.length;
           totalClasses += subjTotalClasses;
           attendedClasses += subjAttendedClasses;
@@ -317,9 +353,7 @@ export const adminReportService = {
       }
     }
 
-    const unassignedStudentsCount = await prisma.studentProfile.count({
-      where: { courseId: null },
-    });
+    const unassignedStudentsCount = studentProfiles.filter(student => student.courseId === null).length;
 
     const byCourse = Array.from(courseStats.values()).map((cs) => ({
       courseId: cs.courseId,
@@ -353,6 +387,12 @@ export const adminReportService = {
       },
       byCourse,
       byDepartment,
+      dateScope: {
+        attendance: 'date', assignments: 'createdAt',
+        studentCounts: 'current enrollment',
+        subjectCounts: bounded ? 'subjects with matching activity' : 'all subjects',
+        subjectsWithExcludedManualTotals,
+      },
       generatedAt: new Date().toISOString(),
     };
   },
@@ -362,8 +402,11 @@ export const adminReportService = {
   // ───────────────────────────────────────────────────────────────────────────
 
   async getUsageReport(query: ReportQueryInput) {
-    const aiDateFilter: Prisma.AIExecutionLogWhereInput = {};
-    const careerDateFilter: Prisma.JobApplicationWhereInput = {};
+    await this.validateCrossFilters(query.departmentId, query.courseId);
+    const scoped = Boolean(query.courseId || query.departmentId);
+    const cohort = scoped ? { studentProfile: institutionFilter(query) } : {};
+    const aiDateFilter: Prisma.AIExecutionLogWhereInput = { ...cohort };
+    const careerDateFilter: Prisma.JobApplicationWhereInput = { ...cohort };
 
     if (query.startDate || query.endDate) {
       const gte = query.startDate ? new Date(query.startDate) : undefined;
@@ -396,7 +439,7 @@ export const adminReportService = {
         select: {
           id: true,
           status: true,
-          appliedDate: true,
+          createdAt: true,
         },
       }),
     ]);
@@ -442,11 +485,10 @@ export const adminReportService = {
 
     const appMonthlyMap = new Map<string, number>();
     for (const app of jobApplications) {
-      const d = app.appliedDate ? new Date(app.appliedDate) : new Date();
-      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const monthKey = formatPeriodKey(app.createdAt, 'monthly');
       appMonthlyMap.set(monthKey, (appMonthlyMap.get(monthKey) || 0) + 1);
     }
-    const applicationsByMonth = Array.from(appMonthlyMap.entries()).map(([month, count]) => ({
+    const applicationsByMonth = Array.from(appMonthlyMap.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([month, count]) => ({
       month,
       count,
     }));

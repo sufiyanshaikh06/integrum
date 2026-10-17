@@ -6,6 +6,10 @@ import { semesterService } from '../services/semester.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 export const semesterController = {
+  listAcademicTerms: asyncHandler(async (req: Request, res: Response) => {
+    const result = await semesterService.listAcademicTerms(Number(req.query.page), Number(req.query.limit));
+    ApiResponse.success(res, 'Academic terms retrieved successfully', result, HTTP_STATUS.OK);
+  }),
   createSemester: asyncHandler(async (req: Request, res: Response) => {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can create semesters');

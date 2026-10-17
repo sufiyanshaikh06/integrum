@@ -1,3 +1,4 @@
+import { lockOwnedSubject, recalculateAttendance } from './attendance-consistency.js';
 import { prisma } from '../config/prisma.js';
 import { CreateAttendanceRecordInput, UpdateAttendanceRecordInput } from '../schemas/attendance.schema.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -15,19 +16,18 @@ export const attendanceService = {
   },
 
   async createAttendanceRecord(studentProfileId: string, data: CreateAttendanceRecordInput) {
-    await this.verifySubjectOwnership(studentProfileId, data.subjectId);
-
-    const record = await prisma.attendanceRecord.create({
-      data: {
-        subjectId: data.subjectId,
-        date: new Date(data.date),
-        status: data.status,
-        notes: data.notes ?? null,
-      },
-    });
-
-    await this.recalculateSubjectAttendance(data.subjectId);
-    return record;
+    return prisma.$transaction(async tx => {
+      const subject = await lockOwnedSubject(tx, studentProfileId, data.subjectId);
+      const count = await tx.attendanceRecord.count({ where: { subjectId: data.subjectId } });
+      if (count === 0 && (subject.totalClasses !== 0 || subject.attendedClasses !== 0)) {
+        throw ApiError.conflict('Clear manual attendance totals before adding individual records');
+      }
+      const record = await tx.attendanceRecord.create({
+        data: { subjectId: data.subjectId, date: new Date(data.date), status: data.status, notes: data.notes ?? null },
+      });
+      await recalculateAttendance(tx, data.subjectId);
+      return record;
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async getAttendanceRecords(studentProfileId: string, subjectId: string) {
@@ -68,25 +68,25 @@ export const attendanceService = {
     if (data.notes !== undefined) updateData.notes = data.notes ?? null;
     if (data.date !== undefined) updateData.date = new Date(data.date);
 
-    const updated = await prisma.attendanceRecord.update({
-      where: { id: recordId },
-      data: updateData,
-    });
-
-    if (data.status) {
-      await this.recalculateSubjectAttendance(record.subjectId);
-    }
-    return updated;
+    return prisma.$transaction(async tx => {
+      await lockOwnedSubject(tx, studentProfileId, record.subjectId);
+      if (!await tx.attendanceRecord.findUnique({ where: { id: recordId } })) {
+        throw ApiError.notFound('Attendance record not found');
+      }
+      const updated = await tx.attendanceRecord.update({ where: { id: recordId }, data: updateData });
+      await recalculateAttendance(tx, record.subjectId);
+      return updated;
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   async deleteAttendanceRecord(studentProfileId: string, recordId: string) {
     const record = await this.getAttendanceRecordById(studentProfileId, recordId);
-
-    await prisma.attendanceRecord.delete({
-      where: { id: recordId },
-    });
-
-    await this.recalculateSubjectAttendance(record.subjectId);
+    await prisma.$transaction(async tx => {
+      await lockOwnedSubject(tx, studentProfileId, record.subjectId);
+      const deleted = await tx.attendanceRecord.deleteMany({ where: { id: recordId } });
+      if (!deleted.count) throw ApiError.notFound('Attendance record not found');
+      await recalculateAttendance(tx, record.subjectId);
+    }, { isolationLevel: 'ReadCommitted' });
   },
 
   // A-4: Per-subject attendance report
@@ -131,19 +131,4 @@ export const attendanceService = {
     });
   },
 
-  async recalculateSubjectAttendance(subjectId: string) {
-    const records = await prisma.attendanceRecord.findMany({
-      where: { subjectId },
-    });
-
-    const totalClasses = records.length;
-    const attendedClasses = records.filter(
-      r => r.status === 'PRESENT' || r.status === 'LATE'
-    ).length;
-
-    await prisma.subject.update({
-      where: { id: subjectId },
-      data: { totalClasses, attendedClasses },
-    });
-  }
 };

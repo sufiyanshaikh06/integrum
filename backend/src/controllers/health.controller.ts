@@ -12,6 +12,10 @@ export const healthCheck = async (req: Request, res: Response) => {
     dbStatus = 'error';
   }
 
+  if (dbStatus !== 'connected') {
+    return ApiResponse.error(res, 'Database unavailable', [], 503);
+  }
+
   return ApiResponse.success(res, 'Server is healthy', {
     status: 'UP',
     timestamp: new Date().toISOString(),

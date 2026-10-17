@@ -4,6 +4,11 @@ import { ApiResponse } from '../utils/ApiResponse.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { HTTP_STATUS } from '../constants/httpStatus.js';
 import { Prisma } from '@prisma/client';
+import {
+  GetAnnouncementsQuery,
+  GetEventsQuery,
+  GetResourcesQuery,
+} from '../schemas/content.schema.js';
 
 /**
  * Helper to extract student institutional scope: courseId and derived departmentId.
@@ -31,7 +36,7 @@ export const contentController = {
   getAnnouncements: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user!.id;
     const now = new Date();
-    const { type, priority, search } = req.query;
+    const { type, priority, search } = req.query as unknown as GetAnnouncementsQuery;
 
     const { courseId, departmentId } = await getStudentScope(userId);
 
@@ -53,14 +58,14 @@ export const contentController = {
       ],
       AND: [
         { OR: scopeConditions },
-        ...(type ? [{ type: type as any }] : []),
-        ...(priority ? [{ priority: priority as any }] : []),
+        ...(type ? [{ type }] : []),
+        ...(priority ? [{ priority }] : []),
         ...(search
           ? [
               {
                 OR: [
-                  { title: { contains: search as string, mode: 'insensitive' as const } },
-                  { content: { contains: search as string, mode: 'insensitive' as const } },
+                  { title: { contains: search, mode: 'insensitive' as const } },
+                  { content: { contains: search, mode: 'insensitive' as const } },
                 ],
               },
             ]
@@ -91,7 +96,7 @@ export const contentController = {
    */
   getEvents: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user!.id;
-    const { category, upcomingOnly, search } = req.query;
+    const { category, upcomingOnly, search } = req.query as unknown as GetEventsQuery;
     const now = new Date();
 
     const { courseId, departmentId } = await getStudentScope(userId);
@@ -108,8 +113,8 @@ export const contentController = {
       isPublished: true,
       AND: [
         { OR: scopeConditions },
-        ...(category ? [{ category: category as any }] : []),
-        ...(upcomingOnly === 'true'
+        ...(category ? [{ category }] : []),
+        ...(upcomingOnly === true
           ? [
               {
                 OR: [
@@ -151,7 +156,7 @@ export const contentController = {
    */
   getResources: asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user!.id;
-    const { category, search } = req.query;
+    const { category, search } = req.query as unknown as GetResourcesQuery;
 
     const { courseId, departmentId } = await getStudentScope(userId);
 
@@ -168,13 +173,13 @@ export const contentController = {
     const where: Prisma.AcademicResourceWhereInput = {
       AND: [
         { OR: scopeConditions },
-        ...(category ? [{ category: category as any }] : []),
+        ...(category ? [{ category }] : []),
         ...(search
           ? [
               {
                 OR: [
-                  { title: { contains: search as string, mode: 'insensitive' as const } },
-                  { description: { contains: search as string, mode: 'insensitive' as const } },
+                  { title: { contains: search, mode: 'insensitive' as const } },
+                  { description: { contains: search, mode: 'insensitive' as const } },
                 ],
               },
             ]

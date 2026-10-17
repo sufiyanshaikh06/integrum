@@ -6,6 +6,11 @@ import { subjectService } from '../services/subject.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 export const subjectController = {
+  listSyllabus: asyncHandler(async (req: Request, res: Response) => {
+    const id = req.user?.studentProfile?.id;
+    if (!id) throw ApiError.forbidden('Student profile required');
+    ApiResponse.success(res, 'Syllabus subjects retrieved successfully', await subjectService.listSyllabus(id, Number(req.query.page), Number(req.query.limit)), HTTP_STATUS.OK);
+  }),
   createSubject: asyncHandler(async (req: Request, res: Response) => {
     const profileId = req.user?.studentProfile?.id;
     if (!profileId) throw ApiError.forbidden('Only students can create subjects');

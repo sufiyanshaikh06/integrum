@@ -1,19 +1,39 @@
 import { prisma } from '../config/prisma.js';
 import { CreateCertificationInput, UpdateCertificationInput } from '../schemas/certification.schema.js';
 import { ApiError } from '../utils/ApiError.js';
+import { reminderService } from './reminder.service.js';
 
 export const certificationService = {
   async createCertification(studentProfileId: string, data: CreateCertificationInput) {
-    return prisma.certification.create({
-      data: {
-        studentProfileId,
-        name: data.name,
-        issuer: data.issuer,
-        dateObtained: data.dateObtained ? new Date(data.dateObtained) : null,
-        expiryDate: data.expiryDate ? new Date(data.expiryDate) : null,
-        credentialId: data.credentialId ?? null,
-        credentialUrl: data.credentialUrl ?? null,
-      },
+    const expiryDate = data.expiryDate ? new Date(data.expiryDate) : null;
+
+    return prisma.$transaction(async (tx) => {
+      const cert = await tx.certification.create({
+        data: {
+          studentProfileId,
+          name: data.name,
+          issuer: data.issuer,
+          dateObtained: data.dateObtained ? new Date(data.dateObtained) : null,
+          expiryDate,
+          credentialId: data.credentialId ?? null,
+          credentialUrl: data.credentialUrl ?? null,
+        },
+      });
+
+      if (expiryDate) {
+        await reminderService.syncSourceReminder(tx, {
+          studentProfileId,
+          sourceType: 'CERTIFICATION',
+          sourceId: cert.id,
+          occurrenceKey: 'expiry',
+          title: `Certification Expiring: ${cert.name}`,
+          description: `Your ${cert.name} certification from ${cert.issuer} expires on ${expiryDate.toISOString()}`,
+          targetDate: expiryDate,
+          leadTimeMs: 30 * 24 * 60 * 60 * 1000, // 30-day renewal lead time
+        });
+      }
+
+      return cert;
     });
   },
 
@@ -33,7 +53,7 @@ export const certificationService = {
   },
 
   async updateCertification(studentProfileId: string, certificationId: string, data: UpdateCertificationInput) {
-    await this.getCertificationById(studentProfileId, certificationId);
+    const existing = await this.getCertificationById(studentProfileId, certificationId);
 
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
@@ -43,15 +63,49 @@ export const certificationService = {
     if (data.credentialId !== undefined) updateData.credentialId = data.credentialId;
     if (data.credentialUrl !== undefined) updateData.credentialUrl = data.credentialUrl;
 
-    return prisma.certification.update({
-      where: { id: certificationId },
-      data: updateData,
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.certification.update({
+        where: { id: certificationId },
+        data: updateData,
+      });
+
+      const effectiveExpiry = updated.expiryDate;
+      if (effectiveExpiry) {
+        await reminderService.syncSourceReminder(tx, {
+          studentProfileId,
+          sourceType: 'CERTIFICATION',
+          sourceId: updated.id,
+          occurrenceKey: 'expiry',
+          title: `Certification Expiring: ${updated.name}`,
+          description: `Your ${updated.name} certification from ${updated.issuer} expires on ${effectiveExpiry.toISOString()}`,
+          targetDate: effectiveExpiry,
+          leadTimeMs: 30 * 24 * 60 * 60 * 1000,
+          cancelled: false,
+        });
+      } else if (existing.expiryDate && !effectiveExpiry) {
+        await reminderService.cancelSourceReminders(tx, {
+          studentProfileId,
+          sourceType: 'CERTIFICATION',
+          sourceId: updated.id,
+        });
+      }
+
+      return updated;
     });
   },
 
   async deleteCertification(studentProfileId: string, certificationId: string) {
     await this.getCertificationById(studentProfileId, certificationId);
-    await prisma.certification.delete({ where: { id: certificationId } });
+
+    return prisma.$transaction(async (tx) => {
+      await reminderService.cancelSourceReminders(tx, {
+        studentProfileId,
+        sourceType: 'CERTIFICATION',
+        sourceId: certificationId,
+      });
+
+      await tx.certification.delete({ where: { id: certificationId } });
+    });
   },
 
   // P4: Return certifications expiring within N days — for renewal reminders

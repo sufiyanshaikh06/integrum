@@ -9,7 +9,7 @@ import {
   getResumeById,
   updateResume,
   deleteResume,
-  getResumePdfData,
+  exportResumePdf,
   getResumeTemplates,
 } from '../controllers/resume.controller.js';
 
@@ -23,7 +23,7 @@ router.get('/templates', getResumeTemplates);
 router.post('/', validateRequest(createResumeSchema), createResume);
 router.get('/', getResumes);
 router.get('/:id', getResumeById);
-router.get('/:id/pdf', getResumePdfData); // C-2: PDF export data
+router.get('/:id/pdf', exportResumePdf); // G3: PDF binary export
 router.patch('/:id', validateRequest(updateResumeSchema), updateResume);
 router.delete('/:id', deleteResume);
 

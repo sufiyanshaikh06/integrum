@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
 import { validateRequest } from '../middleware/validateRequest.js';
-import { createJobApplicationSchema, updateJobApplicationSchema } from '../schemas/jobapplication.schema.js';
+import { createJobApplicationSchema, updateJobApplicationSchema, listJobApplicationsSchema } from '../schemas/jobapplication.schema.js';
 import {
   createApplication,
   getApplications,
@@ -17,7 +17,9 @@ const router = Router();
 router.use(authenticate, authorize('STUDENT'));
 
 router.post('/', validateRequest(createJobApplicationSchema), createApplication);
-router.get('/', getApplications);
+router.get('/', validateRequest(listJobApplicationsSchema), getApplications);
+router.get('/internships', validateRequest(listJobApplicationsSchema), getApplications);
+router.get('/placements', validateRequest(listJobApplicationsSchema), getApplications);
 router.get('/:id', getApplicationById);
 router.patch('/:id', validateRequest(updateJobApplicationSchema), updateApplication);
 router.delete('/:id', deleteApplication);

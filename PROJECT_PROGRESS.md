@@ -660,3 +660,104 @@ All 11 test suites pass with 100% green status:
 - [x] **Strict Compiler Compliance:** Full strictness preserved in `backend/tsconfig.json` (`exactOptionalPropertyTypes: true`, `noUncheckedIndexedAccess: true`, `strict: true`).
 - [x] **Clean Static Type Check:** `npx prisma validate && npx prisma generate && npx tsc --noEmit` exits with **0 errors**.
 - [x] **Clean Repository State:** Zero temporary test artifacts or untracked secret files. Ready for frontend integration.
+
+---
+
+## 8. Backend V1 Closure — Session Log (2026-08-29 ? 2026-09-11)
+
+> **Branch:** `backend/v1-closure` | **Baseline:** `c176d31` (main) | **Remote:** pushed to `origin/backend/v1-closure`
+
+### 8.1 Session Objective
+
+After permanently freezing the Administration Portal (A1–A7, 20/20 functionalities), a full-project audit identified six backend gaps (G1–G6) that existed between the approved product synopsis and the implemented backend. This session began executing the approved **Backend V1 Closure Plan v2** to close all six gaps before frontend development starts.
+
+The plan was executed using the Subagent-Driven Development (SDD) workflow: one implementer subagent per task ? task reviewer gate ? ledger update ? next task.
+
+---
+
+### 8.2 Completed This Session (Tasks 1–5 of 9)
+
+| Task | Commit | Description | Tests |
+|------|--------|-------------|-------|
+| T1 — Storage Provider Infrastructure | `b42d73c` | `StorageProvider` interface, `LocalStorageProvider` (writes to `backend/uploads/`), `SupabaseStorageProvider` (private bucket), `getStorageProvider()` factory. New env vars: `STORAGE_PROVIDER`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`. | Smoke-tested inline |
+| T2 — Production Hardening | `a0080e5` | Rate limiting (`globalLimiter` 200/15min, `authLimiter` 10/15min, `uploadLimiter` 20/15min — active in production). Body limit capped at 256 KB. `compression()` middleware. `trust proxy 1`. Graceful SIGTERM/SIGINT shutdown with `prisma.$disconnect()`. 30-second timeout on all Gemini AI calls. Email abstraction (`emailService.send()`). Critical `errorHandler` bug fixed: unknown errors no longer leak `err.message` to clients — returns `'Internal Server Error'`. | test-admin-foundation ? |
+| T3 — Notes File Upload (G1) | `72d93db` | `POST /api/v1/notes/:noteId/upload` — multipart PDF/DOCX/PPT/PPTX upload (max 10 MB), magic-byte validated via `file-type`, ownership checked, stored via StorageProvider, `fileId` saved on `Note`. `GET /api/v1/notes/:noteId/file` — returns 302 signed-URL redirect. Prisma migration: `Note.fileId String?`. | test-notes-upload 7/7 ? |
+| T4 — Student Profile Resume Upload (G2) | `26a7bae` | `POST /api/v1/users/me/resume-upload` — PDF-only upload (magic-byte validated), profile existence checked before storage, `uploadedResumeFileId` saved on `StudentProfile`. `GET /api/v1/users/me/resume-file` — 302 redirect. Prisma migration: `StudentProfile.uploadedResumeFileId String?`. | test-profile-resume-upload 6/6 ? |
+| T5 — Resume PDF Binary Export (G3) | `35ff0ad` | `GET /api/v1/resumes/:id/pdf` now returns `Content-Type: application/pdf` binary (first bytes: `%PDF`). PDFKit renderer in `backend/src/utils/pdf/pdf.renderer.ts` renders all 5 templates (classic/modern/minimal/executive/compact) with personalInfo, education, experience, skills, projects sections. Ownership enforced. Previous JSON-returning handler replaced. | test-resume-pdf-export 7/7 ? |
+
+**All 5 committed tasks passed their task reviewer gates (Spec: PASS, Quality: Approved).**
+
+---
+
+### 8.3 Remaining Work (Tasks 6–9 — NOT YET STARTED)
+
+| Task | Gap | What It Does |
+|------|-----|-------------|
+| T6 — Career Hub Discriminator | G4 | Add `applicationType (INTERNSHIP\|PLACEMENT)`, `eligibilityStatus (UNKNOWN\|ELIGIBLE\|NOT_ELIGIBLE)`, `interviewHistory Json?` to `JobApplication`. New filter routes: `GET /internships`, `GET /placements`. |
+| T7 — Analytics Canonical Computations | G5 | Four new analytics: per-subject attendance/assignment breakdown (`GET /analytics/subject-performance`), resume completion score (in dashboard), internship-only stats (`GET /analytics/internship-stats`), study-plan goal achievement rate (in dashboard). **Depends on T6.** |
+| T8 — AI Study Planner Extension | G6 | Extend `GeneratedStudyPlan` with `weeklySchedule[]`, `revisionPlan[]`, `topicPriorities[]`, `goalRecommendations[]`. Update Gemini schema + prompt + mock provider. |
+| T9 — Production Build + Audit + Documentation | — | `npm run build` exits 0. `dist/server.js` runs. `npm audit --production` = 0 HIGH/CRITICAL. `test-production-hardening.ts` passes. `PROJECT_PROGRESS.md` final update. |
+
+---
+
+### 8.4 SDD Ledger — Deferred Minor Findings
+
+These were flagged by task reviewers but do not block correctness or security. They are parked for the final whole-branch review (Task 9 / final reviewer):
+
+| Task | Finding |
+|------|---------|
+| T2 | `withTimeout` timer not `unref()`'d on Gemini resolution — minor event-loop leak |
+| T2 | `withTimeout` attaches `statusCode` but `handleGeminiError` checks `err.status` — timeout falls to generic 500 |
+| T3 | `uploadNoteFile` calls `provider.upload()` before ownership verification — orphaned file on invalid noteId |
+| T4 | Re-upload overwrites `uploadedResumeFileId` without deleting prior file from storage |
+
+---
+
+### 8.5 Branch State for Handoff
+
+```
+branch:   backend/v1-closure
+HEAD:     35ff0ad
+remote:   origin/backend/v1-closure (pushed)
+tsc:      0 errors (verified at each task)
+prisma:   migrations applied (add_note_file_id, add_student_profile_uploaded_resume)
+tests:    test-notes-upload (7/7), test-profile-resume-upload (6/6), test-resume-pdf-export (7/7)
+          + all 11 original administration/regression suites still passing
+gaps:     G1 ?  G2 ?  G3 ?  G4 ?  G5 ?  G6 ?
+```
+
+**Next session start point:** Execute Task 6 (Career Hub Discriminator) from the `backend/v1-closure` worktree at `d:\ALL_PROJECTS\integrum\.worktrees\backend-v1-closure`. The SDD execution plan is at `docs/superpowers/plans/2026-08-29-backend-v1-closure.md` inside the worktree.
+
+
+## Backend closure continuation â€” 19 September 2026
+
+Local implementation branch: `fix/backend-closure-day1`. T6 career classification, T7 analytics, and T8 expanded AI study-plan output are implemented with regression checks. T9 is **in progress, not passed**: full workspace build and compiled production-server checks are addressed, but four high dependency findings and remaining session/email/storage/environment gates prevent final backend freeze. See `BACKEND_CLOSURE_DAY1.md` for current evidence, API contracts, and outstanding work; older completion claims above are historical.
+
+Publishing is deferred until remaining security checks complete. After merging into main, retain existing branches without further commits; do not delete or prune them.
+
+
+### Dependency audit checkpoint - 20 September 2026
+
+Production dependency audit now reports zero vulnerabilities after retaining Prisma 7.10.0 at the workspace root and applying documented deepmerge-ts/mysql2 overrides. Clean installation, Prisma configuration/schema/client tooling, full build, 20 closure tests and compiled production smoke passed. See BACKEND_CLOSURE_DAY1.md for evidence and override maintenance requirements. T9 remains open for data-integrity and native PostgreSQL/live-service verification; do not interpret this as final backend freeze.
+
+Dependency remediation final verification: full root build, strict test compilation, 20 closure tests, compiled production smoke and all 14 baseline regression scripts passed. Production dependency audit: zero findings. Database suites used isolated PGlite with all 12 migrations; native PostgreSQL and live-service gates remain open. Changes remain local pending the remaining security checks.
+
+T9 attendance integrity: record mutations and totals now commit atomically under a per-subject lock shared with subject PATCH. Reject impossible totals (400) and silent mixing of manual totals with individual records (409). Preserve PRESENT/LATE and EXCUSED counting semantics. New rollback/ownership/concurrency coverage added; final results follow in BACKEND_CLOSURE_DAY1.md. Native PostgreSQL concurrency and remaining data/environment gates are still open.
+
+Attendance final verification: backend build, strict test compilation, all 22 closure tests, compiled production smoke, and three affected legacy suites (test-p1-p2, test-analytics, test-admin-academics) passed on isolated PGlite. Next: institutional linkage and report filtering; native PostgreSQL/live-environment verification remains outstanding.
+
+T9 report filters: user totals/breakdowns now share date and institutional scope; usage validates/applies enrollment filters; academic windows filter attendance dates and assignment creation dates, excluding undated manual totals with response metadata. UTC trends and career creation-date monthly attribution fixed. Institutional write journeys and native/live-service gates remain open. See BACKEND_CLOSURE_DAY1.md for API semantics and verification.
+
+Report-filter final verification: 23 closure tests plus compiled production smoke passed under a non-UTC timezone; existing admin-report regression passed. Backend build and strict test compilation passed. All changes remain local. Next: institutional enrollment and academic linkage write journeys.
+
+T9 academic-term linkage: added student active-term lookup and optional semester academicTermId linking/unlinking; preserved inactive historical links. Merged-date validation and row locking protect semester edits and term deletion/reference checks. Student course enrollment and master-subject linkage remain open. Verification follows in BACKEND_CLOSURE_DAY1.md.
+
+Term-linking checkpoint: new term tests, build/typecheck, admin-academics and p1-p2 regressions passed; compiled production smoke passed independently. Full closure suite is NOT green: failed-attachment storage regression recurred (22 pass, 2 fail including parent suite). Added semester compare-and-set to reject stale edits. Next priority is storage diagnosis before course/master-subject linkage.
+
+Storage investigation checkpoint: trace confirmed failed-upload cleanup executed; an older deleted object later reappeared without a second upload call. Two standalone filesystem probes (100 cycles each) passed. The unchanged full suite run without concurrent workspace commands passed all 24 tests plus compiled production smoke. Execution-environment interference is a hypothesis, not a proven cause; native filesystem/PostgreSQL verification stays open. No speculative storage fix or weakened assertion was introduced. Term-linking code: df6d176.
+
+T9 course enrollment: admin-only PATCH /admin/users/:id/enrollment supports validated assignment/unenrollment with atomic audit, stale-write detection and incompatible syllabus-link protection. Student profile exposes course/department metadata. Build/typecheck, 25 closure tests, compiled production smoke and admin-users/admin-academics/admin-reports regressions passed sequentially on isolated PGlite. Next: master-subject lookup/linking. Native/live-service and storage verification limits remain open; no publishing.
+
+T9 syllabus linkage: added student course-scoped syllabus lookup and optional personal-subject linking/unlinking. Shared profile/catalog locks coordinate enrollment and reference checks; admins cannot move/delete referenced catalog entries. Build/typecheck, all 25 expanded closure tests, compiled production smoke and admin-academics/p1-p2 regressions passed sequentially. Institutional write paths are implemented locally; native database/storage and live-service verification remain open. No publishing.
+
+Native verification: workspace lacks PostgreSQL server binaries/Docker. Prepared guarded test:native runner and NATIVE_VERIFICATION.md. Syntax/CLI resolution and remote-URL rejection verified; actual native database/storage verification remains PENDING. Runner provisions and removes only its unique test database; current source must be synchronized before laptop execution. No publishing.

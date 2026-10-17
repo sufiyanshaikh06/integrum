@@ -46,3 +46,15 @@ export const deleteCalendarEvent = asyncHandler(async (req: Request, res: Respon
   await calendarService.deleteCalendarEvent(studentProfileId, req.params.id as string);
   ApiResponse.success(res, 'Calendar event deleted successfully', null, 204);
 });
+
+// W05: Unified Calendar Controller
+export const getUnifiedCalendar = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  const studentProfileId = req.user?.studentProfile?.id;
+  if (!userId || !studentProfileId) throw ApiError.unauthorized('Student profile not found');
+
+  const { startDate, endDate } = req.query as { startDate: string; endDate: string };
+  const events = await calendarService.getUnifiedCalendar(userId, studentProfileId, startDate, endDate);
+  ApiResponse.success(res, 'Unified calendar retrieved successfully', events);
+});
+

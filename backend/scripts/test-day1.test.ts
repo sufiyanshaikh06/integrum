@@ -1,0 +1,3503 @@
+import { adminAcademicService } from '../src/services/admin/academic.service.js';
+import { adminReportService } from '../src/services/admin/report.service.js';
+import { retryStorageCleanup, processCleanup } from '../src/services/storage/cleanup.js';
+import { adminUserService } from '../src/services/admin/user.service.js';
+import { authService } from '../src/services/auth.service.js';
+import { createHash } from 'node:crypto';
+import { emailService } from '../src/services/email.service.js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GeminiProvider } from '../src/services/ai/gemini.provider.js';
+import { env } from '../src/config/env.js';
+import { MockProvider } from '../src/services/ai/mock.provider.js';
+import { generatedStudyPlanOutputSchema } from '../src/schemas/ai.schema.js';
+import 'dotenv/config';
+import { Prisma } from '@prisma/client';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import express from 'express';
+import { z } from 'zod';
+import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
+import { access, readFile, readdir, rm } from 'node:fs/promises';
+import path from 'node:path';
+import { validateRequest } from '../src/middleware/validateRequest.js';
+import { LocalStorageProvider } from '../src/services/storage/local.storage.js';
+import { withTimeout } from '../src/utils/withTimeout.js';
+import app from '../src/app.js';
+import { prisma } from '../src/config/prisma.js';
+import { noteService } from '../src/services/note.service.js';
+import { userService } from '../src/services/user.service.js';
+import { getStorageProvider } from '../src/services/storage/index.js';
+import { adminPlatformService } from '../src/services/admin/platform.service.js';
+import { analyticsService, getCanonicalResume } from '../src/services/analytics.service.js';
+import { AIService } from '../src/services/ai.service.js';
+import { jobApplicationService } from '../src/services/jobapplication.service.js';
+
+// Fail closed before creating fixtures on a working database.
+assert(new URL(process.env.DATABASE_URL!).pathname.endsWith('_test'));
+assert.equal(process.env.NODE_ENV, 'test');
+
+test('day-one HTTP and persistence regressions', async t => {
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${(server.address() as any).port}/api/v1`;
+  const prefix = `closure_${randomUUID()}`;
+  const users: any[] = [];
+  const pdf = Buffer.from('%PDF-1.4\nclosure bytes\n%%EOF\n');
+  async function req(method: string, route: string, token = '', body?: unknown) {
+    return fetch(base + route, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  }
+  async function create(route: string, token: string, body: unknown) {
+    const r = await req('POST', route, token, body), j = await r.json() as any;
+    assert.equal(r.status, 201, JSON.stringify(j)); return j.data;
+  }
+  async function student(suffix: string) {
+    const email = `${prefix}_${suffix}@integrum.test`, password = 'ClosurePass123!';
+    const u = await create('/auth/register', '', { email, password, firstName: 'Closure', lastName: suffix });
+    users.push(u);
+    const login = await req('POST', '/auth/login', '', { email, password }); assert.equal(login.status, 200);
+    u.token = (await login.json() as any).data.accessToken;
+    u.profileId = (await (await req('GET', '/users/me', u.token)).json() as any).data.studentProfile.id;
+    return u;
+  }
+  async function upload(route: string, token: string, customBuffer: Buffer = pdf, filename = 'document.pdf') {
+    const f = new FormData(); f.append('file', new Blob([new Uint8Array(customBuffer)]), filename);
+    return fetch(base + route, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: f });
+  }
+  const files = (id: string, folder = 'notes') => readdir(path.resolve('uploads', folder, id)).catch(() => []);
+  try {
+    const a = await student('A'), b = await student('B');
+    const sem = await create('/semesters', a.token, { name: prefix, startDate: '2026-09-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' });
+    const subject = await create('/subjects', a.token, { semesterId: sem.id, name: 'Closure', code: 'CL' });
+    const note = await create('/notes', a.token, { subjectId: subject.id, title: 'Private document' });
+    const own = await create('/study-plans', a.token, { title: 'Own plan' });
+    const other = await create('/study-plans', b.token, { title: 'Other plan' });
+    await t.test('admin enrollment authorization, validation, profile visibility and atomic audit', async () => {
+      const stamp = randomUUID();
+      const dept = await prisma.department.create({ data: { name: `Enrollment ${stamp}`, code: `E${stamp}` } });
+      const first = await prisma.course.create({ data: { departmentId: dept.id, name: 'First course', code: `F${stamp}` } });
+      const second = await prisma.course.create({ data: { departmentId: dept.id, name: 'Second course', code: `S${stamp}` } });
+      const master = await prisma.masterSubject.create({ data: { courseId: first.id, name: 'Catalog subject', code: stamp } });
+      const foreignMaster = await prisma.masterSubject.create({ data: { courseId: second.id, name: 'Foreign syllabus', code: stamp } });
+      const action = 'STUDENT_ENROLLMENT_UPDATED', route = `/admin/users/${a.id}/enrollment`;
+      const countAudit = () => prisma.adminAuditLog.count({ where: { action, targetId: a.id } });
+      try {
+        const login = await req('POST', '/auth/login', '', { email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD });
+        assert.equal(login.status, 200);
+        const admin = (await login.json() as any).data.accessToken;
+        const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+        assert.equal((await req('PATCH', route, '', { courseId: first.id })).status, 401);
+        assert.equal((await req('PATCH', route, b.token, { courseId: first.id })).status, 403);
+        for (const body of [{}, { courseId: 'invalid' }, { courseId: first.id, role: 'ADMIN' }]) {
+          assert.equal((await req('PATCH', route, admin, body)).status, 400);
+        }
+        assert.equal((await req('PATCH', '/admin/users/invalid/enrollment', admin, { courseId: first.id })).status, 400);
+        assert.equal((await req('PATCH', route, admin, { courseId: randomUUID() })).status, 404);
+        assert.equal((await req('PATCH', `/admin/users/${randomUUID()}/enrollment`, admin, { courseId: first.id })).status, 404);
+        assert.equal((await req('PATCH', `/admin/users/${adminUser.id}/enrollment`, admin, { courseId: first.id })).status, 400);
+        assert.equal(await countAudit(), 0);
+        const assigned = await req('PATCH', route, admin, { courseId: first.id });
+        assert.equal(assigned.status, 200);
+        assert.equal((await assigned.json() as any).data.course.department.id, dept.id);
+        assert.equal(await countAudit(), 1);
+        const audit = await prisma.adminAuditLog.findFirstOrThrow({ where: { action, targetId: a.id } });
+        assert.equal(audit.actorUserId, adminUser.id);
+        assert.deepEqual(audit.details, { studentProfileId: a.profileId, previousCourseId: null, courseId: first.id });
+        assert.equal((await req('PATCH', route, admin, { courseId: first.id })).status, 200);
+        assert.equal(await countAudit(), 1);
+        const ownProfile = (await (await req('GET', '/users/me', a.token)).json() as any).data.studentProfile;
+        assert.equal(ownProfile.courseId, first.id); assert.equal(ownProfile.course.code, first.code);
+        assert.equal((await req('PATCH', '/users/me', a.token, { courseId: second.id })).status, 200);
+        assert.equal((await prisma.studentProfile.findUniqueOrThrow({ where: { id: a.profileId } })).courseId, first.id);
+        assert.equal((await req('GET', '/subjects/syllabus')).status, 401);
+        assert.equal((await req('GET', '/subjects/syllabus?limit=101', a.token)).status, 400);
+        const catalog = (await (await req('GET', '/subjects/syllabus', a.token)).json() as any).data;
+        assert.deepEqual(catalog.items.map((item: any) => item.id), [master.id]);
+        const empty = (await (await req('GET', '/subjects/syllabus', b.token)).json() as any).data;
+        assert.deepEqual(empty.items, []);
+        const subjectRoute = `/subjects/${subject.id}`;
+        assert.equal((await req('PATCH', subjectRoute, b.token, { masterSubjectId: master.id })).status, 404);
+        assert.equal((await req('PATCH', subjectRoute, a.token, { masterSubjectId: 'bad' })).status, 400);
+        assert.equal((await req('PATCH', subjectRoute, a.token, { masterSubjectId: randomUUID() })).status, 404);
+        assert.equal((await req('PATCH', subjectRoute, a.token, { masterSubjectId: foreignMaster.id })).status, 409);
+        const linked = await req('PATCH', subjectRoute, a.token, { masterSubjectId: master.id });
+        assert.equal(linked.status, 200); assert.equal((await linked.json() as any).data.masterSubject.id, master.id);
+        assert.equal((await req('PATCH', subjectRoute, a.token, { attendanceGoal: 75 })).status, 200);
+        assert.equal((await (await req('GET', subjectRoute, a.token)).json() as any).data.masterSubjectId, master.id);
+        await assert.rejects(adminAcademicService.updateMasterSubject(adminUser.id, master.id, { courseId: second.id }), (e: any) => e.statusCode === 409);
+        await assert.rejects(adminAcademicService.deleteMasterSubject(adminUser.id, master.id), (e: any) => e.statusCode === 409);
+        const subjectBody = { semesterId: sem.id, name: 'Linked creation', masterSubjectId: master.id };
+        const created = await create('/subjects', a.token, subjectBody);
+        assert.equal(created.masterSubjectId, master.id);
+        assert.equal((await req('POST', '/subjects', a.token, { ...subjectBody, masterSubjectId: foreignMaster.id })).status, 409);
+        await prisma.subject.delete({ where: { id: created.id } });
+        for (const courseId of [second.id, null]) {
+          assert.equal((await req('PATCH', route, admin, { courseId })).status, 409);
+        }
+        assert.equal(await countAudit(), 1);
+        await assert.rejects(adminAcademicService.deleteCourse(adminUser.id, first.id), (e: any) => e.statusCode === 409);
+        assert.equal((await req('PATCH', `/subjects/${subject.id}`, a.token, { masterSubjectId: null })).status, 200);
+        // A nonexistent audit actor forces the audit insert to fail after the enrollment write.
+        await assert.rejects(adminUserService.updateStudentEnrollment(randomUUID(), a.id, { courseId: second.id }));
+        assert.equal((await prisma.studentProfile.findUniqueOrThrow({ where: { id: a.profileId } })).courseId, first.id);
+        assert.equal(await countAudit(), 1);
+        assert.equal((await req('PATCH', route, admin, { courseId: second.id })).status, 200);
+        assert.equal((await req('PATCH', route, admin, { courseId: null })).status, 200);
+        assert.equal(await countAudit(), 3);
+        assert.equal((await prisma.studentProfile.findUniqueOrThrow({ where: { id: a.profileId } })).courseId, null);
+      } finally {
+        await prisma.subject.update({ where: { id: subject.id }, data: { masterSubjectId: null } });
+        await prisma.studentProfile.update({ where: { id: a.profileId }, data: { courseId: null } });
+        await prisma.adminAuditLog.deleteMany({ where: { action, targetId: a.id } });
+        await prisma.masterSubject.deleteMany({ where: { id: { in: [master.id, foreignMaster.id] } } });
+        await prisma.course.deleteMany({ where: { id: { in: [first.id, second.id] } } });
+        await prisma.department.delete({ where: { id: dept.id } });
+      }
+    });
+    await t.test('student academic-term lookup, linking, ownership and date integrity', async () => {
+      const term = await prisma.academicTerm.create({ data: { name: `Term ${prefix}`, academicYear: 2026, startDate: new Date('2026-09-01Z'), endDate: new Date('2026-12-31Z') } });
+      const inactive = await prisma.academicTerm.create({ data: { name: `Inactive ${prefix}`, academicYear: 2026, startDate: term.startDate, endDate: term.endDate, isActive: false } });
+      let linked: any;
+      try {
+        assert.equal((await req('GET', '/semesters/academic-terms')).status, 401);
+        assert.equal((await req('GET', '/semesters/academic-terms?limit=101', a.token)).status, 400);
+        const lookup = await req('GET', '/semesters/academic-terms?limit=100', a.token);
+        assert.equal(lookup.status, 200);
+        const catalog = (await lookup.json() as any).data;
+        assert(catalog.items.some((item: any) => item.id === term.id));
+        assert(!catalog.items.some((item: any) => item.id === inactive.id));
+        assert(!('semesters' in catalog.items[0])); assert(!('_count' in catalog.items[0]));
+        const body = { name: 'Linked semester', startDate: term.startDate.toISOString(), endDate: term.endDate.toISOString(), academicTermId: term.id };
+        assert.equal((await req('POST', '/semesters', a.token, { ...body, academicTermId: randomUUID() })).status, 404);
+        assert.equal((await req('POST', '/semesters', a.token, { ...body, academicTermId: inactive.id })).status, 409);
+        assert.equal((await req('POST', '/semesters', a.token, { ...body, academicTermId: 'invalid' })).status, 400);
+        linked = await create('/semesters', a.token, body);
+        assert.equal(linked.academicTerm.id, term.id);
+        const route = `/semesters/${linked.id}`;
+        assert.equal((await req('PATCH', route, b.token, { academicTermId: null })).status, 404);
+        assert.equal((await req('PATCH', route, a.token, { startDate: '2027-01-01T00:00:00Z' })).status, 400);
+        assert.equal((await req('PATCH', route, a.token, { endDate: body.startDate })).status, 400);
+        const race = await Promise.all([
+          req('PATCH', route, a.token, { startDate: '2026-11-01T00:00:00Z' }),
+          req('PATCH', route, a.token, { endDate: '2026-10-01T00:00:00Z' }),
+        ]);
+        assert.equal(race.filter(r => r.status === 200).length, 1);
+        assert(race.some(r => r.status === 400 || r.status === 409));
+        const after = await prisma.semester.findUniqueOrThrow({ where: { id: linked.id } });
+        assert(after.startDate < after.endDate); assert.equal(after.academicTermId, term.id);
+        await assert.rejects(adminAcademicService.deleteAcademicTerm(a.id, term.id), (e: any) => e.statusCode === 409);
+        await prisma.academicTerm.update({ where: { id: term.id }, data: { isActive: false } });
+        assert.equal((await req('PATCH', route, a.token, { name: 'Historical semester' })).status, 200);
+        const historical = (await (await req('GET', route, a.token)).json() as any).data;
+        assert.equal(historical.academicTerm.isActive, false);
+        assert.equal((await req('PATCH', route, a.token, { academicTermId: inactive.id })).status, 409);
+        assert.equal((await req('PATCH', route, a.token, { academicTermId: null })).status, 200);
+        assert.equal((await prisma.semester.findUniqueOrThrow({ where: { id: linked.id } })).academicTermId, null);
+        assert.equal((await req('PATCH', route, a.token, { academicTermId: term.id })).status, 409);
+        await prisma.academicTerm.update({ where: { id: term.id }, data: { isActive: true } });
+        assert.equal((await req('PATCH', route, a.token, { academicTermId: term.id })).status, 200);
+      } finally {
+        if (linked) await prisma.semester.delete({ where: { id: linked.id } });
+        await prisma.academicTerm.deleteMany({ where: { id: { in: [term.id, inactive.id] } } });
+      }
+    });
+    await t.test('catalog deletion cannot broaden targeted resource visibility and rolls back', async () => {
+      const stamp = randomUUID();
+      const login = await req('POST', '/auth/login', '', { email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD });
+      assert.equal(login.status, 200);
+      const adminToken = (await login.json() as any).data.accessToken;
+      const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+
+      const deptA = await prisma.department.create({ data: { name: `Dept A ${stamp}`, code: `DA${stamp.slice(0, 8)}` } });
+      const deptB = await prisma.department.create({ data: { name: `Dept B ${stamp}`, code: `DB${stamp.slice(0, 8)}` } });
+      const courseA = await prisma.course.create({ data: { departmentId: deptA.id, name: `Course A ${stamp}`, code: `CA${stamp.slice(0, 8)}` } });
+      const courseB = await prisma.course.create({ data: { departmentId: deptB.id, name: `Course B ${stamp}`, code: `CB${stamp.slice(0, 8)}` } });
+
+      await req('PATCH', `/admin/users/${a.id}/enrollment`, adminToken, { courseId: courseA.id });
+      await req('PATCH', `/admin/users/${b.id}/enrollment`, adminToken, { courseId: courseB.id });
+
+      const resCourse = await prisma.academicResource.create({
+        data: {
+          title: `Course Resource ${stamp}`,
+          fileUrl: `https://example.com/res-${stamp}.pdf`,
+          fileType: 'PDF',
+          category: 'SYLLABUS',
+          courseId: courseA.id,
+          departmentId: deptA.id,
+          uploadedByUserId: adminUser.id,
+        },
+      });
+
+      const resDept = await prisma.academicResource.create({
+        data: {
+          title: `Dept Resource ${stamp}`,
+          fileUrl: `https://example.com/dept-${stamp}.pdf`,
+          fileType: 'PDF',
+          category: 'SYLLABUS',
+          departmentId: deptA.id,
+          uploadedByUserId: adminUser.id,
+        },
+      });
+
+      try {
+        const feedA = await req('GET', '/content/resources', a.token);
+        assert.equal(feedA.status, 200);
+        const itemsA = (await feedA.json() as any).data;
+        assert(itemsA.some((r: any) => r.id === resCourse.id));
+        assert(itemsA.some((r: any) => r.id === resDept.id));
+
+        const feedB = await req('GET', '/content/resources', b.token);
+        assert.equal(feedB.status, 200);
+        const itemsB = (await feedB.json() as any).data;
+        assert(!itemsB.some((r: any) => r.id === resCourse.id), 'Unrelated student must not see course resource');
+        assert(!itemsB.some((r: any) => r.id === resDept.id), 'Unrelated student must not see dept resource');
+
+        await req('PATCH', `/admin/users/${a.id}/enrollment`, adminToken, { courseId: null });
+
+        const delCourseRes = await req('DELETE', `/admin/academics/courses/${courseA.id}`, adminToken);
+        assert.equal(delCourseRes.status, 409, 'Deleting course with targeted resource must be rejected with 409');
+        await assert.rejects(
+          adminAcademicService.deleteCourse(adminUser.id, courseA.id),
+          (err: any) => err.statusCode === 409 && err.message.includes('targeted academic resource'),
+          'Service call must reject with 409 and descriptive message'
+        );
+
+        const courseCheck = await prisma.course.findUnique({ where: { id: courseA.id } });
+        assert.notEqual(courseCheck, null, 'Course must not be deleted');
+        const resCourseCheck = await prisma.academicResource.findUniqueOrThrow({ where: { id: resCourse.id } });
+        assert.equal(resCourseCheck.courseId, courseA.id, 'Resource courseId must not be set to null');
+
+        const feedBAfterCourse = await req('GET', '/content/resources', b.token);
+        const itemsBAfterCourse = (await feedBAfterCourse.json() as any).data;
+        assert(!itemsBAfterCourse.some((r: any) => r.id === resCourse.id), 'Unrelated student must not see resource after failed course deletion');
+
+        // Delete resCourse and delete courseA cleanly
+        await prisma.academicResource.delete({ where: { id: resCourse.id } });
+        const delCourseSuccess = await req('DELETE', `/admin/academics/courses/${courseA.id}`, adminToken);
+        assert.equal(delCourseSuccess.status, 200, 'Deleting course after its resource is removed must succeed');
+
+        // Now deptA has 0 courses, but has resDept targeted to it. Deleting deptA MUST FAIL with 409
+        const delDeptRes = await req('DELETE', `/admin/academics/departments/${deptA.id}`, adminToken);
+        assert.equal(delDeptRes.status, 409, 'Deleting department with targeted resource must be rejected with 409');
+        await assert.rejects(
+          adminAcademicService.deleteDepartment(adminUser.id, deptA.id),
+          (err: any) => err.statusCode === 409 && err.message.includes('targeted academic resource'),
+          'Service call must reject with 409 and descriptive message'
+        );
+
+        const deptCheck = await prisma.department.findUnique({ where: { id: deptA.id } });
+        assert.notEqual(deptCheck, null, 'Department must not be deleted');
+        const resDeptCheck = await prisma.academicResource.findUniqueOrThrow({ where: { id: resDept.id } });
+        assert.equal(resDeptCheck.departmentId, deptA.id, 'Resource departmentId must not be set to null');
+
+        const feedBAfterDept = await req('GET', '/content/resources', b.token);
+        const itemsBAfterDept = (await feedBAfterDept.json() as any).data;
+        assert(!itemsBAfterDept.some((r: any) => r.id === resDept.id), 'Unrelated student must not see resource after failed dept deletion');
+
+        // Now delete resDept
+        await prisma.academicResource.delete({ where: { id: resDept.id } });
+
+        // Deleting deptA should now succeed
+        const delDeptSuccess = await req('DELETE', `/admin/academics/departments/${deptA.id}`, adminToken);
+        assert.equal(delDeptSuccess.status, 200, 'Deleting department after resource removal must succeed');
+      } finally {
+        await req('PATCH', `/admin/users/${a.id}/enrollment`, adminToken, { courseId: null }).catch(() => {});
+        await req('PATCH', `/admin/users/${b.id}/enrollment`, adminToken, { courseId: null }).catch(() => {});
+        await prisma.academicResource.deleteMany({ where: { id: { in: [resCourse.id, resDept.id] } } }).catch(() => {});
+        await prisma.course.deleteMany({ where: { id: { in: [courseA.id, courseB.id] } } }).catch(() => {});
+        await prisma.department.deleteMany({ where: { id: { in: [deptA.id, deptB.id] } } }).catch(() => {});
+      }
+    });
+    await t.test('last active admin invariant is protected under competing concurrent status and role operations', async () => {
+      const stamp = randomUUID();
+      const login = await req('POST', '/auth/login', '', { email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD });
+      assert.equal(login.status, 200);
+      const adminToken = (await login.json() as any).data.accessToken;
+
+      const admin1 = await adminUserService.createAdmin(a.id, {
+        email: `adm1_${stamp}@integrum.test`,
+        password: 'AdminPassword123!',
+        firstName: 'AdmOne',
+        lastName: 'Test',
+        permissionsLevel: 1,
+      });
+      const admin2 = await adminUserService.createAdmin(a.id, {
+        email: `adm2_${stamp}@integrum.test`,
+        password: 'AdminPassword123!',
+        firstName: 'AdmTwo',
+        lastName: 'Test',
+        permissionsLevel: 1,
+      });
+
+      const login1 = await req('POST', '/auth/login', '', { email: `adm1_${stamp}@integrum.test`, password: 'AdminPassword123!' });
+      assert.equal(login1.status, 200);
+      const token1 = (await login1.json() as any).data.accessToken;
+
+      const login2 = await req('POST', '/auth/login', '', { email: `adm2_${stamp}@integrum.test`, password: 'AdminPassword123!' });
+      assert.equal(login2.status, 200);
+      const token2 = (await login2.json() as any).data.accessToken;
+
+      const seedAdmin = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      try {
+        await prisma.user.update({ where: { id: seedAdmin.id }, data: { isActive: false } });
+
+        const [res1, res2] = await Promise.all([
+          req('PATCH', `/admin/users/${admin2.id}/status`, token1, { isActive: false }),
+          req('PATCH', `/admin/users/${admin1.id}/status`, token2, { isActive: false }),
+        ]);
+
+        const statuses = [res1.status, res2.status].sort();
+        assert.deepEqual(statuses, [200, 400], 'One deactivation must succeed with 200 and one must fail with 400');
+        const remainingAfterDeact = await prisma.user.count({
+          where: { role: 'ADMIN', isActive: true, id: { in: [admin1.id, admin2.id] } },
+        });
+        assert.equal(remainingAfterDeact, 1, 'Exactly one admin must remain active; never zero');
+
+        await prisma.user.updateMany({ where: { id: { in: [admin1.id, admin2.id] } }, data: { isActive: true, role: 'ADMIN' } });
+
+        const [login1Demote, login2Demote] = await Promise.all([
+          req('POST', '/auth/login', '', { email: `adm1_${stamp}@integrum.test`, password: 'AdminPassword123!' }),
+          req('POST', '/auth/login', '', { email: `adm2_${stamp}@integrum.test`, password: 'AdminPassword123!' }),
+        ]);
+        assert.equal(login1Demote.status, 200);
+        assert.equal(login2Demote.status, 200);
+        const demoteToken1 = (await login1Demote.json() as any).data.accessToken;
+        const demoteToken2 = (await login2Demote.json() as any).data.accessToken;
+
+        const [demote1, demote2] = await Promise.all([
+          req('PATCH', `/admin/users/${admin2.id}/role`, demoteToken1, { role: 'STUDENT' }),
+          req('PATCH', `/admin/users/${admin1.id}/role`, demoteToken2, { role: 'STUDENT' }),
+        ]);
+
+        const demoteStatuses = [demote1.status, demote2.status].sort();
+        assert.deepEqual(demoteStatuses, [200, 400], 'One demotion must succeed with 200 and one must fail with 400');
+        const remainingAfterDemote = await prisma.user.count({
+          where: { role: 'ADMIN', isActive: true, id: { in: [admin1.id, admin2.id] } },
+        });
+        assert.equal(remainingAfterDemote, 1, 'Exactly one admin must remain active after competing demotions');
+
+        await prisma.user.updateMany({ where: { id: { in: [admin1.id, admin2.id] } }, data: { isActive: true, role: 'ADMIN' } });
+
+        const [login1Mixed, login2Mixed] = await Promise.all([
+          req('POST', '/auth/login', '', { email: `adm1_${stamp}@integrum.test`, password: 'AdminPassword123!' }),
+          req('POST', '/auth/login', '', { email: `adm2_${stamp}@integrum.test`, password: 'AdminPassword123!' }),
+        ]);
+        assert.equal(login1Mixed.status, 200);
+        assert.equal(login2Mixed.status, 200);
+        const mixedToken1 = (await login1Mixed.json() as any).data.accessToken;
+        const mixedToken2 = (await login2Mixed.json() as any).data.accessToken;
+
+        const [mixed1, mixed2] = await Promise.all([
+          req('PATCH', `/admin/users/${admin2.id}/status`, mixedToken1, { isActive: false }),
+          req('PATCH', `/admin/users/${admin1.id}/role`, mixedToken2, { role: 'STUDENT' }),
+        ]);
+
+        const mixedStatuses = [mixed1.status, mixed2.status].sort();
+        assert.deepEqual(mixedStatuses, [200, 400], 'One operation must succeed with 200 and one must fail with 400 in mixed race');
+        const remainingAfterMixed = await prisma.user.count({
+          where: { role: 'ADMIN', isActive: true, id: { in: [admin1.id, admin2.id] } },
+        });
+        assert.equal(remainingAfterMixed, 1, 'Exactly one admin must remain active after mixed race');
+      } finally {
+        await prisma.user.update({ where: { id: seedAdmin.id }, data: { isActive: true } }).catch(() => {});
+        await prisma.adminAuditLog.deleteMany({ where: { targetId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+        await prisma.adminProfile.deleteMany({ where: { userId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+        await prisma.studentProfile.deleteMany({ where: { userId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+        await prisma.authSession.deleteMany({ where: { userId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+        await prisma.user.deleteMany({ where: { id: { in: [admin1.id, admin2.id] } } }).catch(() => {});
+      }
+    });
+    await t.test('report filters consistently scope cohorts, dates and UTC trends', async () => {
+      const stamp = randomUUID();
+      const inside = new Date('2001-01-01T00:30:00Z'), outside = new Date('2000-12-31T23:30:00Z');
+      const originalA = await prisma.user.findUniqueOrThrow({ where: { id: a.id } });
+      const originalB = await prisma.user.findUniqueOrThrow({ where: { id: b.id } });
+      const dept1 = await prisma.department.create({ data: { name: `Reports one ${stamp}`, code: `R1${stamp}` } });
+      const dept2 = await prisma.department.create({ data: { name: `Reports two ${stamp}`, code: `R2${stamp}` } });
+      const c1 = await prisma.course.create({ data: { departmentId: dept1.id, name: 'First', code: `C1${stamp}` } });
+      const c2 = await prisma.course.create({ data: { departmentId: dept2.id, name: 'Second', code: `C2${stamp}` } });
+      const target = await prisma.subject.create({ data: { semesterId: sem.id, name: 'Report activity', totalClasses: 2, attendedClasses: 1 } });
+      const manual = await prisma.subject.create({ data: { semesterId: sem.id, name: 'Report manual', totalClasses: 10, attendedClasses: 8 } });
+      const query = { departmentId: dept1.id, courseId: c1.id, startDate: inside.toISOString(), endDate: inside.toISOString() };
+      try {
+        await prisma.studentProfile.update({ where: { id: a.profileId }, data: { courseId: c1.id } });
+        await prisma.studentProfile.update({ where: { id: b.profileId }, data: { courseId: c2.id } });
+        await prisma.user.update({ where: { id: a.id }, data: { createdAt: inside } });
+        await prisma.user.update({ where: { id: b.id }, data: { createdAt: outside } });
+        await prisma.attendanceRecord.createMany({ data: [
+          { subjectId: target.id, date: inside, status: 'PRESENT' },
+          { subjectId: target.id, date: outside, status: 'ABSENT' },
+        ] });
+        await prisma.assignment.createMany({ data: [
+          { subjectId: target.id, title: stamp, createdAt: inside, dueDate: inside, status: 'SUBMITTED' },
+          { subjectId: target.id, title: stamp, createdAt: outside, dueDate: inside, status: 'PENDING' },
+        ] });
+        await prisma.aIExecutionLog.createMany({ data: [
+          { studentProfileId: a.profileId, module: 'NOTES', operation: stamp, startedAt: inside, status: 'SUCCESS' },
+          { studentProfileId: a.profileId, module: 'NOTES', operation: stamp, startedAt: outside, status: 'FAILED' },
+          { studentProfileId: b.profileId, module: 'NOTES', operation: stamp, startedAt: inside, status: 'FAILED' },
+        ] });
+        await prisma.jobApplication.createMany({ data: [
+          { studentProfileId: a.profileId, companyName: stamp, role: 'Intern', createdAt: inside, appliedDate: outside, status: 'OFFERED' },
+          { studentProfileId: a.profileId, companyName: stamp, role: 'Intern', createdAt: outside },
+          { studentProfileId: b.profileId, companyName: stamp, role: 'Intern', createdAt: inside },
+        ] });
+        const users = await adminReportService.getUserReport(query);
+        assert.equal(users.summary.totalUsers, 1); assert.equal(users.summary.students, 1); assert.equal(users.summary.admins, 0);
+        assert.deepEqual(users.registrations, [{ period: '2001-01-01', count: 1 }]);
+        assert.deepEqual(users.studentsByCourse.map(c => [c.courseId, c.count]), [[c1.id, 1]]);
+        assert.deepEqual(users.studentsByDepartment.map(d => [d.departmentId, d.count]), [[dept1.id, 1]]);
+        assert.equal(users.unassignedStudents, 0);
+        const noUsers = await adminReportService.getUserReport({ ...query, startDate: '2002-01-01T00:00:00Z', endDate: '2002-12-31T00:00:00Z' });
+        assert.equal(noUsers.summary.totalUsers, 0); assert.equal(noUsers.studentsByCourse[0]!.count, 0);
+        const academics = await adminReportService.getAcademicReport(query);
+        assert.equal(academics.overview.totalStudentSubjects, 1);
+        assert.equal(academics.overview.totalAttendanceRecords, 1);
+        assert.equal(academics.overview.averageAttendancePercentage, 100);
+        assert.equal(academics.overview.totalAssignments, 1); assert.equal(academics.overview.submittedAssignments, 1);
+        assert.equal(academics.overview.unassignedStudents, 0);
+        assert.equal(academics.dateScope.subjectsWithExcludedManualTotals, 1);
+        assert.equal(academics.byCourse[0]!.averageAttendance, 100);
+        const usage = await adminReportService.getUsageReport(query);
+        assert.equal(usage.ai.totalExecutions, 1); assert.equal(usage.ai.successRate, 100);
+        assert.equal(usage.career.totalApplications, 1); assert.equal(usage.career.offered, 1);
+        assert.deepEqual(usage.career.applicationsByMonth, [{ month: '2001-01', count: 1 }]);
+        for (const report of ['getUserReport', 'getAcademicReport', 'getUsageReport'] as const) {
+          await assert.rejects(adminReportService[report]({ departmentId: dept2.id, courseId: c1.id }), (e: any) => e.statusCode === 400);
+          await assert.rejects(adminReportService[report]({ courseId: randomUUID() }), (e: any) => e.statusCode === 404);
+        }
+        const deptUsage = await adminReportService.getUsageReport({ departmentId: dept2.id });
+        assert.equal(deptUsage.ai.totalExecutions, 1); assert.equal(deptUsage.career.totalApplications, 1);
+      } finally {
+        await prisma.aIExecutionLog.deleteMany({ where: { operation: stamp } });
+        await prisma.jobApplication.deleteMany({ where: { companyName: stamp } });
+        await prisma.subject.deleteMany({ where: { id: { in: [target.id, manual.id] } } });
+        await prisma.studentProfile.updateMany({ where: { id: { in: [a.profileId, b.profileId] } }, data: { courseId: null } });
+        await prisma.user.update({ where: { id: a.id }, data: { createdAt: originalA.createdAt } });
+        await prisma.user.update({ where: { id: b.id }, data: { createdAt: originalB.createdAt } });
+        await prisma.course.deleteMany({ where: { id: { in: [c1.id, c2.id] } } });
+        await prisma.department.deleteMany({ where: { id: { in: [dept1.id, dept2.id] } } });
+      }
+    });
+    await t.test('attendance totals, mode conflicts, ownership and concurrent writes', async () => {
+      const target = await create('/subjects', a.token, { semesterId: sem.id, name: 'Attendance integrity' });
+      const route = `/subjects/${target.id}`;
+      const recordBody = { subjectId: target.id, date: '2026-09-20T10:00:00Z', status: 'PRESENT' };
+      async function totals(total: number, attended: number) {
+        const row = await prisma.subject.findUniqueOrThrow({ where: { id: target.id } });
+        assert.equal(row.totalClasses, total); assert.equal(row.attendedClasses, attended);
+      }
+      try {
+        assert.equal((await req('POST', '/subjects', a.token, { semesterId: sem.id, name: 'Invalid attendance', attendedClasses: 1 })).status, 400);
+        assert.equal((await req('PATCH', route, a.token, { totalClasses: 5, attendedClasses: 3 })).status, 200);
+        assert.equal((await req('PATCH', route, a.token, { totalClasses: 2 })).status, 400);
+        assert.equal((await req('PATCH', route, a.token, { attendedClasses: 6 })).status, 400);
+        assert.equal((await req('POST', '/attendance', a.token, recordBody)).status, 409);
+        await totals(5, 3);
+        assert.equal(await prisma.attendanceRecord.count({ where: { subjectId: target.id } }), 0);
+        assert.equal((await req('PATCH', route, a.token, { totalClasses: 0, attendedClasses: 0 })).status, 200);
+        const records = await Promise.all(['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'].map(status => create('/attendance', a.token, { ...recordBody, status })));
+        await totals(4, 2);
+        assert.equal((await req('PATCH', route, a.token, { attendedClasses: 4 })).status, 409);
+        assert.equal((await req('PATCH', route, a.token, { attendanceGoal: 80 })).status, 200);
+        assert.equal((await req('POST', '/attendance', b.token, recordBody)).status, 404);
+        for (const method of ['PATCH', 'DELETE']) {
+          assert.equal((await req(method, `/attendance/${records[0].id}`, b.token, method === 'PATCH' ? { status: 'ABSENT' } : undefined)).status, 404);
+        }
+        const changed = await Promise.all([
+          req('PATCH', `/attendance/${records[1].id}`, a.token, { status: 'PRESENT' }),
+          req('DELETE', `/attendance/${records[0].id}`, a.token),
+        ]);
+        assert.equal(changed[0]!.status, 200); assert.equal(changed[1]!.status, 204);
+        await totals(3, 2);
+        for (const record of records.slice(1)) assert.equal((await req('DELETE', `/attendance/${record.id}`, a.token)).status, 204);
+        await totals(0, 0);
+        assert.equal((await req('PATCH', route, a.token, { totalClasses: 2, attendedClasses: 1 })).status, 200);
+        await totals(2, 1);
+      } finally { await prisma.subject.delete({ where: { id: target.id } }); }
+    });
+    await t.test('attendance create, update and delete roll back when aggregate persistence fails', async () => {
+      const target = await create('/subjects', a.token, { semesterId: sem.id, name: 'Attendance rollback' });
+      const body = { subjectId: target.id, date: '2026-09-20T10:00:00Z', status: 'PRESENT' };
+      const record = await create('/attendance', a.token, body);
+      // Test-only fault injection on this disposable database and this UUID fixture.
+      assert.match(target.id, /^[0-9a-f-]{36}$/);
+      await prisma.$executeRawUnsafe(`CREATE FUNCTION closure_attendance_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected attendance persistence failure'; END $$`);
+      try {
+        await prisma.$executeRawUnsafe(`CREATE TRIGGER closure_attendance_failure BEFORE UPDATE ON "Subject" FOR EACH ROW WHEN (OLD.id = '${target.id}') EXECUTE FUNCTION closure_attendance_failure()`);
+        assert.equal((await req('POST', '/attendance', a.token, body)).status, 500);
+        assert.equal((await req('PATCH', `/attendance/${record.id}`, a.token, { status: 'ABSENT' })).status, 500);
+        assert.equal((await req('DELETE', `/attendance/${record.id}`, a.token)).status, 500);
+        const rows = await prisma.attendanceRecord.findMany({ where: { subjectId: target.id } });
+        assert.equal(rows.length, 1); assert.equal(rows[0]!.status, 'PRESENT'); assert.equal(rows[0]!.id, record.id);
+        const row = await prisma.subject.findUniqueOrThrow({ where: { id: target.id } });
+        assert.equal(row.totalClasses, 1); assert.equal(row.attendedClasses, 1);
+      } finally {
+        await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS closure_attendance_failure ON "Subject"');
+        await prisma.$executeRawUnsafe('DROP FUNCTION closure_attendance_failure()');
+        await prisma.subject.delete({ where: { id: target.id } });
+      }
+    });
+    await t.test('career classification, history, validation and ownership', async () => {
+      const route = '/job-applications';
+      const internship = await create(route, a.token, { companyName: 'Legacy', role: 'Intern' });
+      assert.equal(internship.applicationType, 'INTERNSHIP');
+      assert.equal(internship.eligibilityStatus, 'UNKNOWN');
+      const history = [{ date: '2026-09-19T10:00:00Z', round: 'Technical', outcome: 'Passed' }];
+      const placement = await create(route, a.token, { companyName: 'Graduate', role: 'Engineer', applicationType: 'PLACEMENT', eligibilityStatus: 'ELIGIBLE', interviewHistory: history, interviewRound: 'HR' });
+      await create(route, b.token, { companyName: 'Foreign', role: 'Engineer', applicationType: 'PLACEMENT' });
+      for (const suffix of ['/placements', '?applicationType=PLACEMENT']) {
+        const r = await req('GET', route + suffix, a.token);
+        assert.equal(r.status, 200);
+        assert.deepEqual((await r.json() as any).data.map((v: any) => v.id), [placement.id]);
+      }
+      const list = await req('GET', route + '/internships', a.token);
+      assert.ok(placement.interviewHistory[0]?.id, 'Persistent ID must be assigned on creation');
+      const { id: _assignedId, ...roundWithoutId } = placement.interviewHistory[0];
+      assert.deepEqual([roundWithoutId], history);
+      assert.equal(placement.interviewRound, 'HR');
+      for (const method of ['GET', 'PATCH', 'DELETE']) {
+        assert.equal((await req(method, `${route}/${placement.id}`, b.token, method === 'PATCH' ? { eligibilityStatus: 'NOT_ELIGIBLE' } : undefined)).status, 404);
+      }
+      assert.equal((await req('GET', route + '/placements')).status, 401);
+      assert.equal((await req('GET', route + '?applicationType=INVALID', a.token)).status, 400);
+      for (const payload of [{ applicationType: 'INVALID' }, { eligibilityStatus: 'INVALID' }, { interviewHistory: [{ date: 'bad', round: '' }] }]) {
+        assert.equal((await req('PATCH', `${route}/${placement.id}`, a.token, payload)).status, 400);
+      }
+      const updated = await req('PATCH', `${route}/${placement.id}`, a.token, { applicationType: 'INTERNSHIP', eligibilityStatus: 'NOT_ELIGIBLE', interviewHistory: [] });
+      assert.equal(updated.status, 200);
+      const saved = await prisma.jobApplication.findUniqueOrThrow({ where: { id: placement.id } });
+      assert.equal(saved.applicationType, 'INTERNSHIP');
+      assert.equal(saved.eligibilityStatus, 'NOT_ELIGIBLE');
+      assert.deepEqual(saved.interviewHistory, []);
+      assert.equal(saved.interviewRound, 'HR');
+    });
+    await t.test('analytics formulas, empty accounts and student isolation', async () => {
+      const empty = await student('Empty');
+      async function data(route: string, token: string) {
+        const response = await req('GET', '/analytics/' + route, token);
+        assert.equal(response.status, 200);
+        return (await response.json() as any).data;
+      }
+      const dashboard = await data('dashboard', empty.token);
+      assert.equal(dashboard.career.resumeCompletionScore, 0);
+      assert.equal(dashboard.academic.studyPlanGoalAchievementRate, 0);
+      assert.deepEqual(await data('subject-performance', empty.token), []);
+      assert.equal((await data('internship-stats', empty.token)).totalApplications, 0);
+      for (const route of ['subject-performance', 'internship-stats']) {
+        assert.equal((await req('GET', '/analytics/' + route)).status, 401);
+      }
+      await prisma.subject.update({ where: { id: subject.id }, data: { totalClasses: 4, attendedClasses: 3 } });
+      await prisma.assignment.createMany({ data: [
+        { subjectId: subject.id, title: 'Submitted', status: 'SUBMITTED' },
+        { subjectId: subject.id, title: 'Pending', status: 'PENDING' },
+      ] });
+      await prisma.studyPlan.update({ where: { id: own.id }, data: { status: 'COMPLETED' } });
+      await create('/study-plans', a.token, { title: 'Still active' });
+      const resume = await create('/resumes', a.token, { title: 'Active resume', isActive: true,
+        content: { personalInfo: { name: 'Student' }, education: [{ institution: 'College' }],
+          experience: [{}], skills: ['TypeScript'], projects: [{ title: '   ' }] } });
+      // A newer inactive resume must not silently replace the selected active one.
+      await create('/resumes', a.token, { title: 'Unused draft', content: {} });
+      const subjectStats = await data('subject-performance', a.token);
+      assert.equal(subjectStats.length, 1);
+      assert.equal(subjectStats[0].subjectId, subject.id);
+      assert.equal(subjectStats[0].attendancePercentage, 75);
+      assert.equal(subjectStats[0].assignmentCompletionRate, 50);
+      const populated = await data('dashboard', a.token);
+      assert.equal(populated.academic.attendancePercentage, 75);
+      assert.equal(populated.academic.assignmentCompletionRate, 50);
+      assert.equal(populated.academic.studyPlanGoalAchievementRate, 50);
+      assert.equal(populated.career.resumeCompletionScore, 60);
+      assert.equal(populated.career.resumeCompletion.resumeId, resume.id);
+      assert.deepEqual(populated.career.resumeCompletion.missingSections, ['experience', 'projects']);
+      // Latest version, not any historical complete version, determines completion.
+      assert.equal((await req('PATCH', '/resumes/' + resume.id, a.token, { content: {} })).status, 200);
+      assert.equal((await data('dashboard', a.token)).career.resumeCompletionScore, 0);
+      await create('/job-applications', a.token, { companyName: 'Offer', role: 'Intern', status: 'OFFERED' });
+      await create('/job-applications', a.token, { companyName: 'Placement', role: 'Graduate', status: 'OFFERED', applicationType: 'PLACEMENT' });
+      await create('/job-applications', b.token, { companyName: 'Foreign offer', role: 'Intern', status: 'OFFERED' });
+      const stats = await data('internship-stats', a.token);
+      assert.equal(stats.totalApplications, 3);
+      assert.equal(stats.offerCount, 1);
+      assert(Math.abs(stats.offerRate - 100 / 3) < 1e-9);
+      assert.deepEqual(await data('subject-performance', b.token), []);
+      assert.equal((await data('dashboard', b.token)).career.resumeCompletionScore, 0);
+    });
+    await t.test('expanded study-plan response and invalid provider output', async () => {
+      const body = { topic: 'Database normalization', goals: 'Practice dependency analysis' };
+      assert.equal((await req('POST', '/ai/study-plan', '', body)).status, 401);
+      const response = await req('POST', '/ai/study-plan', a.token, body);
+      assert.equal(response.status, 201);
+      const plan = (await response.json() as any).data;
+      assert(generatedStudyPlanOutputSchema.safeParse(plan).success);
+      assert.equal(plan.weeklySchedule[0].topic, body.topic);
+      assert.equal(plan.goalRecommendations[0], body.goals);
+      assert(plan.suggestedTasks.length > 0 && plan.title && plan.overview && plan.recommendedTargetDate);
+      const original = MockProvider.prototype.generateStudyPlan;
+      // Deliberately violate the provider contract to exercise the real API boundary.
+      MockProvider.prototype.generateStudyPlan = async () => ({ ...plan, weeklySchedule: [{ ...plan.weeklySchedule[0], durationMinutes: -1 }] });
+      try {
+        const failed = await req('POST', '/ai/study-plan', a.token, body);
+        assert.equal(failed.status, 500);
+        const failure = await prisma.aIExecutionLog.findFirst({
+          where: { studentProfileId: a.profileId, module: 'STUDY_PLAN', status: 'FAILED' },
+          orderBy: { startedAt: 'desc' },
+        });
+        assert.equal(failure?.errorMessage, 'AI generated invalid structure');
+      } finally { MockProvider.prototype.generateStudyPlan = original; }
+      for (const key of ['weeklySchedule', 'revisionPlan', 'topicPriorities', 'goalRecommendations']) {
+        const incomplete = { ...plan }; delete incomplete[key];
+        assert.equal(generatedStudyPlanOutputSchema.safeParse(incomplete).success, false);
+        assert.equal(generatedStudyPlanOutputSchema.safeParse({ ...plan, [key]: [] }).success, false);
+      }
+      assert.equal(generatedStudyPlanOutputSchema.safeParse({ ...plan,
+        topicPriorities: [{ topic: 'SQL', priority: 'URGENT', reason: 'Test' }] }).success, false);
+      assert.equal(generatedStudyPlanOutputSchema.safeParse({ ...plan,
+        goalRecommendations: ['   '] }).success, false);
+    });
+    await t.test('refresh rotation, logout and password reset revoke sessions', async () => {
+      const account = await student('Sessions');
+      const credentials = { email: `${prefix}_Sessions@integrum.test`, password: 'ClosurePass123!' };
+      const first = await authService.login(credentials);
+      const rotated = await authService.refresh(first.refreshToken);
+      assert.notEqual(rotated.refreshToken, first.refreshToken);
+      await assert.rejects(authService.refresh(first.refreshToken), { statusCode: 401 });
+      const parallel = await Promise.allSettled([
+        authService.refresh(rotated.refreshToken), authService.refresh(rotated.refreshToken),
+      ]);
+      assert.equal(parallel.filter(r => r.status === 'fulfilled').length, 1);
+      const winner = parallel.find(r => r.status === 'fulfilled');
+      assert(winner?.status === 'fulfilled');
+      assert.equal((await req('POST', '/auth/logout', winner.value.accessToken)).status, 200);
+      assert.equal((await req('GET', '/users/me', winner.value.accessToken)).status, 401);
+      await assert.rejects(authService.refresh(winner.value.refreshToken), { statusCode: 401 });
+      const second = await authService.login(credentials);
+      const resetToken = randomUUID();
+      await prisma.user.update({ where: { id: account.id }, data: {
+        passwordResetTokenHash: createHash('sha256').update(resetToken).digest('hex'),
+        passwordResetExpires: new Date(Date.now() + 60000),
+      } });
+      await authService.resetPassword(resetToken, 'NewClosurePass456!');
+      assert.equal((await req('GET', '/users/me', second.accessToken)).status, 401);
+      assert.equal((await req('GET', '/users/me', account.token)).status, 401);
+      await assert.rejects(authService.refresh(second.refreshToken), { statusCode: 401 });
+      await assert.rejects(authService.resetPassword(resetToken, 'ThirdPassword789!'), { statusCode: 400 });
+      await assert.rejects(authService.login(credentials), { statusCode: 401 });
+      const fresh = await authService.login({ ...credentials, password: 'NewClosurePass456!' });
+      assert.equal((await req('GET', '/users/me', fresh.accessToken)).status, 200);
+      const admin = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      await adminUserService.updateUserStatus(admin.id, account.id, { isActive: false });
+      assert.equal((await req('GET', '/users/me', fresh.accessToken)).status, 403);
+      await adminUserService.updateUserStatus(admin.id, account.id, { isActive: true });
+      assert.equal((await req('GET', '/users/me', fresh.accessToken)).status, 401);
+      await assert.rejects(authService.refresh(fresh.refreshToken), { statusCode: 401 });
+      await prisma.adminAuditLog.deleteMany({ where: { targetId: account.id } });
+    });
+    await t.test('email outage recovery and verification/reset tokens', async () => {
+      const original = emailService.send;
+      let deliveredBody = '';
+      try {
+        emailService.send = async () => { throw new Error('Simulated provider outage'); };
+        const account = await student('EmailOutage');
+        assert.equal(account.verificationEmailSent, false);
+        const known = await authService.forgotPassword(`${prefix}_EmailOutage@integrum.test`);
+        const unknown = await authService.forgotPassword(`${prefix}_Absent@integrum.test`);
+        assert.deepEqual(known, unknown);
+        assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: account.id } })).passwordResetTokenHash, null);
+        emailService.send = async (_to, _subject, body) => { deliveredBody = body; };
+        await authService.resendVerificationEmail(account.id);
+        const verificationToken = deliveredBody.match(/[a-f0-9]{64}/)?.[0];
+        assert(verificationToken);
+        await authService.verifyEmail(verificationToken);
+        assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: account.id } })).isVerified, true);
+        await authService.forgotPassword(`${prefix}_EmailOutage@integrum.test`);
+        const resetToken = deliveredBody.match(/[a-f0-9]{64}/)?.[0];
+        assert(resetToken);
+        await authService.resetPassword(resetToken, 'RecoveredPassword456!');
+        const loggedIn = await authService.login({ email: `${prefix}_EmailOutage@integrum.test`, password: 'RecoveredPassword456!' });
+        assert(loggedIn.accessToken);
+      } finally { emailService.send = original; }
+    });
+    await t.test('cascade cleanup queue, rollback, provider failure and retry', async () => {
+      const local = new LocalStorageProvider();
+      const owner = await student('StorageCascade');
+      async function fixture() {
+        const semester = await create('/semesters', owner.token, { name: 'Cleanup', startDate: '2026-09-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' });
+        const subject = await create('/subjects', owner.token, { semesterId: semester.id, name: 'Cleanup' });
+        const note = await create('/notes', owner.token, { subjectId: subject.id, title: 'Cleanup file' });
+        const result = await upload(`/notes/${note.id}/upload`, owner.token);
+        assert.equal(result.status, 200);
+        return { semester, subject, note, fileId: (await result.json() as any).data.fileId as string };
+      }
+      const first = await fixture();
+      await assert.rejects(prisma.$transaction(async tx => {
+        await tx.subject.delete({ where: { id: first.subject.id } });
+        throw new Error('Rollback fixture');
+      }), /Rollback fixture/);
+      assert.equal(await prisma.storageCleanup.count({ where: { fileId: first.fileId } }), 0);
+      assert.deepEqual(await readFile(local.getLocalPath(first.fileId)), pdf);
+      await prisma.subject.delete({ where: { id: first.subject.id } });
+      assert.equal((await prisma.storageCleanup.findUniqueOrThrow({ where: { fileId: first.fileId } })).provider, 'local');
+      const originalDelete = local.delete;
+      local.delete = async () => { throw new Error('Storage offline'); };
+      assert.equal(await processCleanup(first.fileId, local, 'local'), false);
+      assert.equal((await prisma.storageCleanup.findUniqueOrThrow({ where: { fileId: first.fileId } })).attempts, 1);
+      local.delete = originalDelete;
+      await retryStorageCleanup();
+      await assert.rejects(readFile(local.getLocalPath(first.fileId)), { code: 'ENOENT' });
+      const second = await fixture();
+      await prisma.semester.delete({ where: { id: second.semester.id } });
+      await retryStorageCleanup();
+      await assert.rejects(readFile(local.getLocalPath(second.fileId)), { code: 'ENOENT' });
+      const third = await fixture();
+      const resumeUpload = await upload('/users/me/resume-upload', owner.token);
+      assert.equal(resumeUpload.status, 200);
+      const resumeFile = (await resumeUpload.json() as any).data.fileId as string;
+      await prisma.user.delete({ where: { id: owner.id } });
+      users.splice(users.indexOf(owner), 1);
+      assert.equal(await prisma.storageCleanup.count({ where: { fileId: { in: [third.fileId, resumeFile] } } }), 2);
+      await retryStorageCleanup();
+      for (const file of [third.fileId, resumeFile]) await assert.rejects(readFile(local.getLocalPath(file)), { code: 'ENOENT' });
+      const legacyId = `notes/legacy-${randomUUID()}.pdf`;
+      await local.upload(legacyId, pdf, 'application/pdf');
+      await prisma.storageCleanup.create({ data: { fileId: legacyId, provider: 'unknown' } });
+      await retryStorageCleanup();
+      assert.deepEqual(await readFile(local.getLocalPath(legacyId)), pdf);
+      await local.delete(legacyId);
+      await prisma.storageCleanup.delete({ where: { fileId: legacyId } });
+    });
+    await t.test('real department endpoint persists normalized values', async () => {
+      const login = await req('POST', '/auth/login', '', {
+        email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD,
+      });
+      assert.equal(login.status, 200);
+      const token = (await login.json() as any).data.accessToken;
+      const department = await create('/admin/academics/departments', token, {
+        name: '  Closure department  ', code: `  ${prefix}  `,
+      });
+      try {
+        const saved = await prisma.department.findUniqueOrThrow({ where: { id: department.id } });
+        assert.equal(saved.name, 'Closure department'); assert.equal(saved.code, prefix.toUpperCase());
+      } finally {
+        await prisma.department.delete({ where: { id: department.id } });
+        await prisma.adminAuditLog.deleteMany({ where: { targetId: department.id } });
+      }
+    });
+    await t.test('foreign study-plan links rejected on create/update with no mutation', async () => {
+      const count = await prisma.task.count({ where: { studentProfileId: a.profileId } });
+      assert.equal((await req('POST', '/tasks', a.token, { title: 'Foreign', studyPlanId: other.id })).status, 404);
+      assert.equal(await prisma.task.count({ where: { studentProfileId: a.profileId } }), count);
+      const task = await create('/tasks', a.token, { title: 'Own task', studyPlanId: own.id });
+      assert.equal((await req('PATCH', `/tasks/${task.id}`, a.token, { title: 'Changed', studyPlanId: other.id })).status, 404);
+      const saved = await prisma.task.findUniqueOrThrow({ where: { id: task.id } });
+      assert.equal(saved.studyPlanId, own.id); assert.equal(saved.title, 'Own task');
+    });
+    await t.test('W06: task omission vs clearing semantics preserves omitted fields and clears nullable fields', async () => {
+      const initialDue = '2026-11-01T12:00:00.000Z';
+      const created = await create('/tasks', a.token, {
+        title: 'Initial title',
+        description: 'Initial description',
+        dueDate: initialDue,
+        priority: 'HIGH',
+        studyPlanId: own.id,
+      });
+      assert.equal(created.title, 'Initial title');
+      assert.equal(created.description, 'Initial description');
+      assert.equal(created.dueDate, initialDue);
+      assert.equal(created.studyPlanId, own.id);
+
+      // 1. Omission preserves existing values
+      const patchOmitted = await req('PATCH', `/tasks/${created.id}`, a.token, {
+        title: 'Updated title only',
+      });
+      assert.equal(patchOmitted.status, 200);
+      const omittedData = (await patchOmitted.json() as any).data;
+      assert.equal(omittedData.title, 'Updated title only');
+      assert.equal(omittedData.description, 'Initial description');
+      assert.equal(omittedData.dueDate, initialDue);
+      assert.equal(omittedData.studyPlanId, own.id);
+
+      // 2. Explicit null clears nullable fields
+      const patchClear = await req('PATCH', `/tasks/${created.id}`, a.token, {
+        description: null,
+        dueDate: null,
+        studyPlanId: null,
+      });
+      assert.equal(patchClear.status, 200);
+      const clearedData = (await patchClear.json() as any).data;
+      assert.equal(clearedData.title, 'Updated title only');
+      assert.equal(clearedData.description, null);
+      assert.equal(clearedData.dueDate, null);
+      assert.equal(clearedData.studyPlanId, null);
+
+      const dbRow = await prisma.task.findUniqueOrThrow({ where: { id: created.id } });
+      assert.equal(dbRow.description, null);
+      assert.equal(dbRow.dueDate, null);
+      assert.equal(dbRow.studyPlanId, null);
+
+      // 3. Valid values replace cleared values
+      const replacedDue = '2026-12-01T00:00:00.000Z';
+      const patchReplace = await req('PATCH', `/tasks/${created.id}`, a.token, {
+        description: 'New description',
+        dueDate: replacedDue,
+        studyPlanId: own.id,
+      });
+      assert.equal(patchReplace.status, 200);
+      const replacedData = (await patchReplace.json() as any).data;
+      assert.equal(replacedData.description, 'New description');
+      assert.equal(replacedData.dueDate, replacedDue);
+      assert.equal(replacedData.studyPlanId, own.id);
+
+      // 4. Foreign study-plan link still rejected with 404
+      assert.equal((await req('PATCH', `/tasks/${created.id}`, a.token, { studyPlanId: other.id })).status, 404);
+
+      // 5. Ownership isolation: student B cannot update or clear student A's task
+      assert.equal((await req('PATCH', `/tasks/${created.id}`, b.token, { description: null })).status, 404);
+
+      // Cleanup
+      await prisma.task.delete({ where: { id: created.id } }).catch(() => {});
+    });
+    await t.test('private note bytes, access isolation and replacement cleanup', async () => {
+      const r = await upload(`/notes/${note.id}/upload`, a.token); assert.equal(r.status, 200);
+      const old = (await r.json() as any).data.fileId;
+      const downloaded = await req('GET', `/notes/${note.id}/file`, a.token);
+      assert.equal(downloaded.status, 200); assert.equal(downloaded.headers.get('cache-control'), 'private, no-store');
+      assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), pdf);
+      assert.equal((await req('GET', `/notes/${note.id}/file`, b.token)).status, 404);
+      assert.equal((await req('GET', `/notes/${note.id}/file`)).status, 401);
+      assert.equal((await upload(`/notes/${note.id}/upload`, a.token)).status, 200);
+      await assert.rejects(readFile(path.resolve('uploads', old)), { code: 'ENOENT' });
+    });
+    await t.test('foreign upload and failed database attachment leave no extra storage objects', async () => {
+      const before = await files(b.profileId);
+      assert.equal((await upload(`/notes/${note.id}/upload`, b.token)).status, 404);
+      assert.deepEqual(await files(b.profileId), before);
+      const existing = await files(a.profileId), original = noteService.attachFile;
+      noteService.attachFile = async () => { throw new Error('Injected database failure'); };
+      try { assert.equal((await upload(`/notes/${note.id}/upload`, a.token)).status, 500); }
+      finally { noteService.attachFile = original; }
+      assert.deepEqual(await files(a.profileId), existing);
+    });
+    await t.test('profile resume bytes, replacement cleanup and readable attachment metadata', async () => {
+      const r = await upload('/users/me/resume-upload', a.token); assert.equal(r.status, 200);
+      const old = (await r.json() as any).data.fileId;
+      const downloaded = await req('GET', '/users/me/resume-file', a.token);
+      assert.equal(downloaded.status, 200); assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), pdf);
+      assert.equal((await req('GET', '/users/me/resume-file', b.token)).status, 404);
+      assert.equal((await upload('/users/me/resume-upload', a.token)).status, 200);
+      await assert.rejects(readFile(path.resolve('uploads', old)), { code: 'ENOENT' });
+      const profile = (await (await req('GET', '/users/me', a.token)).json() as any).data.studentProfile;
+      assert(profile.uploadedResumeFileId && profile.uploadedResumeFileId !== old);
+    });
+    await t.test('stale concurrent attachment updates rejected', async () => {
+      await assert.rejects(noteService.attachFile(a.profileId, note.id, 'stale', null), { statusCode: 409 });
+      await assert.rejects(userService.attachResume(a.id, 'stale', null), { statusCode: 409 });
+    });
+    await t.test('note deletion cleans current attachment', async () => {
+      const id = await noteService.getFileId(a.profileId, note.id);
+      assert.equal((await req('DELETE', `/notes/${note.id}`, a.token)).status, 204);
+      await assert.rejects(readFile(path.resolve('uploads', id)), { code: 'ENOENT' });
+    });
+    await t.test('note upload format validation accepts valid formats and rejects renamed invalid files and generic CFB', async () => {
+      function createZip(files: Array<{ name: string; content?: string }>) {
+        const parts: Buffer[] = [];
+        const cdParts: Buffer[] = [];
+        let offset = 0;
+        for (const { name, content } of files) {
+          const nameBuf = Buffer.from(name, 'utf8');
+          const contentBuf = Buffer.from(content || '', 'utf8');
+          const header = Buffer.alloc(30);
+          header.writeUInt32LE(0x04034b50, 0);
+          header.writeUInt16LE(20, 4);
+          header.writeUInt16LE(0, 6);
+          header.writeUInt16LE(0, 8);
+          header.writeUInt16LE(0, 10);
+          header.writeUInt16LE(0, 12);
+          header.writeUInt32LE(0, 14);
+          header.writeUInt32LE(contentBuf.length, 18);
+          header.writeUInt32LE(contentBuf.length, 22);
+          header.writeUInt16LE(nameBuf.length, 26);
+          header.writeUInt16LE(0, 28);
+          parts.push(header, nameBuf, contentBuf);
+
+          const cd = Buffer.alloc(46);
+          cd.writeUInt32LE(0x02014b50, 0);
+          cd.writeUInt16LE(20, 4);
+          cd.writeUInt16LE(20, 6);
+          cd.writeUInt16LE(0, 8);
+          cd.writeUInt16LE(0, 10);
+          cd.writeUInt16LE(0, 12);
+          cd.writeUInt16LE(0, 14);
+          cd.writeUInt32LE(0, 16);
+          cd.writeUInt32LE(contentBuf.length, 20);
+          cd.writeUInt32LE(contentBuf.length, 24);
+          cd.writeUInt16LE(nameBuf.length, 28);
+          cd.writeUInt16LE(0, 30);
+          cd.writeUInt16LE(0, 32);
+          cd.writeUInt16LE(0, 34);
+          cd.writeUInt16LE(0, 36);
+          cd.writeUInt32LE(0, 38);
+          cd.writeUInt32LE(offset, 42);
+          cdParts.push(cd, nameBuf);
+
+          offset += header.length + nameBuf.length + contentBuf.length;
+        }
+        const cdOffset = offset;
+        const cdBuf = Buffer.concat(cdParts);
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0);
+        eocd.writeUInt16LE(0, 4);
+        eocd.writeUInt16LE(0, 6);
+        eocd.writeUInt16LE(files.length, 8);
+        eocd.writeUInt16LE(files.length, 10);
+        eocd.writeUInt32LE(cdBuf.length, 12);
+        eocd.writeUInt32LE(cdOffset, 16);
+        eocd.writeUInt16LE(0, 20);
+        return Buffer.concat([...parts, cdBuf, eocd]);
+      }
+
+      const validDocx = createZip([
+        { name: '[Content_Types].xml', content: '<?xml version="1.0"?><Types><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+        { name: 'word/document.xml', content: '<w:document/>' },
+      ]);
+      const validPptx = createZip([
+        { name: '[Content_Types].xml', content: '<?xml version="1.0"?><Types><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>' },
+        { name: 'ppt/presentation.xml', content: '<p:presentation/>' },
+      ]);
+      const genericZip = createZip([
+        { name: 'sample.txt', content: 'generic zip file content' },
+      ]);
+      const validPpt = Buffer.concat([
+        Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+        Buffer.alloc(100),
+        Buffer.from('PowerPoint Document', 'utf16le'),
+        Buffer.alloc(100),
+      ]);
+      const genericCfb = Buffer.concat([
+        Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+        Buffer.alloc(504),
+      ]);
+
+      const testNote = await create('/notes', a.token, { subjectId: subject.id, title: 'Format validation document' });
+      try {
+        // Valid formats accepted
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, validDocx, 'lecture.docx')).status, 200);
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, validPptx, 'slides.pptx')).status, 200);
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, validPpt, 'legacy.ppt')).status, 200);
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, pdf, 'doc.pdf')).status, 200);
+
+        // Generic CFB without PowerPoint stream must be rejected with 400
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, genericCfb, 'fake.ppt')).status, 400);
+
+        // Generic zip renamed to docx/pptx must be rejected with 400
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, genericZip, 'fake.docx')).status, 400);
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, genericZip, 'fake.pptx')).status, 400);
+
+        // Mismatched extension/MIME (PDF content named docx) must be rejected with 400
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, pdf, 'fake.docx')).status, 400);
+
+        // Plain text named pdf must be rejected with 400
+        assert.equal((await upload(`/notes/${testNote.id}/upload`, a.token, Buffer.from('hello world plain text'), 'fake.pdf')).status, 400);
+      } finally {
+        await prisma.note.delete({ where: { id: testNote.id } }).catch(() => {});
+      }
+    });
+
+    await t.test('W04: calendar event date range validation, clearing, ownership and concurrent serialization', async () => {
+      // 1. Equal start and end dates permitted on creation
+      const sameDate = '2026-10-15T10:00:00.000Z';
+      const ev1 = await create('/calendar', a.token, {
+        title: 'Meeting',
+        eventType: 'COLLEGE_EVENT',
+        date: sameDate,
+        endDate: sameDate,
+      });
+      assert.equal(ev1.date, sameDate);
+      assert.equal(ev1.endDate, sameDate);
+
+      // 2. Inverted dates on creation rejected with 400
+      const badCreate = await req('POST', '/calendar', a.token, {
+        title: 'Inverted',
+        eventType: 'EXAM',
+        date: '2026-10-15T12:00:00.000Z',
+        endDate: '2026-10-15T10:00:00.000Z',
+      });
+      assert.equal(badCreate.status, 400);
+
+      // 3. Ownership rejection: student B cannot view, edit, or delete student A's event (404)
+      assert.equal((await req('GET', `/calendar/${ev1.id}`, b.token)).status, 404);
+      assert.equal((await req('PATCH', `/calendar/${ev1.id}`, b.token, { title: 'Hack' })).status, 404);
+      assert.equal((await req('DELETE', `/calendar/${ev1.id}`, b.token)).status, 404);
+
+      // 4. Omitted fields remain unchanged
+      const patchTitle = await req('PATCH', `/calendar/${ev1.id}`, a.token, { title: 'Updated title' });
+      assert.equal(patchTitle.status, 200);
+      const patchTitleJson = await patchTitle.json() as any;
+      assert.equal(patchTitleJson.data.title, 'Updated title');
+      assert.equal(patchTitleJson.data.date, sameDate);
+      assert.equal(patchTitleJson.data.endDate, sameDate);
+
+      // 5. Clearing endDate with null is permitted
+      const clearEnd = await req('PATCH', `/calendar/${ev1.id}`, a.token, { endDate: null });
+      assert.equal(clearEnd.status, 200);
+      const clearEndJson = await clearEnd.json() as any;
+      assert.equal(clearEndJson.data.endDate, null);
+
+      // 6. Partial update validation against stored state
+      // Set baseline: date = 10:00, endDate = 12:00
+      const setRange = await req('PATCH', `/calendar/${ev1.id}`, a.token, {
+        date: '2026-10-15T10:00:00.000Z',
+        endDate: '2026-10-15T12:00:00.000Z',
+      });
+      assert.equal(setRange.status, 200);
+
+      // Partial date update pushing date past existing endDate (13:00 > 12:00) must return 400
+      const invalidDatePatch = await req('PATCH', `/calendar/${ev1.id}`, a.token, {
+        date: '2026-10-15T13:00:00.000Z',
+      });
+      assert.equal(invalidDatePatch.status, 400);
+
+      // Partial endDate update pulling endDate before existing date (09:00 < 10:00) must return 400
+      const invalidEndPatch = await req('PATCH', `/calendar/${ev1.id}`, a.token, {
+        endDate: '2026-10-15T09:00:00.000Z',
+      });
+      assert.equal(invalidEndPatch.status, 400);
+
+      // 7. Competing partial date updates serialized:
+      // Current DB state: date = 10:00, endDate = 12:00
+      // Request 1 wants date = 11:30 (valid against old endDate 12:00)
+      // Request 2 wants endDate = 11:00 (valid against old date 10:00)
+      // Together they conflict (11:30 > 11:00).
+      // Row lock serialization ensures one commits and the second fails with 400.
+      const [res1, res2] = await Promise.all([
+        req('PATCH', `/calendar/${ev1.id}`, a.token, { date: '2026-10-15T11:30:00.000Z' }),
+        req('PATCH', `/calendar/${ev1.id}`, a.token, { endDate: '2026-10-15T11:00:00.000Z' }),
+      ]);
+      const statuses = [res1.status, res2.status].sort();
+      assert.deepEqual(statuses, [200, 400]);
+
+      // Verify DB row remains valid (endDate >= date)
+      const finalRow = await prisma.calendarEvent.findUniqueOrThrow({ where: { id: ev1.id } });
+      assert(finalRow.endDate! >= finalRow.date);
+
+      // Cleanup
+      await prisma.calendarEvent.delete({ where: { id: ev1.id } }).catch(() => {});
+    });
+
+    await t.test('W15: content and catalog query validation, enum matching, array rejection and boolean coercion', async () => {
+      const dummyId = randomUUID();
+
+      // 1. Array query parameters rejected with 400
+      assert.equal((await req('GET', '/content/announcements?type[]=ANNOUNCEMENT', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/announcements?priority[]=HIGH', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/events?category[]=EXAM', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/events?upcomingOnly[]=true', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/resources?category[]=SYLLABUS', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/courses?departmentId[]=not-a-string', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?courseId[]=not-a-string', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?semesterNumber[]=1', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/terms?isActive[]=true', a.token)).status, 400);
+
+      // 2. Invalid enum values rejected with 400
+      assert.equal((await req('GET', '/content/announcements?type=INVALID_TYPE', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/announcements?priority=INVALID_PRIORITY', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/events?category=INVALID_CAT', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/events?upcomingOnly=maybe', a.token)).status, 400);
+      assert.equal((await req('GET', '/content/resources?category=INVALID_RES_CAT', a.token)).status, 400);
+
+      // 3. Invalid catalog query parameters rejected with 400
+      assert.equal((await req('GET', '/catalog/courses?departmentId=not-a-uuid', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?courseId=not-a-uuid', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?semesterNumber=0', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?semesterNumber=-3', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/subjects?semesterNumber=abc', a.token)).status, 400);
+      assert.equal((await req('GET', '/catalog/terms?isActive=unknown', a.token)).status, 400);
+
+      // 4. Valid filters & transformed booleans accepted with 200
+      assert.equal((await req('GET', '/content/announcements?type=ANNOUNCEMENT&priority=HIGH', a.token)).status, 200);
+      assert.equal((await req('GET', '/content/events?category=EXAM&upcomingOnly=true', a.token)).status, 200);
+      assert.equal((await req('GET', '/content/events?upcomingOnly=false', a.token)).status, 200);
+      assert.equal((await req('GET', '/content/resources?category=SYLLABUS', a.token)).status, 200);
+      assert.equal((await req('GET', '/catalog/departments', a.token)).status, 200);
+      assert.equal((await req('GET', `/catalog/courses?departmentId=${dummyId}`, a.token)).status, 200);
+      assert.equal((await req('GET', `/catalog/subjects?courseId=${dummyId}&semesterNumber=1`, a.token)).status, 200);
+      assert.equal((await req('GET', '/catalog/terms?isActive=true', a.token)).status, 200);
+      assert.equal((await req('GET', '/catalog/terms?isActive=false', a.token)).status, 200);
+    });
+
+    await t.test('W18: authentication isolates token errors from database outages and preserves inactive 403', async () => {
+      // 1. Invalid or expired token produces 401
+      const badTokenRes = await req('GET', '/users/me', 'invalid.token.here');
+      assert.equal(badTokenRes.status, 401);
+      const badTokenJson = await badTokenRes.json() as any;
+      assert.equal(badTokenJson.message, 'Access token is invalid or expired');
+
+      // 2. Database outage during user lookup in authenticate middleware produces 503, never 401
+      const originalFindUnique = prisma.user.findUnique;
+      try {
+        prisma.user.findUnique = (() => {
+          throw new Error('Database connection failed: ECONNREFUSED');
+        }) as any;
+        const dbDownRes = await req('GET', '/users/me', a.token);
+        assert.equal(dbDownRes.status, 503);
+        const dbDownJson = await dbDownRes.json() as any;
+        assert.equal(dbDownJson.message, 'Database service is temporarily unavailable');
+      } finally {
+        prisma.user.findUnique = originalFindUnique;
+      }
+
+      // 3. Database outage during session lookup in authenticate middleware produces 503, never 401
+      const originalFindFirst = prisma.authSession.findFirst;
+      try {
+        prisma.authSession.findFirst = (() => {
+          throw new Error('Database connection timeout: ETIMEDOUT');
+        }) as any;
+        const dbDownRes = await req('GET', '/users/me', a.token);
+        assert.equal(dbDownRes.status, 503);
+        const dbDownJson = await dbDownRes.json() as any;
+        assert.equal(dbDownJson.message, 'Database service is temporarily unavailable');
+      } finally {
+        prisma.authSession.findFirst = originalFindFirst;
+      }
+
+      // 4. System misconfiguration (P1000 bad database credentials) produces sanitized 500, not 503
+      try {
+        prisma.user.findUnique = (() => {
+          throw new Prisma.PrismaClientKnownRequestError('Authentication failed against database', {
+            code: 'P1000',
+            clientVersion: '5.x',
+          });
+        }) as any;
+        const configErrRes = await req('GET', '/users/me', a.token);
+        assert.equal(configErrRes.status, 500);
+        const configErrJson = await configErrRes.json() as any;
+        assert.equal(configErrJson.message, 'Internal server error during authentication');
+      } finally {
+        prisma.user.findUnique = originalFindUnique;
+      }
+
+      // 5. Engine panic (PrismaClientRustPanicError) produces sanitized 500, not 503
+      try {
+        prisma.user.findUnique = (() => {
+          throw new Prisma.PrismaClientRustPanicError('Engine crashed', '5.x');
+        }) as any;
+        const panicRes = await req('GET', '/users/me', a.token);
+        assert.equal(panicRes.status, 500);
+        const panicJson = await panicRes.json() as any;
+        assert.equal(panicJson.message, 'Internal server error during authentication');
+      } finally {
+        prisma.user.findUnique = originalFindUnique;
+      }
+
+      // 6. True transient connectivity failure (P1001) produces 503
+      try {
+        prisma.user.findUnique = (() => {
+          throw new Prisma.PrismaClientKnownRequestError("Can't reach database server", {
+            code: 'P1001',
+            clientVersion: '5.x',
+          });
+        }) as any;
+        const p1001Res = await req('GET', '/users/me', a.token);
+        assert.equal(p1001Res.status, 503);
+        const p1001Json = await p1001Res.json() as any;
+        assert.equal(p1001Json.message, 'Database service is temporarily unavailable');
+      } finally {
+        prisma.user.findUnique = originalFindUnique;
+      }
+    });
+
+    await t.test('W01: bounded note search across title/content with ownership isolation', async () => {
+      // 1. Setup distinct note fixtures for Student A
+      const semA = await create('/semesters', a.token, { name: 'Sem A Notes', startDate: '2026-09-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' });
+      const subA1 = await create('/subjects', a.token, { semesterId: semA.id, name: 'Algorithms', code: 'CS301' });
+      const subA2 = await create('/subjects', a.token, { semesterId: semA.id, name: 'Databases', code: 'CS302' });
+
+      const note1 = await create('/notes', a.token, {
+        subjectId: subA1.id,
+        title: 'Binary Search Trees and AVL balance',
+        content: 'Self-balancing trees maintain logarithmic height for fast search operations.',
+        tags: ['dsa', 'trees'],
+      });
+      const note2 = await create('/notes', a.token, {
+        subjectId: subA2.id,
+        title: 'Relational Normalization Forms',
+        content: 'Third normal form (3NF) eliminates transitive dependency on primary key.',
+        tags: ['database', 'theory'],
+      });
+
+      // Setup note for Student B with similar keywords
+      const semB = await create('/semesters', b.token, { name: 'Sem B Notes', startDate: '2026-09-01T00:00:00Z', endDate: '2026-12-31T00:00:00Z' });
+      const subB = await create('/subjects', b.token, { semesterId: semB.id, name: 'Advanced Trees', code: 'CS501' });
+      const noteB = await create('/notes', b.token, {
+        subjectId: subB.id,
+        title: 'B-Trees and Red-Black Trees for B',
+        content: 'Student B private secret notes on search trees and logarithmic height.',
+        tags: ['trees', 'secret'],
+      });
+
+      // 2. Search by title substring (case-insensitive)
+      const resTitle = await req('GET', '/notes?search=binary%20search', a.token);
+      assert.equal(resTitle.status, 200);
+      const dataTitle = (await resTitle.json() as any).data;
+      assert.equal(dataTitle.length, 1);
+      assert.equal(dataTitle[0].id, note1.id);
+
+      // 3. Search by content substring (case-insensitive)
+      const resContent = await req('GET', '/notes?search=transitive%20dependency', a.token);
+      assert.equal(resContent.status, 200);
+      const dataContent = (await resContent.json() as any).data;
+      assert.equal(dataContent.length, 1);
+      assert.equal(dataContent[0].id, note2.id);
+
+      // 4. Search with tag conjunction (search + tag)
+      const resTagConjunction = await req('GET', '/notes?search=trees&tag=dsa', a.token);
+      assert.equal(resTagConjunction.status, 200);
+      const dataTagConjunction = (await resTagConjunction.json() as any).data;
+      assert.equal(dataTagConjunction.length, 1);
+      assert.equal(dataTagConjunction[0].id, note1.id);
+
+      // 5. Cross-student isolation: Student A searching for Student B keyword 'secret' returns empty list
+      const resSecretA = await req('GET', '/notes?search=secret', a.token);
+      assert.equal(resSecretA.status, 200);
+      const dataSecretA = (await resSecretA.json() as any).data;
+      assert.equal(dataSecretA.length, 0);
+
+      // Student B searching for 'secret' returns only noteB
+      const resSecretB = await req('GET', '/notes?search=secret', b.token);
+      assert.equal(resSecretB.status, 200);
+      const dataSecretB = (await resSecretB.json() as any).data;
+      assert.equal(dataSecretB.length, 1);
+      assert.equal(dataSecretB[0].id, noteB.id);
+
+      // Student B searching for Student A keyword 'transitive' returns empty list
+      const resTransitiveB = await req('GET', '/notes?search=transitive', b.token);
+      assert.equal(resTransitiveB.status, 200);
+      const dataTransitiveB = (await resTransitiveB.json() as any).data;
+      assert.equal(dataTransitiveB.length, 0);
+
+      // 6. Query schema validation bounds: search query longer than 100 chars produces 400
+      const longSearch = 'a'.repeat(101);
+      const resLong = await req('GET', `/notes?search=${longSearch}`, a.token);
+      assert.equal(resLong.status, 400);
+
+      // 7. Unrecognized query parameter produces 400 (strict validation)
+      const resUnrecognized = await req('GET', '/notes?invalidParam=true', a.token);
+      assert.equal(resUnrecognized.status, 400);
+    });
+
+    await t.test('W17: student feedback own-list projection strictly excludes internal admin notes', async () => {
+      // 1. Unauthenticated request rejected
+      assert.equal((await req('GET', '/feedback')).status, 401);
+
+      // 2. Student A submits feedback
+      const feedbackPayload = {
+        category: 'BUG_REPORT',
+        subject: 'Calendar layout issue',
+        message: 'The date picker overlaps on small mobile viewports.',
+      };
+      const createdRes = await req('POST', '/feedback', a.token, feedbackPayload);
+      assert.equal(createdRes.status, 201);
+      const created = (await createdRes.json() as any).data;
+      assert.equal(created.subject, feedbackPayload.subject);
+
+      // 3. Admin updates feedback with internal note and resolution
+      const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      await prisma.feedback.update({
+        where: { id: created.id },
+        data: {
+          adminNotes: 'CONFIDENTIAL INTERNAL NOTE: Confirmed bug on iOS Safari. Do not disclose to student.',
+          resolvedByUserId: adminUser.id,
+          status: 'RESOLVED',
+          resolvedAt: new Date(),
+        },
+      });
+
+      // 4. Student A retrieves own feedback list
+      const listResA = await req('GET', '/feedback', a.token);
+      assert.equal(listResA.status, 200);
+      const itemsA = (await listResA.json() as any).data;
+      assert(Array.isArray(itemsA));
+      const ownTicket = itemsA.find((f: any) => f.id === created.id);
+      assert(ownTicket, 'Student A must see their own submitted ticket');
+      assert.equal(ownTicket.status, 'RESOLVED');
+      assert.equal(ownTicket.subject, feedbackPayload.subject);
+      assert.equal(ownTicket.message, feedbackPayload.message);
+      assert(ownTicket.resolvedAt !== null);
+
+      // Invariant: Confidential internal admin notes and resolver user ID are strictly omitted
+      assert.equal(ownTicket.adminNotes, undefined);
+      assert.equal(ownTicket.resolvedByUserId, undefined);
+      assert.equal('adminNotes' in ownTicket, false);
+      assert.equal('resolvedByUserId' in ownTicket, false);
+
+      // 5. Cross-student isolation: Student B queries own feedback and cannot see Student A's ticket
+      const listResB = await req('GET', '/feedback', b.token);
+      assert.equal(listResB.status, 200);
+      const itemsB = (await listResB.json() as any).data;
+      assert(Array.isArray(itemsB));
+      assert.equal(itemsB.some((f: any) => f.id === created.id), false);
+    });
+
+    await t.test('W10: atomic single-use verification token consumption and resend race recovery', async () => {
+      // 1. Create an unverified student
+      let sentVerificationToken = '';
+      const originalEmailSend = emailService.send;
+      emailService.send = async (_to, _subject, text) => {
+        const match = text.match(/[a-f0-9]{64}/);
+        if (match) sentVerificationToken = match[0];
+      };
+
+      try {
+        const studentW10 = await student('W10_Race');
+        assert(sentVerificationToken, 'Verification email must contain token');
+        const tokenToVerify = sentVerificationToken;
+
+        // 2. Concurrent verification of the same token
+        const parallelVerifications = await Promise.allSettled([
+          authService.verifyEmail(tokenToVerify),
+          authService.verifyEmail(tokenToVerify),
+        ]);
+
+        const fulfilled = parallelVerifications.filter(r => r.status === 'fulfilled');
+        const rejected = parallelVerifications.filter(r => r.status === 'rejected');
+
+        // Exactly one must succeed (atomic consumption); second must fail with 400
+        assert.equal(fulfilled.length, 1, 'Only one concurrent verification can consume the single-use token');
+        assert.equal(rejected.length, 1, 'Second concurrent verification must be rejected');
+        assert.equal((rejected[0] as PromiseRejectedResult).reason.statusCode, 400);
+
+        // Account is now verified
+        const userAfter = await prisma.user.findUniqueOrThrow({ where: { id: studentW10.id } });
+        assert.equal(userAfter.isVerified, true);
+        assert.equal(userAfter.verificationTokenHash, null);
+
+        // Subsequent verification attempt with same token fails with 400 (no blind fallback)
+        await assert.rejects(authService.verifyEmail(tokenToVerify), {
+          statusCode: 400,
+          message: 'Verification token is invalid or has expired',
+        });
+
+        // Nonexistent random token fails with 400 without matching any verified user
+        await assert.rejects(authService.verifyEmail('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'), {
+          statusCode: 400,
+          message: 'Verification token is invalid or has expired',
+        });
+
+        // 3. Resend check: If verification already completed, resend update affects 0 rows and sends no email
+        let emailSentOnVerified = false;
+        emailService.send = async () => { emailSentOnVerified = true; };
+        const resendVerifiedResult = await authService.resendVerificationEmail(studentW10.id);
+        assert.equal(resendVerifiedResult.message, 'Email is already verified');
+        assert.equal(emailSentOnVerified, false, 'No email should be dispatched when user is already verified');
+
+        // 4. Resend failure recovery on unverified account
+        sentVerificationToken = '';
+        emailService.send = async (_to, _subject, text) => {
+          const match = text.match(/[a-f0-9]{64}/);
+          if (match) sentVerificationToken = match[0];
+        };
+        const unverifiedStudent = await student('W10_Fail');
+        assert(sentVerificationToken);
+
+        // Simulate delivery failure during resend
+        emailService.send = async () => { throw new Error('Resend network outage'); };
+        await assert.rejects(authService.resendVerificationEmail(unverifiedStudent.id), {
+          statusCode: 503,
+          message: 'Failed to deliver verification email. Please try again.',
+        });
+
+        // Verify token hash was conditionally rolled back so student is not locked out with phantom token
+        const rolledBackUser = await prisma.user.findUniqueOrThrow({ where: { id: unverifiedStudent.id } });
+        assert.equal(rolledBackUser.verificationTokenHash, null);
+      } finally {
+        emailService.send = originalEmailSend;
+      }
+    });
+
+    await t.test('W19: student settings write path, strict partial schema without defaults, semester ownership and SetNull cascade', async () => {
+      // 1. Unauthenticated rejection
+      assert.equal((await req('PATCH', '/users/me/settings', '', { defaultSemesterId: sem.id })).status, 401);
+
+      // 2. Strict validation rejection on unknown fields
+      const badKeyRes = await req('PATCH', '/users/me/settings', a.token, { unknownField: true });
+      assert.equal(badKeyRes.status, 400);
+
+      const badPrefRes = await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { nonExistentNotification: true },
+      });
+      assert.equal(badPrefRes.status, 400);
+
+      const invalidUuidRes = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: 'not-a-uuid' });
+      assert.equal(invalidUuidRes.status, 400);
+
+      // 3. Foreign semester ownership validation: Student B cannot claim Student A's semester
+      const foreignSemRes = await req('PATCH', '/users/me/settings', b.token, { defaultSemesterId: sem.id });
+      assert.equal(foreignSemRes.status, 404);
+
+      // Nonexistent semester UUID
+      const nonExistentSemRes = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: randomUUID() });
+      assert.equal(nonExistentSemRes.status, 404);
+
+      // 4. Partial notification preferences: modifying one preference must NOT reset existing false preferences
+      // First, set emailNotifications to false
+      const patch1 = await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { emailNotifications: false },
+      });
+      assert.equal(patch1.status, 200);
+      const data1 = (await patch1.json() as any).data;
+      assert.equal(data1.notificationPreferences.emailNotifications, false);
+      assert.equal(data1.notificationPreferences.assignmentReminders, true);
+      assert.equal(data1.notificationPreferences.examReminders, true);
+
+      // Second, set examReminders to false without passing emailNotifications
+      const patch2 = await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { examReminders: false },
+      });
+      assert.equal(patch2.status, 200);
+      const data2 = (await patch2.json() as any).data;
+      // emailNotifications MUST remain false! (not overwritten to true by schema defaults)
+      assert.equal(data2.notificationPreferences.emailNotifications, false, 'Pre-existing false preference must be preserved');
+      assert.equal(data2.notificationPreferences.examReminders, false);
+      assert.equal(data2.notificationPreferences.assignmentReminders, true);
+
+      // 5. Default semester assignment and clearing
+      const setSemRes = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: sem.id });
+      assert.equal(setSemRes.status, 200);
+      const setSemData = (await setSemRes.json() as any).data;
+      assert.equal(setSemData.defaultSemesterId, sem.id);
+      assert.equal(setSemData.defaultSemester.id, sem.id);
+
+      // Clear default semester by passing null
+      const clearSemRes = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: null });
+      assert.equal(clearSemRes.status, 200);
+      const clearSemData = (await clearSemRes.json() as any).data;
+      assert.equal(clearSemData.defaultSemesterId, null);
+
+      // 6. onDelete: SetNull cascade verification
+      // Create a temporary semester for Student A
+      const tempSem = await create('/semesters', a.token, {
+        name: `Cascade Test ${randomUUID()}`,
+        startDate: '2027-01-01T00:00:00Z',
+        endDate: '2027-05-31T00:00:00Z',
+      });
+      // Point settings to tempSem
+      const assignTemp = await req('PATCH', '/users/me/settings', a.token, { defaultSemesterId: tempSem.id });
+      assert.equal(assignTemp.status, 200);
+      assert.equal((await assignTemp.json() as any).data.defaultSemesterId, tempSem.id);
+
+      // Delete the semester
+      const delRes = await req('DELETE', `/semesters/${tempSem.id}`, a.token);
+      assert.equal(delRes.status, 200);
+
+      // Verify that database foreign key onDelete: SetNull automatically set defaultSemesterId to null
+      const settingsAfterDelete = await prisma.studentSettings.findUniqueOrThrow({ where: { userId: a.id } });
+      assert.equal(settingsAfterDelete.defaultSemesterId, null, 'Foreign key onDelete: SetNull must cascade to null');
+
+      // 7. GET /users/me/settings returns current preferences and default semester
+      const getSettingsRes = await req('GET', '/users/me/settings', a.token);
+      assert.equal(getSettingsRes.status, 200);
+      const getSettingsData = (await getSettingsRes.json() as any).data;
+      assert.equal(getSettingsData.notificationPreferences.emailNotifications, false);
+      assert.equal(getSettingsData.notificationPreferences.examReminders, false);
+      assert.equal(getSettingsData.defaultSemesterId, null);
+    });
+
+    await t.test('Migration: reminder deliveryStatus backfill policy and schema backward compatibility', async () => {
+      // 1. Test existing API CRUD works seamlessly with new columns default
+      const createdReminder = await create('/reminders', a.token, {
+        title: 'Compatibility reminder',
+        triggerAt: '2028-01-01T10:00:00Z',
+      });
+      assert(createdReminder.id);
+      const fetchedInDb = await prisma.reminder.findUniqueOrThrow({ where: { id: createdReminder.id } });
+      assert.equal(fetchedInDb.deliveryStatus, 'PENDING');
+      assert.equal(fetchedInDb.deliveredAt, null);
+      assert.equal(fetchedInDb.suppressedAt, null);
+      assert.equal(fetchedInDb.sourceType, null);
+
+      // 2. Test backfill policy on historical legacy rows:
+      const pastTime = new Date(Date.now() - 3600000); // 1 hour ago
+      const futureTime = new Date(Date.now() + 3600000); // 1 hour in future
+
+      // Completed past reminder
+      const legacyCompleted = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy completed',
+          triggerAt: pastTime,
+          isCompleted: true,
+        },
+      });
+
+      // Incomplete overdue reminder
+      const legacyOverdue = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy overdue',
+          triggerAt: pastTime,
+          isCompleted: false,
+        },
+      });
+
+      // Incomplete future reminder
+      const legacyFuture = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy future',
+          triggerAt: futureTime,
+          isCompleted: false,
+        },
+      });
+
+      // Run the backfill update statements (as defined in the migration script)
+      await prisma.$executeRawUnsafe(`UPDATE "Reminder" SET "deliveryStatus" = 'CANCELLED' WHERE "isCompleted" = true AND "id" = '${legacyCompleted.id}'`);
+      await prisma.$executeRawUnsafe(`UPDATE "Reminder" SET "deliveryStatus" = 'SKIPPED', "suppressedAt" = NOW() WHERE "isCompleted" = false AND "triggerAt" <= NOW() AND "id" = '${legacyOverdue.id}'`);
+      await prisma.$executeRawUnsafe(`UPDATE "Reminder" SET "deliveryStatus" = 'PENDING' WHERE "isCompleted" = false AND "triggerAt" > NOW() AND "id" = '${legacyFuture.id}'`);
+
+      const verifiedCompleted = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyCompleted.id } });
+      assert.equal(verifiedCompleted.deliveryStatus, 'CANCELLED');
+
+      const verifiedOverdue = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyOverdue.id } });
+      assert.equal(verifiedOverdue.deliveryStatus, 'SKIPPED');
+      assert(verifiedOverdue.suppressedAt !== null);
+
+      const verifiedFuture = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyFuture.id } });
+      assert.equal(verifiedFuture.deliveryStatus, 'PENDING');
+
+      // 3. Database uniqueness for recipient/source/occurrence
+      await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Unique test 1',
+          triggerAt: futureTime,
+          sourceType: 'ASSIGNMENT',
+          sourceId: 'src-123',
+          occurrenceKey: 'due',
+        },
+      });
+
+      // Competing duplicate insert must fail with unique violation (P2002)
+      await assert.rejects(
+        prisma.reminder.create({
+          data: {
+            studentProfileId: a.profileId!,
+            title: 'Unique test duplicate',
+            triggerAt: futureTime,
+            sourceType: 'ASSIGNMENT',
+            sourceId: 'src-123',
+            occurrenceKey: 'due',
+          },
+        }),
+        (err: any) => err.code === 'P2002'
+      );
+    });
+
+    await t.test('W05: unified calendar aggregation, interval overlap, interview history coverage and audience isolation', async () => {
+      const windowStart = '2026-11-01T00:00:00.000Z';
+      const windowEnd = '2026-11-30T23:59:59.999Z';
+
+      // 1. Unauthenticated rejection
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${windowEnd}`, '')).status, 401);
+
+      // 2. Query validation
+      // Missing end date
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowStart}`, a.token)).status, 400);
+      // Inverted window
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowEnd}&endDate=${windowStart}`, a.token)).status, 400);
+      // Window exceeding 90 days (e.g. 120 days)
+      const excessiveEnd = '2027-03-01T00:00:00.000Z';
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${excessiveEnd}`, a.token)).status, 400);
+      // Extra unknown field
+      assert.equal((await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${windowEnd}&extra=1`, a.token)).status, 400);
+
+      // 3. Seed data for all 5 sources within Student A's scope:
+      // (a) Personal event (interval)
+      const pEvent = await prisma.calendarEvent.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Midterm Study Session',
+          date: new Date('2026-11-05T10:00:00.000Z'),
+          endDate: new Date('2026-11-05T14:00:00.000Z'),
+          eventType: 'CLASS',
+        },
+      });
+
+      // (b) Assignment deadline
+      const asgn = await prisma.assignment.create({
+        data: {
+          subjectId: subject.id,
+          title: 'Algorithms Homework 3',
+          dueDate: new Date('2026-11-10T17:00:00.000Z'),
+          priority: 'HIGH',
+        },
+      });
+
+      // (c) Task deadline
+      const tsk = await prisma.task.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Review Chapter 5',
+          dueDate: new Date('2026-11-15T12:00:00.000Z'),
+          priority: 'MEDIUM',
+        },
+      });
+
+      // (d) Job application with multiple interview rounds in interviewHistory
+      const appWithHistory = await prisma.jobApplication.create({
+        data: {
+          studentProfileId: a.profileId!,
+          companyName: 'Acme Corp',
+          role: 'Backend Engineer',
+          interviewDate: new Date('2026-11-20T10:00:00.000Z'), // Legacy date (should NOT be double-displayed)
+          interviewRound: 'Legacy Round',
+          interviewHistory: [
+            { round: 'Technical Screen', date: '2026-11-18T10:00:00.000Z', notes: 'Coding test passed' },
+            { round: 'System Design', date: '2026-11-25T14:00:00.000Z', notes: 'Design distributed cache' },
+            { round: 'Out of Window Round', date: '2026-12-15T14:00:00.000Z' }, // Outside query window
+          ],
+        },
+      });
+
+      // (e) Job application with only legacy interviewDate (no history)
+      const appLegacyOnly = await prisma.jobApplication.create({
+        data: {
+          studentProfileId: a.profileId!,
+          companyName: 'Beta Tech',
+          role: 'Full Stack Dev',
+          interviewDate: new Date('2026-11-22T11:00:00.000Z'),
+          interviewRound: 'Final Round',
+        },
+      });
+
+      // (f) Institutional events:
+      const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+
+      // - Event with targetScope ALL and null endDate
+      const instAll = await prisma.institutionalEvent.create({
+        data: {
+          title: 'Campus Tech Fest',
+          startDate: new Date('2026-11-08T09:00:00.000Z'),
+          endDate: null, // Null endDate: point event
+          category: 'COLLEGE_EVENT',
+          targetScope: 'ALL',
+          isPublished: true,
+          createdByUserId: adminUser.id,
+        },
+      });
+
+      // - Event outside window (before window) with null endDate: must NOT appear
+      await prisma.institutionalEvent.create({
+        data: {
+          title: 'Past Campus Orientation',
+          startDate: new Date('2026-10-15T09:00:00.000Z'),
+          endDate: null,
+          category: 'COLLEGE_EVENT',
+          targetScope: 'ALL',
+          isPublished: true,
+          createdByUserId: adminUser.id,
+        },
+      });
+
+      // - Event for another student (Student B) that must NOT appear for Student A
+      await prisma.calendarEvent.create({
+        data: {
+          studentProfileId: b.profileId!,
+          title: 'Student B Private Event',
+          date: new Date('2026-11-12T10:00:00.000Z'),
+          eventType: 'CLASS',
+        },
+      });
+
+      // 4. Fetch unified calendar for Student A
+      const resA = await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${windowEnd}`, a.token);
+      assert.equal(resA.status, 200);
+      const itemsA = (await resA.json() as any).data;
+
+      // Verify all expected items are present with stable composite IDs
+      const itemIds = itemsA.map((i: any) => i.id);
+      assert(itemIds.includes(`PERSONAL:${pEvent.id}`), 'Personal event must be included');
+      assert(itemIds.includes(`ASSIGNMENT:${asgn.id}`), 'Assignment deadline must be included');
+      assert(itemIds.includes(`TASK:${tsk.id}`), 'Task deadline must be included');
+      assert(itemIds.includes(`INSTITUTIONAL:${instAll.id}`), 'Institutional ALL event with null endDate must be included');
+
+      // Verify interview history coverage without double-display
+      assert(itemIds.includes(`INTERVIEW:${appWithHistory.id}:0`), 'Round 0 must be included');
+      assert(itemIds.includes(`INTERVIEW:${appWithHistory.id}:1`), 'Round 1 must be included');
+      assert(!itemIds.includes(`INTERVIEW:${appWithHistory.id}:2`), 'Out-of-window round must NOT be included');
+      assert(!itemIds.includes(`INTERVIEW:${appWithHistory.id}:legacy`), 'Legacy date must NOT be double-displayed when history exists');
+      assert(itemIds.includes(`INTERVIEW:${appLegacyOnly.id}:legacy`), 'Legacy interview must be included when history is absent');
+
+      // Verify cross-student isolation: Student B's event is NOT in Student A's calendar
+      assert(!itemsA.some((i: any) => i.title === 'Student B Private Event'));
+
+      // Verify chronological sorting
+      for (let i = 0; i < itemsA.length - 1; i++) {
+        const cur = new Date(itemsA[i].startDate).getTime();
+        const next = new Date(itemsA[i + 1].startDate).getTime();
+        assert(cur <= next, `Items must be chronologically sorted: ${itemsA[i].title} (${itemsA[i].startDate}) vs ${itemsA[i+1].title} (${itemsA[i+1].startDate})`);
+      }
+
+      // 5. Test unenrolled student safe audience scoping (courseId is null)
+      // Student B has courseId === null
+      const resB = await req('GET', `/calendar/unified?startDate=${windowStart}&endDate=${windowEnd}`, b.token);
+      assert.equal(resB.status, 200);
+      const itemsB = (await resB.json() as any).data;
+      // Sees ALL institutional events safely without runtime error
+      assert(itemsB.some((i: any) => i.id === `INSTITUTIONAL:${instAll.id}`));
+    });
+
+    await t.test('W03 / B06: reminder lifecycle synchronization, cancellation on parent deletion, channel separation and atomic dispatch', async () => {
+      // 1. Source creation & synchronization
+      // (a) Assignment with future due date -> linked reminder created
+      const asgnDate = new Date(Date.now() + 48 * 3600 * 1000); // 48h in future
+      const asgnRes = await req('POST', '/assignments', a.token, {
+        subjectId: subject.id,
+        title: 'Network Systems Lab',
+        dueDate: asgnDate.toISOString(),
+      });
+      assert.equal(asgnRes.status, 201);
+      const asgnData = (await asgnRes.json() as any).data;
+
+      const asgnReminder = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'ASSIGNMENT',
+            sourceId: asgnData.id,
+            occurrenceKey: 'due',
+          },
+        },
+      });
+      assert(asgnReminder, 'Assignment creation must synchronize linked reminder');
+      assert.equal(asgnReminder.deliveryStatus, 'PENDING');
+      assert.equal(asgnReminder.triggerAt.getTime(), asgnDate.getTime() - 24 * 3600 * 1000);
+
+      // (b) Exam event -> linked reminder created
+      const examDate = new Date(Date.now() + 72 * 3600 * 1000);
+      const examRes = await req('POST', '/calendar', a.token, {
+        title: 'Operating Systems Final',
+        date: examDate.toISOString(),
+        eventType: 'EXAM',
+      });
+      assert.equal(examRes.status, 201);
+      const examData = (await examRes.json() as any).data;
+
+      const examReminder = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'EXAM',
+            sourceId: examData.id,
+            occurrenceKey: 'exam',
+          },
+        },
+      });
+      assert(examReminder, 'Exam event creation must synchronize linked reminder');
+      assert.equal(examReminder.deliveryStatus, 'PENDING');
+
+      // (c) Job application with 2 interview rounds -> 2 linked reminders created
+      const round0Date = new Date(Date.now() + 48 * 3600 * 1000);
+      const round1Date = new Date(Date.now() + 96 * 3600 * 1000);
+      const jobAppRes = await req('POST', '/job-applications', a.token, {
+        companyName: 'Gamma AI',
+        role: 'Research Engineer',
+        interviewHistory: [
+          { round: 'Round 1 Coding', date: round0Date.toISOString() },
+          { round: 'Round 2 System', date: round1Date.toISOString() },
+        ],
+      });
+      assert.equal(jobAppRes.status, 201);
+      const jobAppData = (await jobAppRes.json() as any).data;
+
+      const jobReminders = await prisma.reminder.findMany({
+        where: {
+          studentProfileId: a.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: jobAppData.id,
+        },
+        orderBy: { occurrenceKey: 'asc' },
+      });
+      assert.equal(jobReminders.length, 2, 'Must create a reminder for each individual interview round');
+      const r0Id = jobAppData.interviewHistory[0]?.id;
+      const r1Id = jobAppData.interviewHistory[1]?.id;
+      assert.ok(r0Id, 'Round 0 must receive a persistent id');
+      assert.ok(r1Id, 'Round 1 must receive a persistent id');
+      const occKeys = jobReminders.map(r => r.occurrenceKey);
+      assert(occKeys.includes(`round-${r0Id}`), 'Reminder must use persistent round 0 id');
+      assert(occKeys.includes(`round-${r1Id}`), 'Reminder must use persistent round 1 id');
+
+      // 2. Parent record update: rescheduling assignment moves reminder triggerAt
+      const newAsgnDate = new Date(Date.now() + 96 * 3600 * 1000);
+      const updateAsgnRes = await req('PATCH', `/assignments/${asgnData.id}`, a.token, {
+        dueDate: newAsgnDate.toISOString(),
+      });
+      assert.equal(updateAsgnRes.status, 200);
+
+      const updatedAsgnRem = await prisma.reminder.findUniqueOrThrow({
+        where: { id: asgnReminder.id },
+      });
+      assert.equal(updatedAsgnRem.triggerAt.getTime(), newAsgnDate.getTime() - 24 * 3600 * 1000, 'Rescheduling must update reminder triggerAt');
+
+      // 3. Parent record deletion cancellation: deleting exam cancels reminder
+      const deleteExamRes = await req('DELETE', `/calendar/${examData.id}`, a.token);
+      assert.equal(deleteExamRes.status, 204);
+
+      const cancelledExamRem = await prisma.reminder.findUniqueOrThrow({
+        where: { id: examReminder.id },
+      });
+      assert.equal(cancelledExamRem.deliveryStatus, 'CANCELLED', 'Deleting parent exam must mark linked reminder CANCELLED');
+
+      // 4. Preference-channel separation:
+      // Configure Student A: emailNotifications = false, but assignmentReminders = true
+      await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { emailNotifications: false, assignmentReminders: true },
+      });
+
+      // Force assignment reminder to be due now
+      await prisma.reminder.update({
+        where: { id: asgnReminder.id },
+        data: { triggerAt: new Date(Date.now() - 1000) },
+      });
+
+      // Import and invoke dispatcher processDueReminders
+      const { reminderService } = await import('../src/services/reminder.service.js');
+      const batchResult1 = await reminderService.processDueReminders();
+      assert(batchResult1.processedCount >= 1);
+
+      // Verify reminder is marked DELIVERED and in-app Notification was created
+      const dispatchedAsgnRem = await prisma.reminder.findUniqueOrThrow({ where: { id: asgnReminder.id } });
+      assert.equal(dispatchedAsgnRem.deliveryStatus, 'DELIVERED', 'In-app notification must NOT be suppressed when emailNotifications=false');
+      assert(dispatchedAsgnRem.deliveredAt !== null);
+
+      const inAppNotif = await prisma.notification.findFirst({
+        where: { userId: a.id, type: 'ASSIGNMENT_REMINDER' },
+      });
+      assert(inAppNotif, 'In-app notification record must be created in student inbox');
+
+      // 5. Category suppression without false delivery:
+      // Configure Student A: interviewReminders = false
+      await req('PATCH', '/users/me/settings', a.token, {
+        notificationPreferences: { interviewReminders: false },
+      });
+
+      // Force job round-0 reminder to be due now
+      await prisma.reminder.update({
+        where: { id: jobReminders[0]!.id },
+        data: { triggerAt: new Date(Date.now() - 1000) },
+      });
+
+      const batchResult2 = await reminderService.processDueReminders();
+      assert(batchResult2.skippedCount >= 1);
+
+      const suppressedRem = await prisma.reminder.findUniqueOrThrow({ where: { id: jobReminders[0]!.id } });
+      assert.equal(suppressedRem.deliveryStatus, 'SKIPPED', 'Suppressed reminder must be marked SKIPPED');
+      assert.equal(suppressedRem.deliveredAt, null, 'Suppressed reminder must NOT be marked deliveredAt');
+      assert(suppressedRem.suppressedAt !== null, 'Suppressed reminder must record suppressedAt');
+
+      // Zero interview notification in inbox
+      const suppressedNotif = await prisma.notification.findFirst({
+        where: { userId: a.id, title: jobReminders[0]!.title },
+      });
+      assert.equal(suppressedNotif, null, 'Suppressed reminder must not create notification in inbox');
+
+      // 6. Notifications inbox API: GET and PATCH read
+      const notifListRes = await req('GET', '/notifications', a.token);
+      assert.equal(notifListRes.status, 200);
+      const notifList = (await notifListRes.json() as any).data;
+      assert(notifList.length >= 1);
+      assert.equal(notifList[0].isRead, false);
+
+      const markReadRes = await req('PATCH', `/notifications/${notifList[0].id}/read`, a.token);
+      assert.equal(markReadRes.status, 200);
+      assert.equal((await markReadRes.json() as any).data.isRead, true);
+    });
+
+    await t.test('W02 / W16: idempotent AI study plan acceptance with dated session mapping, supplemental tasks, and transactional rollback', async () => {
+      const idemKey = `idem_${randomUUID()}`;
+      const payload1 = {
+        idempotencyKey: idemKey,
+        title: 'Operating Systems Mastery',
+        recommendedTargetDate: '2026-11-15T00:00:00.000Z',
+        overview: 'Deep dive into virtual memory and scheduling',
+        weeklySchedule: [
+          {
+            day: 'MONDAY',
+            topic: 'Virtual Memory Intro',
+            durationMinutes: 60,
+            activity: 'Read Silberschatz Ch 9',
+            startTime: '10:00',
+          },
+          {
+            day: 'WEDNESDAY',
+            topic: 'Page Replacement Algorithms',
+            durationMinutes: 90,
+            activity: 'Simulate LRU and FIFO',
+            startTime: '14:00',
+          },
+        ],
+        suggestedTasks: [
+          {
+            title: 'Implement FIFO page replacement in C',
+            description: 'Handle frame allocation logic',
+          },
+        ],
+      };
+
+      // 1. Initial acceptance: 201 Created
+      const res1 = await req('POST', '/study-plans/accept-ai', a.token, payload1);
+      const res1Json = await res1.json() as any;
+      assert.equal(res1.status, 201, JSON.stringify(res1Json));
+      const plan1 = res1Json.data;
+      assert.equal(plan1.title, 'Operating Systems Mastery');
+      assert.equal(plan1.idempotencyKey, idemKey);
+
+      // Verify scheduleData has dated sessions
+      assert(plan1.scheduleData, 'scheduleData must be persisted');
+      const datedSchedule = plan1.scheduleData.datedSchedule || plan1.scheduleData.weeklySchedule;
+      assert.equal(datedSchedule.length, 2);
+      const monSession = datedSchedule[0];
+      const wedSession = datedSchedule[1];
+      assert(monSession.date, 'Session must have concrete date');
+      assert(wedSession.date, 'Session must have concrete date');
+
+      const monDate = new Date(monSession.date);
+      const wedDate = new Date(wedSession.date);
+      assert.equal(monDate.getUTCDay(), 1, 'Monday session must map to Monday (UTC day 1)');
+      assert.equal(wedDate.getUTCDay(), 3, 'Wednesday session must map to Wednesday (UTC day 3)');
+      assert.equal(monDate.getUTCHours(), 10, 'Start time 10:00 must be preserved');
+      assert.equal(wedDate.getUTCHours(), 14, 'Start time 14:00 must be preserved');
+
+      // Verify database tasks: study sessions + supplemental tasks
+      const persistedTasks = await prisma.task.findMany({
+        where: { studyPlanId: plan1.id },
+        orderBy: { createdAt: 'asc' },
+      });
+      assert.equal(persistedTasks.length, 3, 'Persisted tasks must include both 2 study sessions and 1 supplemental task');
+      assert(persistedTasks.some(t => t.title.includes('Virtual Memory Intro')));
+      assert(persistedTasks.some(t => t.title.includes('Page Replacement Algorithms')));
+      assert(persistedTasks.some(t => t.title === 'Implement FIFO page replacement in C'));
+
+      // 2. Idempotent duplicate: same key and identical payload -> 200 OK
+      const resDup = await req('POST', '/study-plans/accept-ai', a.token, payload1);
+      assert.equal(resDup.status, 200);
+      const dupData = (await resDup.json() as any).data;
+      assert.equal(dupData.id, plan1.id);
+
+      const countAfterDup = await prisma.studyPlan.count({ where: { studentProfileId: a.profileId!, idempotencyKey: idemKey } });
+      assert.equal(countAfterDup, 1, 'Duplicate request must not create a second study plan');
+
+      // 3. Conflict: same key with DIFFERENT payload -> 409 Conflict
+      const payloadConflict = {
+        ...payload1,
+        title: 'Tampered Different Plan Title',
+      };
+      const resConflict = await req('POST', '/study-plans/accept-ai', a.token, payloadConflict);
+      assert.equal(resConflict.status, 409, 'Different payload with same idempotency key must return 409 Conflict');
+
+      // 4. All-or-nothing rollback on invalid task
+      const failIdemKey = `fail_${randomUUID()}`;
+      const payloadInvalidTask = {
+        idempotencyKey: failIdemKey,
+        title: 'Plan that should roll back',
+        weeklySchedule: [
+          { day: 'MONDAY', topic: 'Valid Topic', durationMinutes: 60, activity: 'Valid Activity' },
+        ],
+        suggestedTasks: [
+          { title: '', description: 'Empty title must fail validation' },
+        ],
+      };
+      const resFail = await req('POST', '/study-plans/accept-ai', a.token, payloadInvalidTask);
+      assert.equal(resFail.status, 400);
+
+      const planAfterFail = await prisma.studyPlan.findFirst({ where: { idempotencyKey: failIdemKey } });
+      assert.equal(planAfterFail, null, 'Study plan must be rolled back on task validation failure');
+      const orphanTasks = await prisma.task.findMany({ where: { title: 'Valid Topic' } });
+      assert.equal(orphanTasks.length, 0, 'No tasks must be left behind after rollback');
+
+      // 5. Verification via GET /study-plans/:id
+      const getPlanRes = await req('GET', `/study-plans/${plan1.id}`, a.token);
+      assert.equal(getPlanRes.status, 200);
+      const fetchedPlan = (await getPlanRes.json() as any).data;
+      assert.equal(fetchedPlan.id, plan1.id);
+      assert(fetchedPlan.scheduleData);
+      assert.equal(fetchedPlan.tasks.length, 3);
+
+      // Student isolation
+      const otherRes = await req('GET', `/study-plans/${plan1.id}`, b.token);
+      assert.equal(otherRes.status, 404);
+    });
+
+    await t.test('legacy reminder backfill policy reconciliation with pre-migration fixtures', async () => {
+      const pastDate = new Date(Date.now() - 48 * 3600 * 1000);
+      const futureDate = new Date(Date.now() + 48 * 3600 * 1000);
+
+      const legacyCompleted = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy Completed Reminder',
+          triggerAt: pastDate,
+          isCompleted: true,
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      const legacyOverdue = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy Overdue Incomplete Reminder',
+          triggerAt: pastDate,
+          isCompleted: false,
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      const legacyFuture = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy Future Incomplete Reminder',
+          triggerAt: futureDate,
+          isCompleted: false,
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      const genuineDelivered = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Genuine Delivered Reminder',
+          triggerAt: pastDate,
+          isCompleted: false,
+          deliveryStatus: 'DELIVERED',
+          deliveredAt: pastDate,
+          sourceType: 'ASSIGNMENT',
+          sourceId: randomUUID(),
+          occurrenceKey: 'due',
+        },
+      });
+
+      await prisma.$executeRawUnsafe(`
+        UPDATE "Reminder"
+        SET "deliveryStatus" = 'CANCELLED'
+        WHERE "isCompleted" = true
+          AND ("deliveredAt" IS NULL OR "sourceType" IS NULL);
+      `);
+      await prisma.$executeRawUnsafe(`
+        UPDATE "Reminder"
+        SET "deliveryStatus" = 'SKIPPED',
+            "suppressedAt" = COALESCE("suppressedAt", NOW())
+        WHERE "isCompleted" = false
+          AND "triggerAt" <= NOW()
+          AND "deliveryStatus" = 'PENDING';
+      `);
+      await prisma.$executeRawUnsafe(`
+        UPDATE "Reminder"
+        SET "deliveryStatus" = 'PENDING'
+        WHERE "isCompleted" = false
+          AND "triggerAt" > NOW()
+          AND "deliveryStatus" NOT IN ('CANCELLED', 'DELIVERED');
+      `);
+
+      const afterCompleted = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyCompleted.id } });
+      assert.equal(afterCompleted.deliveryStatus, 'CANCELLED', 'Historical completed reminder must be CANCELLED');
+      assert.equal(afterCompleted.deliveredAt, null, 'Must NOT be marked DELIVERED');
+
+      const afterOverdue = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyOverdue.id } });
+      assert.equal(afterOverdue.deliveryStatus, 'SKIPPED', 'Historical overdue incomplete reminder must be SKIPPED');
+      assert(afterOverdue.suppressedAt !== null, 'Must record suppressedAt');
+      assert.equal(afterOverdue.deliveredAt, null);
+
+      const afterFuture = await prisma.reminder.findUniqueOrThrow({ where: { id: legacyFuture.id } });
+      assert.equal(afterFuture.deliveryStatus, 'PENDING', 'Future incomplete reminder must remain PENDING');
+
+      const afterGenuine = await prisma.reminder.findUniqueOrThrow({ where: { id: genuineDelivered.id } });
+      assert.equal(afterGenuine.deliveryStatus, 'DELIVERED', 'Genuine delivered reminder must not be altered');
+      assert.equal(afterGenuine.deliveredAt?.getTime(), pastDate.getTime());
+    });
+
+    await t.test('certification reminder lifecycle: creation, renewal, rescheduling, and deletion', async () => {
+      const expiryDate = new Date(Date.now() + 45 * 24 * 3600 * 1000);
+      const createRes = await req('POST', '/certifications', a.token, {
+        name: 'AWS Solutions Architect',
+        issuer: 'Amazon Web Services',
+        expiryDate: expiryDate.toISOString(),
+      });
+      assert.equal(createRes.status, 201);
+      const certData = (await createRes.json() as any).data;
+
+      const certReminder = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'CERTIFICATION',
+            sourceId: certData.id,
+            occurrenceKey: 'expiry',
+          },
+        },
+      });
+      assert(certReminder, 'Certification creation must synchronize expiry reminder');
+      assert.equal(certReminder.deliveryStatus, 'PENDING');
+      const expectedTrigger = expiryDate.getTime() - 30 * 24 * 3600 * 1000;
+      assert(Math.abs(certReminder.triggerAt.getTime() - expectedTrigger) < 5000, 'Trigger date must be 30 days prior to expiry');
+
+      const newExpiry = new Date(Date.now() + 90 * 24 * 3600 * 1000);
+      const updateRes = await req('PATCH', `/certifications/${certData.id}`, a.token, {
+        expiryDate: newExpiry.toISOString(),
+      });
+      assert.equal(updateRes.status, 200);
+
+      const updatedCertRem = await prisma.reminder.findUniqueOrThrow({ where: { id: certReminder.id } });
+      const expectedNewTrigger = newExpiry.getTime() - 30 * 24 * 3600 * 1000;
+      assert(Math.abs(updatedCertRem.triggerAt.getTime() - expectedNewTrigger) < 5000, 'Renewal must update reminder triggerAt');
+
+      const deleteRes = await req('DELETE', `/certifications/${certData.id}`, a.token);
+      assert.equal(deleteRes.status, 200);
+
+      const cancelledCertRem = await prisma.reminder.findUniqueOrThrow({ where: { id: certReminder.id } });
+      assert.equal(cancelledCertRem.deliveryStatus, 'CANCELLED', 'Deleting certification must cancel expiry reminder');
+    });
+
+    await t.test('reminder processor runtime: startup registration, overlapping-batch protection, per-item failure recovery, and graceful shutdown', async () => {
+      const { reminderService } = await import('../src/services/reminder.service.js');
+
+      reminderService.startReminderProcessor(5000);
+      assert.equal(reminderService.isProcessorRunning(), true, 'Processor timer must be active');
+
+      const [resBatch1, resBatch2] = await Promise.all([
+        reminderService.processDueReminders(),
+        reminderService.processDueReminders(),
+      ]);
+      assert(resBatch1 !== undefined && resBatch2 !== undefined);
+
+      const validRem = await prisma.reminder.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Valid Due Runtime Reminder',
+          triggerAt: new Date(Date.now() - 1000),
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      await reminderService.processDueReminders();
+      const afterValid = await prisma.reminder.findUniqueOrThrow({ where: { id: validRem.id } });
+      assert.equal(afterValid.deliveryStatus, 'DELIVERED', 'Valid reminder must be processed');
+
+      await reminderService.stopReminderProcessor();
+      assert.equal(reminderService.isProcessorRunning(), false, 'Processor timer must be cleared on shutdown');
+    });
+
+    await t.test('interview round identity: persistent identifiers preserve reminders across reordering and deletion', async () => {
+      const dateTech = new Date(Date.now() + 48 * 3600 * 1000);
+      const dateHr = new Date(Date.now() + 96 * 3600 * 1000);
+
+      const createRes = await req('POST', '/job-applications', a.token, {
+        companyName: 'Stripe',
+        role: 'Staff Engineer',
+        interviewHistory: [
+          { id: 'rnd-tech', round: 'Technical Architecture', date: dateTech.toISOString() },
+          { id: 'rnd-hr', round: 'Culture Fit', date: dateHr.toISOString() },
+        ],
+      });
+      assert.equal(createRes.status, 201);
+      const appData = (await createRes.json() as any).data;
+
+      const techRem = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'INTERVIEW',
+            sourceId: appData.id,
+            occurrenceKey: 'round-rnd-tech',
+          },
+        },
+      });
+      assert(techRem, 'Reminder for rnd-tech must exist with persistent key');
+
+      const hrRem = await prisma.reminder.findUnique({
+        where: {
+          studentProfileId_sourceType_sourceId_occurrenceKey: {
+            studentProfileId: a.profileId!,
+            sourceType: 'INTERVIEW',
+            sourceId: appData.id,
+            occurrenceKey: 'round-rnd-hr',
+          },
+        },
+      });
+      assert(hrRem, 'Reminder for rnd-hr must exist with persistent key');
+
+      const reorderRes = await req('PATCH', `/job-applications/${appData.id}`, a.token, {
+        interviewHistory: [
+          { id: 'rnd-hr', round: 'Culture Fit', date: dateHr.toISOString() },
+          { id: 'rnd-tech', round: 'Technical Architecture', date: dateTech.toISOString() },
+        ],
+      });
+      assert.equal(reorderRes.status, 200);
+
+      const techRemAfter = await prisma.reminder.findUniqueOrThrow({ where: { id: techRem.id } });
+      const hrRemAfter = await prisma.reminder.findUniqueOrThrow({ where: { id: hrRem.id } });
+      assert.equal(techRemAfter.occurrenceKey, 'round-rnd-tech');
+      assert.equal(techRemAfter.deliveryStatus, 'PENDING');
+      assert.equal(hrRemAfter.occurrenceKey, 'round-rnd-hr');
+      assert.equal(hrRemAfter.deliveryStatus, 'PENDING');
+
+      const deleteRoundRes = await req('PATCH', `/job-applications/${appData.id}`, a.token, {
+        interviewHistory: [
+          { id: 'rnd-hr', round: 'Culture Fit', date: dateHr.toISOString() },
+        ],
+      });
+      assert.equal(deleteRoundRes.status, 200);
+
+      const techRemDeleted = await prisma.reminder.findUniqueOrThrow({ where: { id: techRem.id } });
+      const hrRemKept = await prisma.reminder.findUniqueOrThrow({ where: { id: hrRem.id } });
+      assert.equal(techRemDeleted.deliveryStatus, 'CANCELLED', 'Deleted round must have its reminder cancelled');
+      assert.equal(hrRemKept.deliveryStatus, 'PENDING', 'Surviving round reminder must remain PENDING');
+    });
+
+    await t.test('interview round identity: legacy reconciliation without duplicate delivery, persistent one-time IDs, and reorder/deletion resilience', async () => {
+      const studentInt = await student('InterviewIdentity');
+      const date1 = new Date(Date.now() + 72 * 3600 * 1000);
+      const date2 = new Date(Date.now() + 120 * 3600 * 1000);
+
+      // 1. Simulate legacy application created without IDs in interviewHistory
+      const legacyApp = await prisma.jobApplication.create({
+        data: {
+          studentProfileId: studentInt.profileId!,
+          companyName: 'Legacy Systems Inc',
+          role: 'Site Reliability Engineer',
+          interviewHistory: [
+            { round: 'Technical Screening', date: date1.toISOString() },
+            { round: 'Architecture Review', date: date2.toISOString() },
+          ],
+        },
+      });
+
+      // Seed legacy reminders with array-position keys (round-0, round-1)
+      const rem0 = await prisma.reminder.create({
+        data: {
+          studentProfileId: studentInt.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: legacyApp.id,
+          occurrenceKey: 'round-0',
+          title: 'Legacy Round 0 Reminder',
+          triggerAt: new Date(date1.getTime() - 24 * 3600 * 1000),
+          deliveryStatus: 'PENDING',
+        },
+      });
+      const rem1 = await prisma.reminder.create({
+        data: {
+          studentProfileId: studentInt.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: legacyApp.id,
+          occurrenceKey: 'round-1',
+          title: 'Legacy Round 1 Reminder',
+          triggerAt: new Date(date2.getTime() - 24 * 3600 * 1000),
+          deliveryStatus: 'PENDING',
+        },
+      });
+
+      // 2. Client updates application without providing IDs (e.g. editing notes)
+      const updateRes = await req('PATCH', `/job-applications/${legacyApp.id}`, studentInt.token, {
+        notes: 'Updated notes on legacy application',
+      });
+      assert.equal(updateRes.status, 200);
+      const updatedApp = (await updateRes.json() as any).data;
+
+      // Both rounds must acquire persistent IDs
+      const r0Id = updatedApp.interviewHistory[0]?.id;
+      const r1Id = updatedApp.interviewHistory[1]?.id;
+      assert.ok(r0Id, 'Legacy Round 0 must acquire persistent ID on update');
+      assert.ok(r1Id, 'Legacy Round 1 must acquire persistent ID on update');
+      assert.notEqual(r0Id, r1Id, 'Rounds must receive distinct persistent IDs');
+
+      // Legacy reminders must be reconciled to persistent round keys without creating duplicate reminders
+      const allReminders = await prisma.reminder.findMany({
+        where: {
+          studentProfileId: studentInt.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: legacyApp.id,
+        },
+      });
+      assert.equal(allReminders.length, 2, 'Reconciliation must not duplicate reminders (exactly 2 must exist)');
+      const rem0Updated = await prisma.reminder.findUniqueOrThrow({ where: { id: rem0.id } });
+      const rem1Updated = await prisma.reminder.findUniqueOrThrow({ where: { id: rem1.id } });
+      assert.equal(rem0Updated.occurrenceKey, `round-${r0Id}`, 'Legacy rem0 must migrate occurrenceKey to round-id');
+      assert.equal(rem1Updated.occurrenceKey, `round-${r1Id}`, 'Legacy rem1 must migrate occurrenceKey to round-id');
+      assert.equal(rem0Updated.deliveryStatus, 'PENDING');
+      assert.equal(rem1Updated.deliveryStatus, 'PENDING');
+
+      // 3. Reorder rounds: swap Round 1 and Round 0 in interviewHistory
+      const reorderRes = await req('PATCH', `/job-applications/${legacyApp.id}`, studentInt.token, {
+        interviewHistory: [
+          { id: r1Id, round: 'Architecture Review', date: date2.toISOString() },
+          { id: r0Id, round: 'Technical Screening', date: date1.toISOString() },
+        ],
+      });
+      assert.equal(reorderRes.status, 200);
+
+      // Verify that reordering does NOT cancel, recreate, or desync reminders
+      const remsAfterReorder = await prisma.reminder.findMany({
+        where: {
+          studentProfileId: studentInt.profileId!,
+          sourceType: 'INTERVIEW',
+          sourceId: legacyApp.id,
+        },
+      });
+      assert.equal(remsAfterReorder.length, 2);
+      const rem0AfterReorder = await prisma.reminder.findUniqueOrThrow({ where: { id: rem0.id } });
+      const rem1AfterReorder = await prisma.reminder.findUniqueOrThrow({ where: { id: rem1.id } });
+      assert.equal(rem0AfterReorder.deliveryStatus, 'PENDING');
+      assert.equal(rem1AfterReorder.deliveryStatus, 'PENDING');
+      assert.equal(rem0AfterReorder.occurrenceKey, `round-${r0Id}`);
+      assert.equal(rem1AfterReorder.occurrenceKey, `round-${r1Id}`);
+
+      // 4. Delete one round: delete Round 0, keep Round 1
+      const deleteRoundRes = await req('PATCH', `/job-applications/${legacyApp.id}`, studentInt.token, {
+        interviewHistory: [
+          { id: r1Id, round: 'Architecture Review', date: date2.toISOString() },
+        ],
+      });
+      assert.equal(deleteRoundRes.status, 200);
+
+      const rem0AfterDelete = await prisma.reminder.findUniqueOrThrow({ where: { id: rem0.id } });
+      const rem1AfterDelete = await prisma.reminder.findUniqueOrThrow({ where: { id: rem1.id } });
+      assert.equal(rem0AfterDelete.deliveryStatus, 'CANCELLED', 'Deleted round reminder must transition to CANCELLED');
+      assert.equal(rem1AfterDelete.deliveryStatus, 'PENDING', 'Retained round reminder must remain PENDING');
+    });
+
+    await t.test('AI study plan acceptance: concurrent identical & conflicting requests, explicit timezone/week mapping, pre-write rejection, and injected post-write rollback', async () => {
+      const concurrentIdemKey = `conc_${randomUUID()}`;
+      const payloadConcurrent = {
+        idempotencyKey: concurrentIdemKey,
+        title: 'Distributed Systems',
+        targetWeekStart: '2026-11-09T00:00:00.000Z',
+        weeklySchedule: [
+          { day: 'MONDAY', topic: 'Raft Consensus', durationMinutes: 60, activity: 'Paper reading', startTime: '09:00' },
+          { day: 'FRIDAY', topic: 'Paxos Simulation', durationMinutes: 90, activity: 'Lab coding', startTime: '15:30' },
+          { day: 'SUNDAY', topic: 'Weekly Review', durationMinutes: 45, activity: 'Self quiz', startTime: '18:00' },
+        ],
+        suggestedTasks: [
+          { title: 'Write TLA+ spec for 2PC', description: 'Two-phase commit specification' },
+        ],
+      };
+
+      const [resA, resB] = await Promise.all([
+        req('POST', '/study-plans/accept-ai', a.token, payloadConcurrent),
+        req('POST', '/study-plans/accept-ai', a.token, payloadConcurrent),
+      ]);
+
+      const statuses = [resA.status, resB.status].sort();
+      assert.deepEqual(statuses, [200, 201], 'One request must create (201) and one must return duplicate (200)');
+
+      const plansInDb = await prisma.studyPlan.findMany({
+        where: { studentProfileId: a.profileId!, idempotencyKey: concurrentIdemKey },
+        include: { tasks: true },
+      });
+      assert.equal(plansInDb.length, 1, 'Exactly one study plan must exist for the idempotency key');
+      assert.equal(plansInDb[0]!.tasks.length, 4, 'Exactly 4 tasks (3 sessions + 1 supplemental) must exist');
+
+      const conflictIdemKey = `conf_race_${randomUUID()}`;
+      const payloadOriginal = {
+        idempotencyKey: conflictIdemKey,
+        title: 'Original Cloud Architecture Plan',
+        weeklySchedule: [{ day: 'MONDAY', topic: 'VPC Peering', durationMinutes: 60, activity: 'Diagram' }],
+      };
+      const payloadTampered = {
+        idempotencyKey: conflictIdemKey,
+        title: 'Tampered Hacker Plan',
+        weeklySchedule: [{ day: 'MONDAY', topic: 'Exploit Study', durationMinutes: 60, activity: 'Attack' }],
+      };
+
+      const [resOrig, resTamp] = await Promise.all([
+        req('POST', '/study-plans/accept-ai', a.token, payloadOriginal),
+        req('POST', '/study-plans/accept-ai', a.token, payloadTampered),
+      ]);
+      const raceStatuses = [resOrig.status, resTamp.status].sort();
+      assert.deepEqual(raceStatuses, [201, 409], 'One request must succeed with 201 and conflicting request must fail with 409');
+
+      const tzIdemKey = `tz_${randomUUID()}`;
+      const resTz = await req('POST', '/study-plans/accept-ai', a.token, {
+        idempotencyKey: tzIdemKey,
+        title: 'Timezone Verification Plan',
+        targetWeekStart: '2026-11-09T05:30:00+05:30',
+        weeklySchedule: [
+          { day: 'MONDAY', topic: 'Mon IST', durationMinutes: 60, activity: 'Read', startTime: '09:00' },
+          { day: 'SUNDAY', topic: 'Sun IST', durationMinutes: 60, activity: 'Wrap', startTime: '21:00' },
+        ],
+      });
+      assert.equal(resTz.status, 201);
+      const tzPlan = (await resTz.json() as any).data;
+      const datedTz = tzPlan.scheduleData.datedSchedule;
+      const monDate = new Date(datedTz[0].date);
+      const sunDate = new Date(datedTz[1].date);
+      assert.equal(monDate.getUTCDay(), 1, 'Monday session must resolve to UTC Monday');
+      assert.equal(sunDate.getUTCDay(), 0, 'Sunday session must resolve to UTC Sunday');
+      assert.equal(monDate.getUTCDate(), 9, 'Monday must resolve to 2026-11-09');
+      assert.equal(sunDate.getUTCDate(), 15, 'Sunday must resolve to 2026-11-15');
+
+      // Pre-write validation rejection (rejects invalid input before transaction)
+      const rollbackIdemKey = `rb_${randomUUID()}`;
+      const payloadRollback = {
+        idempotencyKey: rollbackIdemKey,
+        title: 'Rollback Demonstration Plan',
+        weeklySchedule: [{ day: 'MONDAY', topic: 'Will be rolled back', durationMinutes: 60, activity: 'Act' }],
+        suggestedTasks: [
+          { title: 'Valid task 1' },
+          { title: '' },
+        ],
+      };
+      const resRb = await req('POST', '/study-plans/accept-ai', a.token, payloadRollback);
+      assert.equal(resRb.status, 400);
+
+      const planInDbAfterRb = await prisma.studyPlan.findFirst({ where: { idempotencyKey: rollbackIdemKey } });
+      assert.equal(planInDbAfterRb, null, 'Study plan must not be created on pre-write validation failure');
+
+      // Injected post-write persistence failure: proves database transaction rollback after plan has been written
+      const injectedIdemKey = `injected_${randomUUID()}`;
+      const injectedPayload = {
+        idempotencyKey: injectedIdemKey,
+        title: 'Injected Post-Write Rollback Plan',
+        weeklySchedule: [{ day: 'MONDAY', topic: 'INJECT_TRIGGER_FAIL_TOPIC', durationMinutes: 60, activity: 'Trigger fail' }],
+      };
+
+      await prisma.$executeRawUnsafe(`
+        CREATE OR REPLACE FUNCTION closure_test_inject_task_failure() RETURNS trigger AS $$
+        BEGIN
+          IF NEW.title = 'INJECT_TRIGGER_FAIL_TOPIC' THEN
+            RAISE EXCEPTION 'Simulated post-write task persistence failure';
+          END IF;
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+      `);
+      await prisma.$executeRawUnsafe(`
+        DROP TRIGGER IF EXISTS trg_closure_task_fail ON "Task";
+        CREATE TRIGGER trg_closure_task_fail
+        BEFORE INSERT ON "Task"
+        FOR EACH ROW
+        EXECUTE FUNCTION closure_test_inject_task_failure();
+      `);
+
+      try {
+        const resInjected = await req('POST', '/study-plans/accept-ai', a.token, injectedPayload);
+        assert.equal(resInjected.status, 500, 'Database trigger failure must yield 500');
+
+        const planInDbAfterInjected = await prisma.studyPlan.findFirst({ where: { idempotencyKey: injectedIdemKey } });
+        assert.equal(planInDbAfterInjected, null, 'Study plan must be rolled back by database transaction after post-write failure');
+
+        const tasksInDbAfterInjected = await prisma.task.findMany({ where: { title: 'INJECT_TRIGGER_FAIL_TOPIC' } });
+        assert.equal(tasksInDbAfterInjected.length, 0, 'No tasks must remain in database after injected transaction rollback');
+      } finally {
+        await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS trg_closure_task_fail ON "Task";`);
+        await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS closure_test_inject_task_failure();`);
+      }
+    });
+
+    await t.test('W07: task completion timestamp lifecycle, atomic transitions, and UTC half-open date boundaries', async () => {
+      // 1. Creating task with status DONE sets completedAt
+      const resDoneCreate = await req('POST', '/tasks', a.token, {
+        title: 'Initial Done Task',
+        status: 'DONE',
+      });
+      assert.equal(resDoneCreate.status, 201);
+      const dataDoneCreate = (await resDoneCreate.json() as any).data;
+      assert(dataDoneCreate.completedAt !== null, 'Creating task as DONE must set completedAt');
+
+      // 2. Creating task with status TODO has completedAt null
+      const resTodoCreate = await req('POST', '/tasks', a.token, {
+        title: 'Initial Todo Task',
+        status: 'TODO',
+      });
+      assert.equal(resTodoCreate.status, 201);
+      const dataTodoCreate = (await resTodoCreate.json() as any).data;
+      assert.equal(dataTodoCreate.completedAt, null, 'Creating task as TODO must have null completedAt');
+
+      // 3. Transition TODO -> DONE sets completedAt
+      const resComplete = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        status: 'DONE',
+      });
+      assert.equal(resComplete.status, 200);
+      const dataCompleted = (await resComplete.json() as any).data;
+      assert(dataCompleted.completedAt !== null, 'Transition to DONE must set completedAt');
+      const tCompleted = new Date(dataCompleted.completedAt).getTime();
+
+      // 4. Repeated update with DONE preserves original completedAt
+      const resRepeatDone = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        status: 'DONE',
+        title: 'Renamed While Done',
+      });
+      assert.equal(resRepeatDone.status, 200);
+      const dataRepeat = (await resRepeatDone.json() as any).data;
+      assert.equal(new Date(dataRepeat.completedAt).getTime(), tCompleted, 'Repeated DONE must preserve existing completedAt');
+
+      // 5. Reopening task (DONE -> IN_PROGRESS or TODO) clears completedAt
+      const resReopen = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        status: 'IN_PROGRESS',
+      });
+      assert.equal(resReopen.status, 200);
+      const dataReopened = (await resReopen.json() as any).data;
+      assert.equal(dataReopened.completedAt, null, 'Reopening task must clear completedAt');
+
+      // 6. Re-completing task sets fresh completedAt
+      const resRecomplete = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        status: 'DONE',
+      });
+      assert.equal(resRecomplete.status, 200);
+      const dataRecompleted = (await resRecomplete.json() as any).data;
+      assert(dataRecompleted.completedAt !== null, 'Re-completing must set fresh completedAt');
+
+      // Concurrency protection & Semantics:
+      // (a) Title-only edit to a completed task preserves completedAt when status is omitted
+      const origCompletedAt = dataRecompleted.completedAt;
+      const resTitleOnly = await req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, {
+        title: 'Title Only Edit While Done',
+      });
+      assert.equal(resTitleOnly.status, 200);
+      const dataTitleOnly = (await resTitleOnly.json() as any).data;
+      assert.equal(dataTitleOnly.status, 'DONE');
+      assert.equal(dataTitleOnly.completedAt, origCompletedAt, 'Status-omitted edit must preserve completedAt');
+
+      // (b) Repeated and concurrent completion requests preserve original timestamp
+      const concurrentResults = await Promise.all([
+        req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, { status: 'DONE' }),
+        req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, { status: 'DONE', title: 'Concurrent Edit While Done' }),
+        req('PATCH', `/tasks/${dataTodoCreate.id}`, a.token, { status: 'DONE' }),
+      ]);
+      assert.equal(concurrentResults[0].status, 200);
+      assert.equal(concurrentResults[1].status, 200);
+      assert.equal(concurrentResults[2].status, 200);
+      const afterConcurrent = await prisma.task.findUniqueOrThrow({ where: { id: dataTodoCreate.id } });
+      assert.equal(afterConcurrent.status, 'DONE');
+      assert.equal(afterConcurrent.completedAt?.toISOString(), origCompletedAt, 'Concurrent repeated DONE requests must preserve original completedAt');
+
+      // (c) Simultaneous first-time TODO -> DONE transitions with row-level lock serialization
+      const resSimulTask = await req('POST', '/tasks', a.token, {
+        title: 'Simultaneous TODO to DONE Task',
+        status: 'TODO',
+      });
+      assert.equal(resSimulTask.status, 201);
+      const simulTaskId = (await resSimulTask.json() as any).data.id;
+
+      const simulResults = await Promise.all([
+        req('PATCH', `/tasks/${simulTaskId}`, a.token, { status: 'DONE' }),
+        req('PATCH', `/tasks/${simulTaskId}`, a.token, { status: 'DONE' }),
+        req('PATCH', `/tasks/${simulTaskId}`, a.token, { status: 'DONE' }),
+        req('PATCH', `/tasks/${simulTaskId}`, a.token, { status: 'DONE' }),
+      ]);
+      assert.equal(simulResults[0].status, 200);
+      assert.equal(simulResults[1].status, 200);
+      assert.equal(simulResults[2].status, 200);
+      assert.equal(simulResults[3].status, 200);
+
+      const simulTimestamps = await Promise.all(simulResults.map(async r => ((await r.json() as any).data.completedAt)));
+      const firstTimestamp = simulTimestamps[0];
+      assert(firstTimestamp !== null, 'First-time completion must set non-null completedAt');
+      for (let i = 1; i < simulTimestamps.length; i++) {
+        assert.equal(
+          simulTimestamps[i],
+          firstTimestamp,
+          `Simultaneous initial TODO -> DONE requests must serialize via row-lock and return identical completedAt (request ${i} differed)`
+        );
+      }
+
+      // (d) Preserve unknown completion dates on legacy DONE tasks unless reopened and completed again
+      const legacyDoneTask = await prisma.task.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy DONE Task for Semantics Test',
+          status: 'DONE',
+          completedAt: null,
+        },
+      });
+
+      // Title-only edit must leave completedAt as null
+      const resLegacyTitleEdit = await req('PATCH', `/tasks/${legacyDoneTask.id}`, a.token, {
+        title: 'Legacy Title Edited',
+      });
+      assert.equal(resLegacyTitleEdit.status, 200);
+      const dataLegacyTitle = (await resLegacyTitleEdit.json() as any).data;
+      assert.equal(dataLegacyTitle.completedAt, null, 'Editing title on legacy DONE task must preserve null completedAt');
+
+      // Repeated DONE must leave completedAt as null
+      const resLegacyDoneAgain = await req('PATCH', `/tasks/${legacyDoneTask.id}`, a.token, {
+        status: 'DONE',
+        title: 'Legacy Re-asserted DONE',
+      });
+      assert.equal(resLegacyDoneAgain.status, 200);
+      const dataLegacyDoneAgain = (await resLegacyDoneAgain.json() as any).data;
+      assert.equal(dataLegacyDoneAgain.completedAt, null, 'Re-asserting DONE on legacy task must preserve null completedAt');
+
+      // Explicit reopening clears completedAt (remains null)
+      const resLegacyReopened = await req('PATCH', `/tasks/${legacyDoneTask.id}`, a.token, {
+        status: 'TODO',
+      });
+      assert.equal(resLegacyReopened.status, 200);
+      const dataLegacyReopened = (await resLegacyReopened.json() as any).data;
+      assert.equal(dataLegacyReopened.status, 'TODO');
+      assert.equal(dataLegacyReopened.completedAt, null);
+
+      // Re-completing previously reopened task sets a fresh non-null completedAt
+      const resLegacyRecompleted = await req('PATCH', `/tasks/${legacyDoneTask.id}`, a.token, {
+        status: 'DONE',
+      });
+      assert.equal(resLegacyRecompleted.status, 200);
+      const dataLegacyRecompleted = (await resLegacyRecompleted.json() as any).data;
+      assert.equal(dataLegacyRecompleted.status, 'DONE');
+      assert(dataLegacyRecompleted.completedAt !== null, 'Re-completing a reopened legacy task must set fresh non-null completedAt');
+
+      // 7. UTC Half-Open Date Boundaries [from, to) & Legacy task exclusion from dated activity
+      // Legacy task: status DONE, completedAt NULL
+      await prisma.task.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Legacy Completed Task Without Timestamp',
+          status: 'DONE',
+          completedAt: null,
+        },
+      });
+
+      // Boundary task completed right at midnight UTC: 2026-10-15T00:00:00.000Z
+      const boundaryDate = new Date('2026-10-15T00:00:00.000Z');
+      await prisma.task.create({
+        data: {
+          studentProfileId: a.profileId!,
+          title: 'Midnight Boundary Task',
+          status: 'DONE',
+          completedAt: boundaryDate,
+        },
+      });
+
+      // Day 1: [2026-10-14T00:00:00.000Z, 2026-10-15T00:00:00.000Z)
+      // Boundary task at 2026-10-15T00:00:00.000Z must NOT be counted because 'to' is exclusive (< to)
+      const day1Breakdown = await analyticsService.getActivityBreakdown(
+        a.profileId!,
+        'custom',
+        '2026-10-14T00:00:00.000Z',
+        '2026-10-15T00:00:00.000Z'
+      );
+      assert.equal(day1Breakdown.tasks.completed, 0, 'Midnight task must not count towards preceding day in [from, to) interval');
+
+      // Day 2: [2026-10-15T00:00:00.000Z, 2026-10-16T00:00:00.000Z)
+      // Boundary task at 2026-10-15T00:00:00.000Z MUST be counted because 'from' is inclusive (>= from)
+      const day2Breakdown = await analyticsService.getActivityBreakdown(
+        a.profileId!,
+        'custom',
+        '2026-10-15T00:00:00.000Z',
+        '2026-10-16T00:00:00.000Z'
+      );
+      assert.equal(day2Breakdown.tasks.completed, 1, 'Midnight task must count towards the day starting at midnight');
+
+      // 8. Total dashboard counts preserve legacy completed tasks
+      const dashboard = await analyticsService.getStudentDashboard(a.profileId!);
+      assert(dashboard.productivity.completedTasks >= 2, 'Lifetime completed counts must retain legacy tasks with unknown completedAt');
+    });
+
+    await t.test('W08: canonical resume selection across analytics and AI with explicit ID override', async () => {
+      const studentW08 = await student('W08');
+      const w08Id = studentW08.profileId!;
+
+      // 1. Setup multiple resumes for Student W08
+      const res1 = await prisma.resume.create({
+        data: {
+          studentProfileId: w08Id,
+          title: 'Legacy Inactive Resume 1',
+          isActive: false,
+          updatedAt: new Date('2026-10-01T00:00:00Z'),
+        },
+      });
+      await prisma.resumeVersion.create({
+        data: {
+          resumeId: res1.id,
+          content: { personalInfo: { name: 'Student W08' }, education: [{ degree: 'BS' }] },
+          atsScore: 50,
+          createdAt: new Date('2026-10-01T00:00:00Z'),
+        },
+      });
+      const v1Newer = await prisma.resumeVersion.create({
+        data: {
+          resumeId: res1.id,
+          content: { personalInfo: { name: 'Student W08' }, education: [{ degree: 'BS' }], skills: ['TS'] },
+          atsScore: 90,
+          createdAt: new Date('2026-10-02T00:00:00Z'),
+        },
+      });
+
+      const res2 = await prisma.resume.create({
+        data: {
+          studentProfileId: w08Id,
+          title: 'Recent Inactive Resume 2',
+          isActive: false,
+          updatedAt: new Date('2026-10-10T00:00:00Z'),
+        },
+      });
+      await prisma.resumeVersion.create({
+        data: {
+          resumeId: res2.id,
+          content: { personalInfo: { name: 'Student W08' }, experience: [{ company: 'Tech Inc' }] },
+          atsScore: 60,
+          createdAt: new Date('2026-10-10T00:00:00Z'),
+        },
+      });
+
+      const res3 = await prisma.resume.create({
+        data: {
+          studentProfileId: w08Id,
+          title: 'Active Resume 3',
+          isActive: true,
+          updatedAt: new Date('2026-10-05T00:00:00Z'),
+        },
+      });
+      await prisma.resumeVersion.create({
+        data: {
+          resumeId: res3.id,
+          content: { personalInfo: { name: 'Student W08' }, projects: [{ name: 'Project 3' }] },
+          atsScore: 75,
+          createdAt: new Date('2026-10-05T00:00:00Z'),
+        },
+      });
+
+      // 2. Active resume takes precedence even if another inactive resume has newer updatedAt
+      const canonicalActive = await getCanonicalResume(w08Id);
+      assert.equal(canonicalActive?.id, res3.id, 'Active resume must take precedence');
+      assert.equal(canonicalActive?.versions[0]?.atsScore, 75);
+
+      // 3. When active resume is deactivated, most recently updated inactive resume wins
+      await prisma.resume.update({ where: { id: res3.id }, data: { isActive: false, updatedAt: new Date('2026-10-05T00:00:00Z') } });
+      const canonicalRecent = await getCanonicalResume(w08Id);
+      assert.equal(canonicalRecent?.id, res2.id, 'Most recently updated resume must win when none are active');
+      assert.equal(canonicalRecent?.versions[0]?.atsScore, 60);
+
+      // 4. Version tie-breaker: newest version selected
+      const res1Loaded = await getCanonicalResume(w08Id, res1.id);
+      assert.equal(res1Loaded?.versions[0]?.id, v1Newer.id, 'Newest version must be selected');
+      assert.equal(res1Loaded?.versions[0]?.atsScore, 90);
+
+      // 5. Explicit resumeId override preserved in analytics and verified against ownership
+      const completionExplicit = await analyticsService.getResumeCompletion(w08Id, res1.id);
+      assert.equal(completionExplicit.resumeId, res1.id, 'Explicit resume ID must be preserved in completion calculation');
+
+      // Cross-student access rejection
+      await assert.rejects(getCanonicalResume(b.profileId!, res1.id), {
+        statusCode: 404,
+        message: 'Resume not found or does not belong to you',
+      });
+    });
+
+    await t.test('W09 & B10: fresh aggregated attendance in AI study plan context distinguishing zero records from 0% attendance', async () => {
+      const studentW09 = await student('W09');
+      const w09Id = studentW09.profileId!;
+
+      // 1. Fresh academic context with zero attendance records
+      const semContext = await prisma.semester.create({
+        data: {
+          studentProfileId: w09Id,
+          name: 'AI Context Semester',
+          startDate: new Date('2026-09-01'),
+          endDate: new Date('2026-12-31'),
+        },
+      });
+      await prisma.subject.create({
+        data: {
+          semesterId: semContext.id,
+          name: 'Zero Records Subject',
+          code: 'ZERO101',
+          totalClasses: 0,
+          attendedClasses: 0,
+        },
+      });
+
+      const perfZero = await analyticsService.getSubjectPerformance(w09Id);
+      const totalClassesZero = perfZero.reduce((s, p) => s + p.totalClasses, 0);
+      assert.equal(totalClassesZero, 0);
+
+      const aiPlanZero = await AIService.generateStudyPlanRecommendation(w09Id, {
+        topic: 'Compilers',
+      });
+      assert(aiPlanZero.contextUsed !== undefined);
+      assert.equal(aiPlanZero.contextUsed.attendancePercentage, 0);
+
+      // 2. Fresh academic context with genuine 0% attendance (10 classes held, 0 attended)
+      await prisma.subject.create({
+        data: {
+          semesterId: semContext.id,
+          name: 'Zero Attended Subject',
+          code: 'FAIL101',
+          totalClasses: 10,
+          attendedClasses: 0,
+        },
+      });
+
+      const perfGenuinelyZero = await analyticsService.getSubjectPerformance(w09Id);
+      const totalClassesGenuinelyZero = perfGenuinelyZero.reduce((s, p) => s + p.totalClasses, 0);
+      const attendedClassesGenuinelyZero = perfGenuinelyZero.reduce((s, p) => s + p.attendedClasses, 0);
+      assert.equal(totalClassesGenuinelyZero, 10);
+      assert.equal(attendedClassesGenuinelyZero, 0);
+
+      // 3. Aggregate attendance calculation: sum of attended classes / sum of total classes (not average of percentages)
+      // Create second subject: 90 classes total, 90 attended (100%)
+      await prisma.subject.create({
+        data: {
+          semesterId: semContext.id,
+          name: 'High Attendance Subject',
+          code: 'HIGH101',
+          totalClasses: 90,
+          attendedClasses: 90,
+        },
+      });
+
+      const perfWeighted = await analyticsService.getSubjectPerformance(w09Id);
+      const totalAttended = perfWeighted.reduce((s, p) => s + p.attendedClasses, 0); // 0 + 90 = 90
+      const totalHeld = perfWeighted.reduce((s, p) => s + p.totalClasses, 0); // 10 + 90 = 100
+      const aggregatePercentage = (totalAttended / totalHeld) * 100;
+      assert.equal(aggregatePercentage, 90, 'Aggregate attendance must be 90% (90/100), not the unweighted average of subject percentages');
+    });
+
+    await t.test('W12: recorded storage provider routing on note and resume retrieval and deletion with compatibility fallback', async () => {
+      // 1. Upload local test files
+      const localProvider = getStorageProvider('local');
+      const testNoteKey = `notes/${a.profileId}/test-note-w12.pdf`;
+      const testResumeKey = `profiles/${a.profileId}/test-resume-w12.pdf`;
+      await localProvider.upload(testNoteKey, Buffer.from('%PDF-1.4 test note content'), 'application/pdf');
+      await localProvider.upload(testResumeKey, Buffer.from('%PDF-1.4 test resume content'), 'application/pdf');
+
+      // 2. Note with explicitly recorded storageProvider
+      const noteRec = await prisma.note.create({
+        data: {
+          subjectId: subject.id,
+          title: 'Recorded Provider Note',
+          content: 'Note content',
+          fileId: testNoteKey,
+          fileStorageProvider: 'local',
+        },
+      });
+
+      // Stream note file -> routes via note.fileStorageProvider
+      const streamRes = await req('GET', `/notes/${noteRec.id}/file`, a.token);
+      assert.equal(streamRes.status, 200);
+
+      // 3. Legacy note with null fileStorageProvider -> routes via compatibility fallback
+      const noteLegacy = await prisma.note.create({
+        data: {
+          subjectId: subject.id,
+          title: 'Legacy Provider Note',
+          content: 'Legacy note content',
+          fileId: testNoteKey,
+          fileStorageProvider: null,
+        },
+      });
+      const streamLegacyRes = await req('GET', `/notes/${noteLegacy.id}/file`, a.token);
+      assert.equal(streamLegacyRes.status, 200);
+
+      // 4. Note deletion cleans up using recorded provider
+      await noteService.deleteNote(a.profileId!, noteRec.id);
+      const noteInDb = await prisma.note.findUnique({ where: { id: noteRec.id } });
+      assert.equal(noteInDb, null);
+
+      // 5. Resume streaming routes via user profile recorded resumeStorageProvider
+      await prisma.studentProfile.update({
+        where: { id: a.profileId! },
+        data: {
+          uploadedResumeFileId: testResumeKey,
+          resumeStorageProvider: 'local',
+        },
+      });
+      const resumeStreamRes = await req('GET', '/users/me/resume-file', a.token);
+      assert.equal(resumeStreamRes.status, 200);
+      assert.equal(resumeStreamRes.headers.get('content-type'), 'application/pdf');
+
+      // 6. Demonstrate retrieval AND deletion of existing recorded records after default provider switch
+      const origProvider = env.STORAGE_PROVIDER;
+      try {
+        // Switch global default provider to 'supabase'
+        (env as any).STORAGE_PROVIDER = 'supabase';
+
+        // Note recorded as 'local'
+        const testSwitchNoteKey = `notes/${a.profileId}/switch-note-w12.pdf`;
+        await localProvider.upload(testSwitchNoteKey, Buffer.from('%PDF-1.4 switch test note content'), 'application/pdf');
+
+        const switchNote = await prisma.note.create({
+          data: {
+            subjectId: subject.id,
+            title: 'Provider Switch Note',
+            content: 'Content',
+            fileId: testSwitchNoteKey,
+            fileStorageProvider: 'local',
+          },
+        });
+
+        // (a) Retrieval must route to recorded 'local' provider even though env default is 'supabase'
+        const switchStreamRes = await req('GET', `/notes/${switchNote.id}/file`, a.token);
+        assert.equal(switchStreamRes.status, 200, 'Must retrieve local file successfully even when default provider is switched');
+
+        // (b) Profile resume retrieval must also route to recorded 'local' provider
+        const switchResumeRes = await req('GET', '/users/me/resume-file', a.token);
+        assert.equal(switchResumeRes.status, 200, 'Must retrieve local resume successfully even when default provider is switched');
+
+        // (c) Deletion must route to recorded 'local' provider and delete file from local storage
+        await noteService.deleteNote(a.profileId!, switchNote.id);
+        const switchNoteInDb = await prisma.note.findUnique({ where: { id: switchNote.id } });
+        assert.equal(switchNoteInDb, null, 'Note record must be deleted from DB');
+        const switchLocalPath = (localProvider as LocalStorageProvider).getLocalPath(testSwitchNoteKey);
+        let existsLocally = true;
+        try {
+          await access(switchLocalPath);
+        } catch {
+          existsLocally = false;
+        }
+        assert.equal(existsLocally, false, 'Deletion must clean up file via recorded provider after default switch');
+      } finally {
+        (env as any).STORAGE_PROVIDER = origProvider;
+      }
+    });
+
+    await t.test('W20: admin platform content stats matching student publication and expiry rules', async () => {
+      const now = new Date();
+      const past = new Date(now.getTime() - 86400000);
+      const future = new Date(now.getTime() + 86400000);
+      const farFuture = new Date(now.getTime() + 7 * 86400000);
+      const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      const baselineStats = await adminPlatformService.getDashboardMetrics();
+
+      // Announcements
+      const aActive = await prisma.announcement.create({
+        data: {
+          type: 'ANNOUNCEMENT',
+          title: 'Active Announcement',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: past,
+          expiresAt: future,
+          authorUserId: adminUser.id,
+        },
+      });
+      const aDraft = await prisma.announcement.create({
+        data: {
+          type: 'ANNOUNCEMENT',
+          title: 'Draft Announcement',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: false,
+          publishedAt: past,
+          authorUserId: adminUser.id,
+        },
+      });
+      const aFuture = await prisma.announcement.create({
+        data: {
+          type: 'ANNOUNCEMENT',
+          title: 'Future Announcement',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: future,
+          authorUserId: adminUser.id,
+        },
+      });
+      const aExpired = await prisma.announcement.create({
+        data: {
+          type: 'ANNOUNCEMENT',
+          title: 'Expired Announcement',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: past,
+          expiresAt: past,
+          authorUserId: adminUser.id,
+        },
+      });
+
+      // Notices (Announcement with type = 'NOTICE')
+      const nActive = await prisma.announcement.create({
+        data: {
+          type: 'NOTICE',
+          title: 'Active Notice',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: past,
+          expiresAt: future,
+          authorUserId: adminUser.id,
+        },
+      });
+      const nDraft = await prisma.announcement.create({
+        data: {
+          type: 'NOTICE',
+          title: 'Draft Notice',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: false,
+          publishedAt: past,
+          authorUserId: adminUser.id,
+        },
+      });
+      const nExpired = await prisma.announcement.create({
+        data: {
+          type: 'NOTICE',
+          title: 'Expired Notice',
+          content: 'Content',
+          priority: 'MEDIUM',
+          isPublished: true,
+          publishedAt: past,
+          expiresAt: past,
+          authorUserId: adminUser.id,
+        },
+      });
+
+      // Events (InstitutionalEvent)
+      const eActive = await prisma.institutionalEvent.create({
+        data: {
+          title: 'Active Event',
+          description: 'Desc',
+          category: 'COLLEGE_EVENT',
+          isPublished: true,
+          startDate: past,
+          endDate: future,
+          location: 'Hall A',
+          createdByUserId: adminUser.id,
+        },
+      });
+      const eDraft = await prisma.institutionalEvent.create({
+        data: {
+          title: 'Draft Event',
+          description: 'Desc',
+          category: 'COLLEGE_EVENT',
+          isPublished: false,
+          startDate: future,
+          endDate: farFuture,
+          location: 'Hall A',
+          createdByUserId: adminUser.id,
+        },
+      });
+
+      try {
+        const stats = await adminPlatformService.getDashboardMetrics();
+        assert.equal(
+          stats.content.publishedAnnouncements - baselineStats.content.publishedAnnouncements,
+          1,
+          'Exactly 1 active unexpired announcement should be added (draft, future, expired excluded)'
+        );
+        assert.equal(
+          stats.content.notices - baselineStats.content.notices,
+          1,
+          'Exactly 1 active unexpired notice should be added (draft, expired excluded)'
+        );
+        assert.equal(
+          stats.content.institutionalEvents - baselineStats.content.institutionalEvents,
+          1,
+          'Exactly 1 published institutional event should be added (draft excluded)'
+        );
+      } finally {
+        await prisma.announcement.deleteMany({ where: { id: { in: [aActive.id, aDraft.id, aFuture.id, aExpired.id, nActive.id, nDraft.id, nExpired.id] } } });
+        await prisma.institutionalEvent.deleteMany({ where: { id: { in: [eActive.id, eDraft.id] } } });
+      }
+    });
+
+    await t.test('B10: exact mathematical verification of attendance EXCUSED policy and 95-point placement readiness saturation fixture', async () => {
+      // 1. Attendance EXCUSED denominator policy verification
+      const semB10 = await prisma.semester.create({
+        data: {
+          studentProfileId: a.profileId!,
+          name: 'B10 Semester',
+          startDate: new Date('2026-09-01'),
+          endDate: new Date('2026-12-31'),
+        },
+      });
+      const subB10 = await prisma.subject.create({
+        data: {
+          semesterId: semB10.id,
+          name: 'Operating Systems B10',
+          code: 'OS101',
+          totalClasses: 0,
+          attendedClasses: 0,
+        },
+      });
+
+      // Add 1 PRESENT record and 1 EXCUSED record
+      await prisma.attendanceRecord.create({
+        data: { subjectId: subB10.id, date: new Date('2026-10-01'), status: 'PRESENT' },
+      });
+      await prisma.attendanceRecord.create({
+        data: { subjectId: subB10.id, date: new Date('2026-10-02'), status: 'EXCUSED' },
+      });
+
+      const perfB10 = await analyticsService.getSubjectPerformance(a.profileId!);
+      const osPerf = perfB10.find(s => s.subjectId === subB10.id);
+      assert(osPerf);
+      assert.equal(osPerf.totalClasses, 2, 'Application policy includes EXCUSED records in totalClasses denominator');
+      assert.equal(osPerf.attendedClasses, 1, 'Only PRESENT/LATE count towards attendedClasses');
+      assert.equal(osPerf.attendancePercentage, 50, 'Attendance percentage must evaluate to 50.0% (1/2)');
+
+      // 2. Exact 95-point Placement Readiness Saturation Fixture:
+      // Creates clean student C to isolate readiness scoring
+      const studentC = await student('B10_StudentC');
+      const cProfileId = studentC.profileId!;
+
+      // Input Component 1: 10 skills (each 10 pts, saturates at 100, weight 0.25 -> 25 pts)
+      const skillNames = ['Python', 'SQL', 'TypeScript', 'Docker', 'AWS', 'Linux', 'Git', 'K8s', 'React', 'Go'];
+      for (const name of skillNames) {
+        await prisma.skill.create({
+          data: { studentProfileId: cProfileId, name, category: 'TECHNICAL', proficiencyLevel: 4 },
+        });
+      }
+
+      // Input Component 2: 7 job applications (each 15 pts, 7*15=105 -> saturates at 100, weight 0.20 -> 20 pts)
+      for (let i = 1; i <= 7; i++) {
+        await prisma.jobApplication.create({
+          data: {
+            studentProfileId: cProfileId,
+            companyName: `Company ${i}`,
+            role: `SWE ${i}`,
+            status: 'APPLIED',
+          },
+        });
+      }
+
+      // Input Component 3: 4 certifications (each 25 pts, 4*25=100, weight 0.15 -> 15 pts)
+      for (let i = 1; i <= 4; i++) {
+        await prisma.certification.create({
+          data: {
+            studentProfileId: cProfileId,
+            name: `Cert ${i}`,
+            issuer: `Issuer ${i}`,
+          },
+        });
+      }
+
+      // Input Component 4: 5 projects (each 20 pts, 5*20=100, weight 0.15 -> 15 pts)
+      for (let i = 1; i <= 5; i++) {
+        await prisma.project.create({
+          data: {
+            studentProfileId: cProfileId,
+            title: `Project ${i}`,
+            technologies: ['TypeScript', 'Node.js'],
+          },
+        });
+      }
+
+      // Input Component 5: Resume with ATS score 80 (80 * 0.25 -> 20 pts)
+      const resumeC = await prisma.resume.create({
+        data: {
+          studentProfileId: cProfileId,
+          title: 'Master Resume C',
+          isActive: true,
+        },
+      });
+      await prisma.resumeVersion.create({
+        data: {
+          resumeId: resumeC.id,
+          content: { personalInfo: { name: 'Student C' }, skills: skillNames },
+          atsScore: 80,
+        },
+      });
+
+      // Total Expected Calculation:
+      // readinessScore = Math.round(100*0.25 + 80*0.25 + 100*0.20 + 100*0.15 + 100*0.15)
+      //                = 25 + 20 + 20 + 15 + 15 = 95
+      const readiness = await analyticsService.getPlacementReadiness(cProfileId);
+      assert.equal(readiness.breakdown.skills.score, 100);
+      assert.equal(readiness.breakdown.resume.score, 80);
+      assert.equal(readiness.breakdown.applications.score, 100);
+      assert.equal(readiness.breakdown.certifications.score, 100);
+      assert.equal(readiness.breakdown.projects.score, 100);
+      assert.equal(readiness.readinessScore, 95, 'Readiness score must match exact 95-point fixture calculation');
+      assert.deepEqual(readiness.recommendations, [], 'All component thresholds satisfied with ATS 80 >= 70');
+    });
+
+    await t.test('Reduced-scope frontend workflows: semester/subject -> assignments -> tasks -> notes -> calendar -> notifications -> session restoration and isolation', async () => {
+      // 1. Semester and Subject binding for Assignments
+      const testSem = await create('/semesters', a.token, {
+        name: 'Fall 2026 CS Core',
+        startDate: '2026-08-01T00:00:00.000Z',
+        endDate: '2026-12-15T00:00:00.000Z',
+      });
+      const testSubj = await create('/subjects', a.token, {
+        semesterId: testSem.id,
+        name: 'Algorithms & Complexity',
+        code: 'CS401',
+        credits: 4,
+      });
+
+      // Assignment creation bound to subjectId
+      const testAsgn = await create('/assignments', a.token, {
+        subjectId: testSubj.id,
+        title: 'Dynamic Programming Problem Set',
+        dueDate: '2026-11-10T18:00:00.000Z',
+        priority: 'HIGH',
+        status: 'PENDING',
+      });
+      assert.equal(testAsgn.subjectId, testSubj.id);
+      assert.equal(testAsgn.status, 'PENDING');
+
+      // 2. Task lifecycle & row-lock completion toggle
+      const testTask = await create('/tasks', a.token, {
+        title: 'Complete Graph Theory Notes',
+        priority: 'MEDIUM',
+        status: 'TODO',
+      });
+      assert.equal(testTask.status, 'TODO');
+      assert.equal(testTask.completedAt, null);
+
+      // Toggle TODO -> DONE sets completedAt
+      const resDone = await req('PATCH', `/tasks/${testTask.id}`, a.token, { status: 'DONE' });
+      assert.equal(resDone.status, 200);
+      const dataDone = (await resDone.json() as any).data;
+      assert.equal(dataDone.status, 'DONE');
+      assert(dataDone.completedAt !== null);
+
+      // 3. Text Notes: creation, subject linking, tag filtering, and retrieval
+      const testNote = await create('/notes', a.token, {
+        subjectId: testSubj.id,
+        title: 'Master Theorem Cheatsheet',
+        content: 'T(n) = aT(n/b) + f(n). Cases 1, 2, and 3 asymptotic bounds.',
+        tags: ['algorithms', 'exam-prep'],
+      });
+      assert.equal(testNote.subjectId, testSubj.id);
+      assert.equal(testNote.title, 'Master Theorem Cheatsheet');
+
+      // List notes with subject filter
+      const resFilteredNotes = await req('GET', `/notes?subjectId=${testSubj.id}`, a.token);
+      assert.equal(resFilteredNotes.status, 200);
+      const filteredNotes = (await resFilteredNotes.json() as any).data;
+      assert(filteredNotes.some((n: any) => n.id === testNote.id));
+
+      // 4. Unified Calendar & Custom Events
+      const calEventDate = '2026-11-15T09:00:00.000Z';
+      const testEvent = await create('/calendar', a.token, {
+        title: 'Midterm Algorithms Exam',
+        description: 'Covers Divide & Conquer and Dynamic Programming',
+        date: calEventDate,
+        eventType: 'EXAM',
+      });
+      assert.equal(testEvent.eventType, 'EXAM');
+
+      // Unified calendar query (window within 90 days)
+      const calStart = '2026-11-01T00:00:00.000Z';
+      const calEnd = '2026-11-30T00:00:00.000Z';
+      const resUnified = await req('GET', `/calendar/unified?startDate=${encodeURIComponent(calStart)}&endDate=${encodeURIComponent(calEnd)}`, a.token);
+      assert.equal(resUnified.status, 200);
+      const unifiedData = (await resUnified.json() as any).data;
+      assert(Array.isArray(unifiedData), 'Unified calendar must return an array of items');
+      assert(unifiedData.some((item: any) => item.source === 'ASSIGNMENT' && item.sourceId === testAsgn.id), 'Unified calendar must include active assignment');
+      assert(unifiedData.some((item: any) => item.source === 'PERSONAL' && item.sourceId === testEvent.id), 'Unified calendar must include student exam event');
+
+      // 5. In-App Notifications
+      // Create a test notification for student A
+      const notif = await prisma.notification.create({
+        data: {
+          userId: a.id,
+          title: 'Assignment Deadline Approaching',
+          message: 'Dynamic Programming Problem Set is due soon.',
+          type: 'ASSIGNMENT_REMINDER',
+        },
+      });
+      const resNotifs = await req('GET', '/notifications', a.token);
+      assert.equal(resNotifs.status, 200);
+      const notifsList = (await resNotifs.json() as any).data;
+      assert(notifsList.some((n: any) => n.id === notif.id && !n.isRead));
+
+      // Mark single notification read
+      const resMarkRead = await req('PATCH', `/notifications/${notif.id}/read`, a.token);
+      assert.equal(resMarkRead.status, 200);
+      const markedNotif = (await resMarkRead.json() as any).data;
+      assert.equal(markedNotif.isRead, true);
+
+      // 6. Ownership Isolation: Student B cannot access or modify Student A's entities
+      const bNoteAccess = await req('GET', `/notes/${testNote.id}`, b.token);
+      assert.equal(bNoteAccess.status, 404, 'Student B cannot access Student A note');
+      const bTaskEdit = await req('PATCH', `/tasks/${testTask.id}`, b.token, { title: 'Hacked Title' });
+      assert.equal(bTaskEdit.status, 404, 'Student B cannot modify Student A task');
+      const bEventDelete = await req('DELETE', `/calendar/${testEvent.id}`, b.token);
+      assert.equal(bEventDelete.status, 404, 'Student B cannot delete Student A calendar event');
+
+      // 7. Failed Requests Handling
+      // Invalid window > 90 days returns 400
+      const invalidCalRes = await req('GET', `/calendar/unified?startDate=${encodeURIComponent('2026-01-01T00:00:00.000Z')}&endDate=${encodeURIComponent('2026-06-01T00:00:00.000Z')}`, a.token);
+      assert.equal(invalidCalRes.status, 400, 'Calendar window exceeding 90 days must return 400 Bad Request');
+
+      // 8. Silent Session Restoration & Logout
+      // Login with credentials captures set-cookie refreshToken
+      const loginRes = await fetch(`${base}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: `${prefix}_A@integrum.test`, password: 'ClosurePass123!' }),
+      });
+      assert.equal(loginRes.status, 200);
+      const setCookie = loginRes.headers.get('set-cookie');
+      assert(setCookie && setCookie.includes('refreshToken='), 'Login must issue HttpOnly refreshToken cookie');
+
+      // Silent restore session using refresh cookie
+      const refreshRes = await fetch(`${base}/auth/refresh`, {
+        method: 'POST',
+        headers: { Cookie: setCookie },
+      });
+      assert.equal(refreshRes.status, 200);
+      const refreshedToken = ((await refreshRes.json() as any).data).accessToken;
+      assert(refreshedToken, 'Session restoration must return valid access token');
+
+      // Restored token accesses user profile
+      const restoredProfileRes = await req('GET', '/users/me', refreshedToken);
+      assert.equal(restoredProfileRes.status, 200);
+      assert.equal((await restoredProfileRes.json() as any).data.id, a.id);
+
+      // Logout clears session
+      const logoutRes = await fetch(`${base}/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${refreshedToken}`, Cookie: setCookie },
+      });
+      assert.equal(logoutRes.status, 200);
+
+      // Cleanup created fixtures
+      await prisma.notification.deleteMany({ where: { userId: a.id } });
+      await prisma.calendarEvent.deleteMany({ where: { id: testEvent.id } });
+      await prisma.note.deleteMany({ where: { id: testNote.id } });
+      await prisma.task.deleteMany({ where: { id: testTask.id } });
+      await prisma.assignment.deleteMany({ where: { id: testAsgn.id } });
+      await prisma.subject.deleteMany({ where: { id: testSubj.id } });
+      await prisma.semester.deleteMany({ where: { id: testSem.id } });
+    });
+  } finally {
+    for (const u of users) {
+      await prisma.user.delete({ where: { id: u.id } });
+      if (u.profileId) for (const folder of ['notes', 'profiles']) await rm(path.resolve('uploads', folder, u.profileId), { recursive: true, force: true });
+    }
+    await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve()));
+    await prisma.$disconnect();
+  }
+});
+test('Express receives parsed body, query defaults and params', async () => {
+  const probe = express(); probe.use(express.json());
+  probe.post('/:id', validateRequest(z.object({ body: z.object({ code: z.string().trim().toUpperCase(), count: z.coerce.number() }), query: z.object({ page: z.coerce.number().default(1) }), params: z.object({ id: z.coerce.number() }) })), (req, res) => res.json({ body: req.body, query: req.query, params: req.params }));
+  const s = probe.listen(0, '127.0.0.1'); await once(s, 'listening');
+  try {
+    const r = await fetch(`http://127.0.0.1:${(s.address() as any).port}/42`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: ' cs ', count: '3', ignored: true }) });
+    assert.deepEqual(await r.json(), { body: { code: 'CS', count: 3 }, query: { page: 1 }, params: { id: 42 } });
+  } finally { s.close(); }
+});
+test('path traversal blocked and local public URL prohibited', async () => {
+  const p = new LocalStorageProvider();
+  assert.throws(() => p.getLocalPath('../outside.pdf'), { statusCode: 400 });
+  assert.throws(() => p.getLocalPath('/etc/passwd'), { statusCode: 400 });
+  await assert.rejects(p.getSignedUrl('file.pdf', 60), { statusCode: 500 });
+});
+test('timeout maps to 503; success and provider rejection preserved', async () => {
+  assert.equal(await withTimeout(1000, Promise.resolve('ok')), 'ok');
+  await assert.rejects(withTimeout(1000, Promise.reject(new Error('provider failure'))), /provider failure/);
+  await assert.rejects(withTimeout(5, new Promise(() => {})), { statusCode: 503 });
+});
+
+test('Gemini study-plan adapter preserves the expanded contract without network', async t => {
+  const context = { topic: 'SQL', goals: 'Practice joins', attendancePercentage: 75, subjects: [] };
+  const expected = await new MockProvider().generateStudyPlan(context);
+  const savedKey = env.GEMINI_API_KEY;
+  let prompt = '';
+  t.mock.method(GoogleGenerativeAI.prototype, 'getGenerativeModel', (params: Parameters<GoogleGenerativeAI['getGenerativeModel']>[0]) => {
+    const schema = params.generationConfig?.responseSchema;
+    assert(schema && 'required' in schema);
+    for (const key of ['weeklySchedule', 'revisionPlan', 'topicPriorities', 'goalRecommendations']) {
+      assert(schema.required?.includes(key));
+    }
+    return { generateContent: async (value: string) => {
+      prompt = value;
+      return { response: { text: () => JSON.stringify(expected) } };
+    } };
+  });
+  try {
+    env.GEMINI_API_KEY = 'test-only-not-a-real-key';
+    const result = await new GeminiProvider().generateStudyPlan(context);
+    assert.deepEqual(generatedStudyPlanOutputSchema.parse(result), generatedStudyPlanOutputSchema.parse(expected));
+    assert(prompt.includes(context.topic) && prompt.includes(context.goals));
+  } finally { env.GEMINI_API_KEY = savedKey; }
+});
+
+test('health fails when the database is unavailable and production email never logs tokens', async t => {
+
+  const originalQuery = prisma.$queryRaw;
+  const oldMode = env.NODE_ENV;
+  const oldEmail = env.EMAIL_PROVIDER;
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try {
+    prisma.$queryRaw = () => { throw new Error('Injected database failure'); };
+    const response = await fetch(`http://127.0.0.1:${(server.address() as any).port}/api/v1/health`);
+    assert.equal(response.status, 503);
+    env.NODE_ENV = 'production'; env.EMAIL_PROVIDER = 'console';
+    const log = t.mock.method(console, 'log', () => {});
+    await assert.rejects(emailService.send('test@example.com', 'Verification', 'sensitive-token'), { statusCode: 500 });
+    assert.equal(log.mock.callCount(), 0);
+  } finally {
+    prisma.$queryRaw = originalQuery; env.NODE_ENV = oldMode; env.EMAIL_PROVIDER = oldEmail;
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+test('Resend adapter request and failure sanitization without real delivery', async t => {
+  const previous = { provider: env.EMAIL_PROVIDER, key: env.RESEND_API_KEY, from: env.EMAIL_FROM };
+  env.EMAIL_PROVIDER = 'resend'; env.RESEND_API_KEY = 'test-key'; env.EMAIL_FROM = 'sender@example.com';
+  let status = 200;
+  let result: unknown = { id: 'test-message-id' };
+  let networkFailure = false;
+  t.mock.method(globalThis, 'fetch', async (url: string, options: RequestInit) => {
+    assert.equal(url, 'https://api.resend.com/emails');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.redirect, 'error');
+    assert(options.signal instanceof AbortSignal);
+    assert.deepEqual(JSON.parse(options.body as string), {
+      from: 'sender@example.com', to: ['recipient@example.com'], subject: 'Verify', text: 'private-token',
+    });
+    if (networkFailure) throw new Error('private-provider-detail');
+    return new Response(JSON.stringify(result), { status });
+  });
+  try {
+    await emailService.send('recipient@example.com', 'Verify', 'private-token');
+    for (const code of [401, 429, 500]) {
+      status = code;
+      await assert.rejects(emailService.send('recipient@example.com', 'Verify', 'private-token'), {
+        statusCode: 503, message: 'Email delivery is temporarily unavailable',
+      });
+    }
+    status = 200; result = {};
+    await assert.rejects(emailService.send('recipient@example.com', 'Verify', 'private-token'), { statusCode: 503 });
+    networkFailure = true;
+    await assert.rejects(emailService.send('recipient@example.com', 'Verify', 'private-token'), {
+      statusCode: 503, message: 'Email delivery is temporarily unavailable',
+    });
+  } finally {
+    env.EMAIL_PROVIDER = previous.provider; env.RESEND_API_KEY = previous.key; env.EMAIL_FROM = previous.from;
+  }
+});
+
+test('Supabase storage provider request and failure sanitization without real bucket', async () => {
+  const oldUrl = env.SUPABASE_URL, oldKey = env.SUPABASE_SERVICE_KEY;
+  env.SUPABASE_URL = 'https://supabase.example.com'; env.SUPABASE_SERVICE_KEY = 'secret-service-key-12345';
+  try {
+    const { SupabaseStorageProvider } = await import('../src/services/storage/supabase.storage.js');
+    const provider = new SupabaseStorageProvider();
+    const client = (provider as any).storageClient;
+
+    client.from = () => ({
+      upload: async () => ({ error: { message: 'upstream supabase error with https://supabase.example.com and secret-service-key-12345' } }),
+      createSignedUrl: async () => ({ error: { message: 'upstream signed-url error with secret token' }, data: null }),
+      remove: async () => ({ error: { message: 'upstream delete error' } }),
+    });
+
+    await assert.rejects(provider.upload('notes/test.pdf', Buffer.from('test'), 'application/pdf'), (err: any) => {
+      assert.equal(err.statusCode, 503);
+      assert.equal(err.message, 'Storage service is temporarily unavailable');
+      assert(!JSON.stringify(err).includes('secret-service-key'));
+      assert(!JSON.stringify(err).includes('supabase.example.com'));
+      return true;
+    });
+
+    await assert.rejects(provider.getSignedUrl('notes/test.pdf', 60), (err: any) => {
+      assert.equal(err.statusCode, 503);
+      assert.equal(err.message, 'Storage service is temporarily unavailable');
+      assert(!JSON.stringify(err).includes('secret token'));
+      return true;
+    });
+
+    await assert.rejects(provider.delete('notes/test.pdf'), (err: any) => {
+      assert.equal(err.statusCode, 503);
+      assert.equal(err.message, 'Storage service is temporarily unavailable');
+      return true;
+    });
+  } finally {
+    env.SUPABASE_URL = oldUrl; env.SUPABASE_SERVICE_KEY = oldKey;
+  }
+});

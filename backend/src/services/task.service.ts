@@ -1,18 +1,31 @@
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
+import { CreateTaskInput, UpdateTaskInput } from '../schemas/task.schema.js';
 
 export const taskService = {
-  async createTask(studentProfileId: string, data: any) {
+  async verifyStudyPlanOwnership(studentProfileId: string, studyPlanId?: string | null) {
+    if (!studyPlanId) return;
+    const plan = await prisma.studyPlan.findFirst({
+      where: { id: studyPlanId, studentProfileId }, select: { id: true },
+    });
+    if (!plan) throw ApiError.notFound('Study plan not found or does not belong to you');
+  },
+
+  async createTask(studentProfileId: string, data: CreateTaskInput) {
+    await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
+    const taskData: Parameters<typeof prisma.task.create>[0]['data'] = {
+      studentProfileId,
+      title: data.title,
+      description: data.description ?? null,
+      dueDate: data.dueDate ? new Date(data.dueDate) : null,
+      studyPlanId: data.studyPlanId ?? null,
+      completedAt: data.status === 'DONE' ? new Date() : null,
+    };
+    if (data.priority !== undefined) taskData.priority = data.priority;
+    if (data.status !== undefined) taskData.status = data.status;
+
     return prisma.task.create({
-      data: {
-        studentProfileId,
-        title: data.title,
-        description: data.description,
-        dueDate: data.dueDate ? new Date(data.dueDate) : null,
-        priority: data.priority,
-        status: data.status,
-        studyPlanId: data.studyPlanId,
-      },
+      data: taskData,
     });
   },
 
@@ -49,20 +62,70 @@ export const taskService = {
     return task;
   },
 
-  async updateTask(studentProfileId: string, taskId: string, data: any) {
-    await this.getTaskById(studentProfileId, taskId);
+  async updateTask(studentProfileId: string, taskId: string, data: UpdateTaskInput) {
+    await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
 
-    const updateData: any = {};
-    if (data.title !== undefined) updateData.title = data.title;
-    if (data.description !== undefined) updateData.description = data.description;
-    if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
-    if (data.priority !== undefined) updateData.priority = data.priority;
-    if (data.status !== undefined) updateData.status = data.status;
-    if (data.studyPlanId !== undefined) updateData.studyPlanId = data.studyPlanId;
+    return prisma.$transaction(async (tx) => {
+      // Row-level lock via SELECT ... FOR UPDATE to serialize concurrent updates
+      const rows = await tx.$queryRaw<Array<{
+        id: string;
+        studentProfileId: string;
+        title: string;
+        description: string | null;
+        dueDate: Date | null;
+        completedAt: Date | null;
+        priority: 'LOW' | 'MEDIUM' | 'HIGH';
+        status: 'TODO' | 'IN_PROGRESS' | 'DONE';
+        studyPlanId: string | null;
+      }>>`
+        SELECT id, "studentProfileId", title, description, "dueDate", "completedAt", priority, status, "studyPlanId"
+        FROM "Task"
+        WHERE id = ${taskId} AND "studentProfileId" = ${studentProfileId}
+        FOR UPDATE
+      `;
 
-    return prisma.task.update({
-      where: { id: taskId },
-      data: updateData,
+      const existing = rows[0];
+      if (!existing) {
+        throw ApiError.notFound('Task not found or does not belong to you');
+      }
+
+      const updateData: {
+        title?: string;
+        description?: string | null;
+        dueDate?: Date | null;
+        completedAt?: Date | null;
+        priority?: 'LOW' | 'MEDIUM' | 'HIGH';
+        status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
+        studyPlanId?: string | null;
+      } = {};
+      if (data.title !== undefined) updateData.title = data.title;
+      if (data.description !== undefined) updateData.description = data.description;
+      if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
+      if (data.priority !== undefined) updateData.priority = data.priority;
+      if (data.studyPlanId !== undefined) updateData.studyPlanId = data.studyPlanId;
+
+      if (data.status !== undefined) {
+        updateData.status = data.status;
+        if (data.status === 'DONE') {
+          if (existing.status === 'DONE') {
+            // Already DONE: preserve existing timestamp (including null for legacy completed tasks)
+            updateData.completedAt = existing.completedAt;
+          } else {
+            // Transitioning from TODO/IN_PROGRESS -> DONE: set fresh completion timestamp
+            updateData.completedAt = new Date();
+          }
+        } else {
+          // Explicit reopening to TODO or IN_PROGRESS: clear completion timestamp
+          updateData.completedAt = null;
+        }
+      }
+      // Note: When data.status is undefined (e.g. title-only edit), updateData.status and
+      // updateData.completedAt are omitted from the update payload, preserving existing completedAt.
+
+      return tx.task.update({
+        where: { id: taskId },
+        data: updateData,
+      });
     });
   },
 
