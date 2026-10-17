@@ -2826,28 +2826,40 @@ Passing 54/54 native tests establishes internal semantic consistency, API contra
 | **External File Upload (Supabase Storage)** | Labeled as `[Local Storage Only]` | Pending **B04** live Supabase bucket and signed URL verification. |
 | **Career Hub (Job Applications & ATS)** | Deferred to Phase 2 Frontend Integration | Backend routes fully tested; UI hub intentionally unmounted to maintain focused student scope. |
 
-### 26.3 Deployment Configuration for Reduced-Scope Release
+### 26.3 Canonical Multi-Platform Deployment Configuration (Vercel + Render + Supabase)
 
-1. **Static Frontend Hosting:**
-   - Frontend Vite bundle outputs to `frontend/dist`.
-   - Express server in `backend/src/app.ts` statically serves `frontend/dist` with fallback to `index.html` for single-page routing:
-     ```typescript
-     const targetDist = fs.existsSync(frontendDist) ? frontendDist : (fs.existsSync(altFrontendDist) ? altFrontendDist : null);
-     if (targetDist) {
-       app.use(express.static(targetDist));
-       app.use((req, res, next) => {
-         if (req.method !== 'GET' || req.path.startsWith('/api')) return next();
-         res.sendFile(path.join(targetDist, 'index.html'));
-       });
-     }
-     ```
-2. **Environment & Security:**
-   - `CLIENT_URL`: set to application domain.
-   - `COOKIE_SECURE`: `true` in production (enforces `SameSite=Lax`, `Secure`, `HttpOnly`).
-   - `TRUST_PROXY_HOPS`: configured according to reverse proxy/ingress topology.
-   - Rate limiting active on `/api/v1/auth/*` routes.
-3. **Build Pipeline:**
-   - Root `package.json` build command: `npm run build` compiles both `frontend` (Vite) and `backend` (TypeScript `dist/`).
+According to the approved project synopsis (Section 4: Software Requirements), the canonical production topology comprises:
+
+| Tier | Platform | Role & Configuration | Artifacts |
+|---|---|---|---|
+| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://<app>.vercel.app`).<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist` | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
+| **Backend** | **Render** | Node.js / Express Web Service + continuous background reminder processor (`https://<api>.onrender.com`).<br>Build Command: `npm install && npm run build --workspace backend`<br>Start Command: `node backend/dist/server.js` | [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml) |
+| **Database** | **Supabase** | Managed PostgreSQL database (`aws-0-[region].pooler.supabase.com`). Connection via `DATABASE_URL` with connection pooling enabled. | Prisma migrations |
+| **Version Control** | **GitHub** | Canonical Git repository (`https://github.com/sufiyanshaikh06/integrum`). | Git repository |
+
+#### 26.3.1 Authentication Cookie & CORS Topology
+
+When hosting frontend and backend across distinct domains (`*.vercel.app` and `*.onrender.com`), cross-site cookie transmission rules apply:
+
+1. **Option A — Vercel Reverse Proxy Rewrites (Recommended for Same-Origin Semantics):**
+   - Vercel rewrites `/api/:path*` directly to `https://<api>.onrender.com/api/:path*`.
+   - Browser interacts strictly with `https://<app>.vercel.app`.
+   - Cookie policy: `SameSite=Lax; HttpOnly; Secure`.
+   - Eliminates third-party cookie blocking and preflight CORS overhead.
+
+2. **Option B — Direct Cross-Origin API Communication:**
+   - Frontend directly targets `VITE_API_URL=https://<api>.onrender.com/api/v1`.
+   - Backend `CLIENT_URL`: set to `https://<app>.vercel.app` with `credentials: true`.
+   - Cookie policy: `COOKIE_SAME_SITE=none` and `COOKIE_SECURE=true` (`SameSite=None; Secure; HttpOnly`).
+   - Browser sends `refreshToken` across cross-site fetch requests via `credentials: 'include'`.
+
+#### 26.3.2 Production Identity & Verification Fixtures
+
+- **Primary Demo Account:** Sufiyan Shaikh (`sufiyan.shaikh@example.com` / `password123`) matriculated at R.K. Talreja College (B.Sc. Computer Science, Semester 5).
+- **Secondary Isolation Fixture:** Ahmed Khan (`ahmed.khan.*@example.com` / `Password123!`), utilized during automated browser verification to prove zero cross-tenant record leakage.
+- **Background Reminder Delivery:** Active `reminderService.processDueReminders()` processor picks up due reminders, transitions status to `DELIVERED` with `deliveredAt` timestamp, and generates an in-app `Notification` record in PostgreSQL for the student inbox.
+- **Display-Only Settings:** User profile and matriculation data are rendered; individual settings switches (email/SMS notifications) remain display-only in this release phase.
+- **Landing Design Notice:** The current React build uses the functional prototype landing hero; integration with the extended standalone landing HTML design remains tracked as a separate design task.
 
 
 

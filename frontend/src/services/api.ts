@@ -34,7 +34,7 @@ function addRefreshSubscriber(callback: (token: string | null) => void) {
   refreshSubscribers.push(callback);
 }
 
-const BASE_URL = '/api/v1';
+const BASE_URL = (import.meta as any).env?.VITE_API_URL || '/api/v1';
 
 export async function apiRequest<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = endpoint.startsWith('http') ? endpoint : `${BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;

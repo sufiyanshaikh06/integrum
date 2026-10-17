@@ -9,22 +9,24 @@ export const setRefreshCookie = (res: Response, refreshToken: string): void => {
   // We'll set maxAge to 7 days in milliseconds.
   const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
-  const isSecure = env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : env.NODE_ENV === 'production';
+  const sameSite = env.COOKIE_SAME_SITE;
+  const isSecure = sameSite === 'none' ? true : (env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : env.NODE_ENV === 'production');
 
   res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
     httpOnly: true,
     secure: isSecure,
-    sameSite: 'strict',
+    sameSite: sameSite as 'strict' | 'lax' | 'none',
     maxAge: sevenDays,
   });
 };
 
 export const clearRefreshCookie = (res: Response): void => {
-  const isSecure = env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : env.NODE_ENV === 'production';
+  const sameSite = env.COOKIE_SAME_SITE;
+  const isSecure = sameSite === 'none' ? true : (env.COOKIE_SECURE !== undefined ? env.COOKIE_SECURE : env.NODE_ENV === 'production');
 
   res.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
     httpOnly: true,
     secure: isSecure,
-    sameSite: 'strict',
+    sameSite: sameSite as 'strict' | 'lax' | 'none',
   });
 };
