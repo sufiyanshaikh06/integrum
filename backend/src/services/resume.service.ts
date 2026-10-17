@@ -29,7 +29,7 @@ export const resumeService = {
       where: { studentProfileId },
       include: {
         versions: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           take: 1,
         },
       },
@@ -41,7 +41,7 @@ export const resumeService = {
     const resume = await prisma.resume.findFirst({
       where: { id: resumeId, studentProfileId },
       include: {
-        versions: { orderBy: { createdAt: 'desc' } },
+        versions: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] },
       },
     });
     if (!resume) throw ApiError.notFound('Resume not found or does not belong to you');
@@ -60,7 +60,7 @@ export const resumeService = {
       // Get the latest version for content if only templateId is changing
       const current = await prisma.resumeVersion.findFirst({
         where: { resumeId },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       });
 
       updateData.versions = {

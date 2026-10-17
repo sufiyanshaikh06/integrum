@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
+import { ApiError } from '../utils/ApiError.js';
 
 const percentage = (part: number, total: number) => total > 0 ? part / total * 100 : 0;
 
@@ -9,6 +10,36 @@ function hasContent(value: Prisma.JsonValue | undefined): boolean {
   if (Array.isArray(value)) return value.some(hasContent);
   if (value && typeof value === 'object') return Object.values(value).some(hasContent);
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+// Canonical resume selector: active first, then most recently updated, then ID asc.
+// Versions ordered by createdAt desc, then ID desc.
+// If explicitResumeId is passed, ownership is verified and that specific resume is loaded.
+export async function getCanonicalResume(studentProfileId: string, explicitResumeId?: string | null) {
+  if (explicitResumeId) {
+    const resume = await prisma.resume.findFirst({
+      where: { id: explicitResumeId, studentProfileId },
+      include: {
+        versions: {
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+        },
+      },
+    });
+    if (!resume) throw ApiError.notFound('Resume not found or does not belong to you');
+    return resume;
+  }
+
+  return prisma.resume.findFirst({
+    where: { studentProfileId },
+    orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+    include: {
+      versions: {
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 1,
+      },
+    },
+  });
 }
 
 export const analyticsService = {
@@ -37,13 +68,8 @@ export const analyticsService = {
     });
   },
 
-  async getResumeCompletion(studentProfileId: string) {
-    // Prefer the active resume, then most recently updated; stable ID breaks ties.
-    const resume = await prisma.resume.findFirst({
-      where: { studentProfileId },
-      orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
-      include: { versions: { orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1 } },
-    });
+  async getResumeCompletion(studentProfileId: string, explicitResumeId?: string | null) {
+    const resume = await getCanonicalResume(studentProfileId, explicitResumeId);
     const raw = resume?.versions[0]?.content;
     const content = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     const sections = ['personalInfo', 'education', 'experience', 'skills', 'projects'] as const;
@@ -264,12 +290,9 @@ export const analyticsService = {
   //   Projects: 15% — demonstrates applied experience
   //
   async getPlacementReadiness(studentProfileId: string) {
-    const [skills, resumes, applications, certifications, projects] = await Promise.all([
+    const [skills, resume, applications, certifications, projects] = await Promise.all([
       prisma.skill.findMany({ where: { studentProfileId } }),
-      prisma.resume.findMany({
-        where: { studentProfileId },
-        include: { versions: { orderBy: { createdAt: 'desc' }, take: 1 } },
-      }),
+      getCanonicalResume(studentProfileId),
       prisma.jobApplication.findMany({ where: { studentProfileId } }),
       prisma.certification.findMany({ where: { studentProfileId } }),
       prisma.project.findMany({ where: { studentProfileId } }),
@@ -278,7 +301,7 @@ export const analyticsService = {
     // Each component is scaled 0–100 independently before weighting
     const skillScore = Math.min(skills.length * 10, 100); // saturates at 10 skills
     const resumeScore =
-      resumes.length > 0 ? Math.min(resumes[0]?.versions?.[0]?.atsScore ?? 0, 100) : 0;
+      resume?.versions[0]?.atsScore != null ? Math.min(resume.versions[0].atsScore, 100) : 0;
     const applicationScore = Math.min(applications.length * 15, 100);
     const certificationScore = Math.min(certifications.length * 25, 100);
     const projectScore = Math.min(projects.length * 20, 100);
@@ -291,12 +314,13 @@ export const analyticsService = {
         projectScore * 0.15,
     );
 
+    const hasResume = resume !== null;
     const recommendations: string[] = [
       ...(skills.length < 5 ? ['Add more skills to your profile (aim for at least 5)'] : []),
-      ...(resumes.length === 0
+      ...(!hasResume
         ? ['Create a resume — it contributes 25% of the readiness score']
         : []),
-      ...(resumeScore < 70 && resumes.length > 0
+      ...(resumeScore < 70 && hasResume
         ? ['Run AI analysis on your resume to improve the ATS score (currently below 70)']
         : []),
       ...(certifications.length === 0 ? ['Add relevant certifications'] : []),
@@ -311,7 +335,7 @@ export const analyticsService = {
       note: 'Readiness score is a product-defined heuristic (not a validated employability measure). Weights: Skills 25%, Resume ATS 25%, Applications 20%, Certifications 15%, Projects 15%.',
       breakdown: {
         skills: { score: skillScore, count: skills.length },
-        resume: { score: resumeScore, hasResume: resumes.length > 0 },
+        resume: { score: resumeScore, hasResume },
         applications: { score: applicationScore, count: applications.length },
         certifications: { score: certificationScore, count: certifications.length },
         projects: { score: projectScore, count: projects.length },
@@ -322,10 +346,10 @@ export const analyticsService = {
 
   // ─── AN-3: Daily/Weekly/Custom Activity Breakdown ─────────────────────────
   //
-  // KNOWN LIMITATION (tasks): Tasks are counted by updatedAt, not by a
-  // dedicated completedAt timestamp. A task completed earlier but edited
-  // within the window may be miscounted. A future migration adding
-  // Task.completedAt would eliminate this ambiguity.
+  // Activity uses UTC half-open [from, to) intervals.
+  // Tasks are queried strictly by completedAt. Legacy tasks with null completedAt
+  // are excluded from dated windows to prevent mutable updatedAt pollution,
+  // but remain included in lifetime dashboard metrics.
   //
   async getActivityBreakdown(
     studentProfileId: string,
@@ -335,20 +359,24 @@ export const analyticsService = {
   ) {
     const now = new Date();
     let from: Date;
-    const to: Date = endDate ? new Date(endDate) : now;
+    let to: Date;
 
     if (period === 'daily') {
-      // Calendar day start in local-equivalent UTC
       from = startDate
         ? new Date(startDate)
-        : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+      to = endDate
+        ? new Date(endDate)
+        : new Date(from.getTime() + 24 * 60 * 60 * 1000);
     } else if (period === 'weekly') {
       from = startDate
         ? new Date(startDate)
         : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      to = endDate ? new Date(endDate) : now;
     } else {
       // 'custom' — both dates guaranteed present by Zod schema validation
       from = new Date(startDate!);
+      to = new Date(endDate!);
     }
 
     const [tasksCompleted, attendanceRecords] = await Promise.all([
@@ -356,15 +384,14 @@ export const analyticsService = {
         where: {
           studentProfileId,
           status: 'DONE',
-          // NOTE: using updatedAt as a proxy for completion time — see limitation above
-          updatedAt: { gte: from, lte: to },
+          completedAt: { gte: from, lt: to },
         },
-        select: { id: true, title: true, updatedAt: true },
+        select: { id: true, title: true, completedAt: true },
       }),
       prisma.attendanceRecord.findMany({
         where: {
           subject: { semester: { studentProfileId } },
-          date: { gte: from, lte: to },
+          date: { gte: from, lt: to },
         },
         select: { status: true },
       }),
@@ -381,7 +408,7 @@ export const analyticsService = {
       to: to.toISOString(),
       tasks: {
         completed: tasksCompleted.length,
-        note: 'Counted by updatedAt; see analytics service for known limitation.',
+        note: 'Daily activity uses UTC start-inclusive, end-exclusive boundaries. Counted by completedAt timestamp; legacy tasks with unknown completion dates are excluded from dated activity breakdown but retained in total task counts.',
       },
       attendance: {
         totalRecords: attendanceRecords.length,
