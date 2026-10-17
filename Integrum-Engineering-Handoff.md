@@ -548,12 +548,12 @@ Record commit/tree, Node/npm/PostgreSQL versions, command, provider modes, exit 
 |---|---|---|---|---|
 | B01 | Windows native smoke | **CLOSED** | Completed and verified | Exit 0, 52/52 closure, production-smoke PASS, cleanup true, PG 18.4 recorded |
 | B02 | Required: final regression manifest | **PENDING** | Port/use a guarded native harness giving each baseline script a fresh DB | Named script results with final candidate identity, no shared DB destruction |
-| B03 | Required: domain concurrency | **PENDING** | Controlled parallel transactions for refresh/reset, attendance, enrollment/catalog and term deletion | No invariant violation; stale conflicts predictable; deadlocks bounded/handled and investigated |
+| B03 | Required: domain concurrency | **PENDING** | Controlled parallel transactions for refresh/reset, attendance, enrollment/catalog, term deletion, catalog moves, and last-active-admin demotion | No invariant violation; stale conflicts predictable; deadlocks bounded/handled and investigated |
 | B04 | Required before storage release | **PENDING** | Dedicated Supabase project/private bucket verification | Owner bytes, outsider denied, signed expiry, replacement/cascade removal, outage retry, no public object access |
 | B05 | Required storage lifecycle plan | **PENDING** | Inventory unknown-provider files and crash-orphan risk; operational retry/reconciliation | Reviewed dry-run manifest, no live references deleted, scheduled bounded process and visible failures |
-| B06 | V1 feature reconciliation | **CLOSED** | Phase 2 and Phase 3 completed | Explicit student journeys demonstrated, reminder triggers backfilled, certifications reconciled |
+| B06 | V1 feature reconciliation | **PENDING (Subitem Open)** | Workflow closure substantially reconciled; interview-round persistent identity and legacy reconciliation remains an active subitem | Persistent one-time IDs implemented and verified in closure tests; execute production backfill and verify live legacy reconciliation |
 | B07 | Required live email | **PENDING** | Real registration/verification/reset and delivery-failure recovery in test environment | Authorized test recipient receives messages; tokens single-use/expire; secrets not logged |
-| B08 | Required live AI | **PENDING** | Small authorized live tests for approved features | Valid schema, useful output, timeout/rate/quota errors, honest UI fallback |
+| B08 | Required live AI | **PENDING** | Small authorized live tests for approved features using model configured via env.GEMINI_MODEL (defaulting to gemini-3.6-flash if unset) | Valid schema, useful output, timeout/rate/quota errors, honest UI fallback |
 | B09 | Required security review | **PENDING** | Review current code/config/dependency audit and newly noted exposure risks | No unresolved critical/high security defect; no suppression-based build; provider errors sanitized |
 | B10 | Data semantics & metrics consistency | **CLOSED** | Completed in Phase 4 | Documented EXCUSED application policy; canonical résumé selector; UTC half-open intervals; 95-point fixture |
 | B11 | Required integration gate | **PENDING** | Final branch review and tested merge candidate | All relevant tests on merged tree, original closure ancestry preserved |
@@ -2699,23 +2699,24 @@ These cases may expose missing integration that unit/CRUD tests cannot. Implemen
 
 ## 25. Phase 3 Reconciliation Acceptance, Phase 4 Implementation, and Final Backend Gates
 
-### 25.1 Phase 3 Reconciliation Acceptance and Explicit Follow-ups
+### 25.1 Phase 3 Reconciliation Acceptance and Bounded Evidence Follow-ups
 
-Phase 3 reconciliation was accepted based on evidence at checkpoint `ec68594` (and prototype checkpoint `ab3cae0`), demonstrating:
-- **46/46 native tests passing** in `scripts/test-day1.test.ts`.
+Phase 3 reconciliation was accepted based on evidence at checkpoint `ec68594` (and prototype checkpoint `ab3cae0`), with targeted evidence completions resolved in the subsequent checkpoint:
+- **53/53 native tests passing** in `scripts/test-day1.test.ts`.
 - Clean compiled production smoke check (`test-production-hardening.ts` with security headers, trust proxy, rate limiting, and clean IPC child shutdown code 0).
 - Uniquely named disposable PostgreSQL database migrated, seeded, verified, and dropped without residual test state.
 
-#### Two Explicit Phase 3 Qualifications and Follow-ups
+#### Detailed Follow-up Resolutions
 
-1. **Interview Round Identity (Rounds Submitted Without Persistent IDs):**
-   - In `backend/src/services/career.service.ts`, job application rounds containing persistent `id` fields (UUIDs) preserve those identifiers across updates, and their calendar occurrences are keyed by `round.id`.
-   - However, legacy rounds or new submissions lacking `id` fields continue to use array positional keys (`round-${index}`).
-   - *Follow-up Requirement:* A persistent one-time backfill migration or stable server-side ID assignment on initial write is required to give permanent identity to rounds submitted without IDs. Synthetic UUID injection during reads was intentionally rejected because generating fresh IDs on reads would recreate the unstable identity defect. This is recorded as an explicit open follow-up rather than a completed guarantee.
+1. **Interview Round Identity & Legacy Reconciliation:**
+   - In `backend/src/services/jobapplication.service.ts`, `normalizeInterviewHistory` now assigns persistent one-time IDs (`randomUUID()`) to any rounds submitted without client IDs, persists them in `interviewHistory`, returns them in the API response, and preserves them on subsequent updates.
+   - For applications in the database that had legacy rounds without IDs, any update automatically backfills them with stable IDs.
+   - Legacy reminders with array-position keys (`round-${index}`) are reconciled in-place to `round-${round.id}` during update transactions without duplicate delivery or cancellation.
+   - Reordering rounds in `interviewHistory` preserves reminder links without cancellation or recreation. Deleting a round cleanly transitions only that round's reminder to `CANCELLED`.
+   - *Status in Ledger:* B06 remains open as a tracking gate for executing any required historical production database backfill prior to public deployment.
 2. **AI Study Plan Acceptance Transactional Rollback:**
-   - In `backend/src/services/study-plan.service.ts`, input validation occurs strictly **before** database writes (returning 400 Bad Request on invalid payloads prior to opening the Prisma transaction).
-   - *Verified Injected Post-Write Rollback:* To verify actual database rollback rather than pre-write rejection, an injected fault test was implemented in `scripts/test-day1.test.ts`. The test installs a temporary PostgreSQL trigger (`BEFORE INSERT ON "Task" FOR EACH ROW EXECUTE FUNCTION raise_exception()`). When accepting an AI study plan, the parent `StudyPlan` record is written inside the transaction, but the subsequent child `Task` insertion triggers the database exception.
-   - The test asserts that the transaction cleanly aborts and rolls back: neither the parent `StudyPlan` nor any of its tasks remain in the database (`assert.strictEqual(orphanPlan, null)`), and the trigger is cleanly dropped.
+   - Pre-write input validation occurs strictly **before** database writes (returning 400 Bad Request on invalid payloads prior to opening the Prisma transaction).
+   - Post-write transactional rollback was verified by injecting a temporary PostgreSQL trigger (`BEFORE INSERT ON "Task"`). The parent `StudyPlan` row was written, but child `Task` insertion triggered the exception, cleanly rolling back both the plan and tasks with zero orphan state.
 
 ---
 
@@ -2725,21 +2726,21 @@ Phase 4 addressed six core data consistency and semantic areas:
 
 | Area | Focus / Gap | Problem & Implementation Resolution |
 |---|---|---|
-| **W07** | Task completion timestamps, atomic transitions, and date boundaries | **Problem:** Using mutable `updatedAt` caused legacy task edits to alter historical completion dates, and local date boundaries created midnight overlaps.<br>**Resolution:** Added `completedAt DateTime?` to `Task` model with additive migration `20261017000000_v1_task_completed_at`. `taskService.createTask` sets `completedAt = now` if status is `DONE`. `taskService.updateTask` atomically sets `completedAt = now` on TODO/IN_PROGRESS -> DONE, preserves original `completedAt` on repeated DONE requests or field edits, and clears `completedAt = null` on reopening to TODO/IN_PROGRESS. `getActivityBreakdown` queries strictly by `completedAt: { gte: from, lt: to }` using UTC start-inclusive, end-exclusive boundaries. Legacy tasks with null `completedAt` are excluded from dated activity windows but retained in total task counts. |
+| **W07** | Task completion timestamps, atomic transitions, and date boundaries | **Problem:** Using mutable `updatedAt` caused legacy task edits to alter historical completion dates, and local date boundaries created midnight overlaps.<br>**Resolution:** Added `completedAt DateTime?` to `Task` model with additive migration `20261017000000_v1_task_completed_at`. `taskService.createTask` sets `completedAt = now` if status is `DONE`. `taskService.updateTask` wraps read and write inside `prisma.$transaction`: atomically sets `completedAt = now` on TODO/IN_PROGRESS -> DONE, preserves original `completedAt` on repeated DONE requests or field edits via `existing.completedAt ?? new Date()`, and clears `completedAt = null` on reopening to TODO/IN_PROGRESS. Concurrency verified via parallel requests. `getActivityBreakdown` queries strictly by `completedAt: { gte: from, lt: to }` using UTC start-inclusive, end-exclusive boundaries. Legacy tasks with null `completedAt` are excluded from dated activity windows but retained in total task counts. |
 | **W08** | Deterministic canonical résumé selection | **Problem:** Inconsistent résumé resolution across analytics and AI; non-deterministic version sorting.<br>**Resolution:** Implemented and exported `getCanonicalResume(studentProfileId, explicitResumeId?)` selector in `analytics.service.ts`. Priority: active résumé (`isActive: desc`), most recently updated (`updatedAt: desc`), stable tie-breaker (`id: asc`), with latest version ordered deterministically by `[{ createdAt: 'desc' }, { id: 'desc' }]`. If an explicit `resumeId` is requested, student ownership is verified, throwing 404 if missing or unauthorized. Applied consistently across `getResumeCompletion`, `getPlacementReadiness`, and AI `analyzeResume`. |
 | **W09 & B10** | Fresh academic context for AI study planning | **Problem:** Outdated or absent student analytics cache; unweighted average of subject attendance percentages; conflation of 0% attendance with missing data.<br>**Resolution:** `aiService.generateStudyPlanRecommendation` queries fresh academic context via `analyticsService.getSubjectPerformance` and enrolled subjects in parallel. Calculates aggregate attendance from summed counts across all active subjects: `(sum(attendedClasses) / sum(totalClasses)) * 100`. Defines zero-record semantics (`hasAttendanceData: false` when `totalClasses === 0`), distinguishing "No attendance data recorded yet" from genuine 0.0% attendance. Attaches structured `contextUsed` metadata to output schema. |
-| **W12** | Storage provider routing on retrieval and cleanup | **Problem:** File downloads and deletions routed through ambient `STORAGE_PROVIDER` configuration rather than the provider recorded at upload time.<br>**Resolution:** Enhanced `getStorageProvider(recordedProvider)` to route strictly to the recorded provider stored on `note.fileStorageProvider` or `studentProfile.resumeStorageProvider`. `noteService.getFileAttachment` and `userService.getResumeAttachment` return `{ fileId, provider }`. `streamNoteFile`, `streamResume`, `deleteNote`, and the transactional cleanup trigger worker all dispatch through the recorded provider. Documented fallback limitation for legacy records lacking provider metadata. |
-| **W20** | Admin platform content counts matching student visibility rules | **Problem:** Admin dashboard counted draft, future-scheduled, and expired announcements and notices as active content.<br>**Resolution:** Updated `adminPlatformService.getDashboardMetrics()` to apply student publication and expiry predicates: `isPublished: true`, `publishedAt: { lte: now, not: null }`, and `OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]` for announcements and notices, and `isPublished: true` for institutional events. Represents globally eligible published content. |
+| **W12** | Storage provider routing on retrieval and cleanup | **Problem:** File downloads and deletions routed through ambient `STORAGE_PROVIDER` configuration rather than the provider recorded at upload time.<br>**Resolution:** Enhanced `getStorageProvider(recordedProvider)` to route strictly to the recorded provider stored on `note.fileStorageProvider` or `studentProfile.resumeStorageProvider`. `noteService.getFileAttachment` and `userService.getResumeAttachment` return `{ fileId, provider }`. `streamNoteFile`, `streamResume`, `deleteNote`, and the transactional cleanup trigger worker all dispatch through the recorded provider. Verified in tests by switching default `STORAGE_PROVIDER = 'supabase'`: retrieval and deletion of existing `local` files succeed without misrouting. |
+| **W20** | Admin platform content counts matching student visibility rules | **Problem:** Admin dashboard counted draft, future-scheduled, and expired announcements and notices as active content.<br>**Resolution:** Updated `adminPlatformService.getDashboardMetrics()` to apply complete student publication and expiry predicates. Announcements & Notices: `isPublished: true`, `publishedAt: { lte: now, not: null }`, and `OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]`. Institutional Events: `isPublished: true`. Represents globally eligible published content; boundary tests verified exact +1 delta against baseline metrics while excluding drafts, future-scheduled, and expired items. |
 | **B10** | Attendance semantics and placement readiness saturation fixture | **Problem:** Unverified EXCUSED attendance denominator policy; missing reproducible test fixture for placement readiness score.<br>**Resolution:** Documented application policy: `attendedClasses / (present + late + absent + excused)`. Implemented exact reproducible 95.0-point placement readiness saturation fixture with isolated test data: 10 skills (100% saturation × 0.25 = 25 pts), canonical résumé ATS score 80 (80% × 0.25 = 20 pts), 7 job applications (100% saturation × 0.20 = 20 pts), 4 certifications (100% saturation × 0.15 = 15 pts), and 5 projects (100% saturation × 0.15 = 15 pts), summing to exactly 95.0 points. |
 
 ---
 
-### 25.3 Native Verification Results (52/52 Passing)
+### 25.3 Native Verification Results (53/53 Passing)
 
-The Phase 4 test suite was executed natively on Windows against a freshly generated disposable PostgreSQL database:
+The test suite was executed natively on Windows against a freshly generated disposable PostgreSQL database:
 - **Test Command:** `npm.cmd run test:native --workspace backend`
 - **PostgreSQL Version:** PostgreSQL 18.4 on x86_64-windows (msvc-19.44.35227, 64-bit)
-- **Total Tests:** 52 passed, 0 failed (expanded from 46 Phase 3 tests).
+- **Total Tests:** 53 passed, 0 failed (expanded with legacy interview identity and concurrency tests).
 - **All 8 Stages Passed:**
   1. `PASS independent connections, row lock and rollback`
   2. `PASS migrations` (`20261017000000_v1_task_completed_at` applied cleanly)
@@ -2748,13 +2749,13 @@ The Phase 4 test suite was executed natively on Windows against a freshly genera
   5. `PASS build` (TypeScript backend compiled cleanly)
   6. `PASS test-types` (Strict test TypeScript check passed)
   7. `PASS seed` (Seed executed successfully)
-  8. `PASS closure` (`scripts/test-day1.test.ts`: **52 passed, 0 failed**, duration ~15.5s)
+  8. `PASS closure` (`scripts/test-day1.test.ts`: **53 passed, 0 failed**, duration ~14.5s)
   9. `PASS production-smoke` (`scripts/test-production-hardening.ts`: compiled server boot, headers, auth, rate limiting, and clean IPC shutdown)
-  10. Disposable database `integrum_native_7772534b3cf69a3c_test` dropped cleanly; `testsPassed: true`, `cleanupSucceeded: true`.
+  10. Disposable database `integrum_native_34758417b919aa49_test` dropped cleanly; `testsPassed: true`, `cleanupSucceeded: true`.
 
 ---
 
-### 25.4 Commit Ledger for Phase 4
+### 25.4 Commit Ledger for Phase 4 & Follow-ups
 
 - `4466baa` feat(tasks): add completedAt timestamp lifecycle and atomic transitions (W07)
 - `9be3644` feat(analytics): add canonical resume selection, UTC date bounds, and readiness heuristic (W07, W08, B10)
@@ -2762,27 +2763,40 @@ The Phase 4 test suite was executed natively on Windows against a freshly genera
 - `5f9cdc6` feat(storage): enforce recorded storage provider routing on file retrieval and cleanup (W12)
 - `25cf348` feat(admin): scope platform metrics to active published content rules (W20)
 - `48ba2ed` test(closure): add Phase 4 verification and injected post-write rollback test
+- `1e9db41` docs(handoff): document Phase 3 follow-ups, Phase 4 verification, and pending closure gates
 
 ---
 
 ### 25.5 Authoritative Status of Remaining Backend Closure Gates
 
-Passing 52/52 native tests establishes local contract correctness and metrics consistency, but does **not** constitute complete backend closure or live-provider readiness. The following gates remain open before production approval:
+Passing 53/53 native tests establishes internal semantic consistency and local API contracts, but does **not** constitute complete backend closure or live-provider readiness. The authoritative remaining gates:
 
 | Gate | Description | Status | Next Required Action |
 |---|---|---|---|
 | **B01** | Windows native smoke & shutdown | **CLOSED** | Verified exit code 0, clean IPC shutdown on Windows. |
 | **B02** | Baseline regression manifest | **PENDING** | Port/execute 14 baseline scripts in isolated native databases. |
-| **B03** | Domain concurrency verification | **PENDING** | Multi-connection stress tests for refresh token rotation, enrollment locks, and attendance race conditions. |
-| **B04** | Live storage provider verification | **PENDING** | Real Supabase bucket upload, signed URL expiration, private access verification, and cascade cleanup. |
+| **B03** | Domain concurrency verification | **PENDING** | Multi-connection stress tests for refresh token rotation, enrollment locks, attendance race conditions, catalog moves, and last-active-admin demotion. |
+| **B04** | Live storage provider verification | **PENDING** | Dedicated Supabase project/private bucket upload, signed URL expiration, private access verification, and cascade cleanup. |
 | **B05** | Storage lifecycle & orphan recovery | **PENDING** | Scheduled background worker and dry-run reconciliation for detached/unreferenced files. |
-| **B06** | V1 workflow feature reconciliation | **CLOSED** | Phase 2 and Phase 3 completed; student workflows reconciled. |
+| **B06** | V1 workflow feature reconciliation | **PENDING (Subitem Open)** | Workflow closure substantially reconciled; interview-round persistent identity and legacy reconciliation remains an active subitem for live production backfill. |
 | **B07** | Live email delivery | **PENDING** | Verification of real Resend email delivery, rate limiting, and recovery in authorized test environment. |
-| **B08** | Live AI integration | **PENDING** | Live Gemini 1.5/2.0 API test calls, rate limit handling, quota exhaustion fallback. |
+| **B08** | Live AI integration | **PENDING** | Small authorized live tests for approved features using model configured via `env.GEMINI_MODEL` (defaulting to `gemini-3.6-flash` if unset). |
 | **B09** | Security review & dependency audit | **PENDING** | Final audit of dependencies and route authorization. |
 | **B10** | Data semantics & metrics consistency | **CLOSED** | EXCUSED policy documented, canonical résumé selector, UTC date windows, and 95-point fixture verified. |
 | **B11** | Integration merge gate | **PENDING** | Merge candidate review across branches without deleting historical branches. |
 | **B12** | Production hosting & cookie topology | **PENDING** | Real browser session cookie, CORS, proxy headers, and secret management. |
 | **B13** | CI/CD pipeline & database recovery | **PENDING** | Repeatable CI native testing workflow and database backup/restore drills. |
 | **B14** | Maintenance & background jobs | **PENDING** | Expired session cleanup job, durable outbox. |
+
+---
+
+### 25.6 Current Delivery Bottleneck: Frontend Integration and Deployment Status
+
+1. **Frontend Integration Status:**
+   - Commit `ab3cae0` supplied a working prototype for the student portal with in-memory auth token management (no tokens in `localStorage`), silent session restoration, and demo accounts.
+   - However, the broader frontend remains disconnected from the comprehensive backend API suite. The student dashboard, career hub, notes viewer, AI planner interface, and admin consoles require end-to-end integration with the verified backend contracts.
+   - The primary bottleneck to user-visible value is frontend integration, not backend refactoring.
+2. **Deployment Status:**
+   - Application is currently runnable locally; production deployment topology (Docker/Cloud Run/Vercel/Supabase), HTTPS/cookie policies in public networks (B12), live provider configurations (B04, B07, B08), and CI/CD pipelines (B13) have not yet been provisioned or approved.
+
 
