@@ -305,26 +305,41 @@ async function main() {
     await pageA.waitForSelector(`table.tbl tr:has-text("${testEventTitle}")`);
     console.log('  ✅ Stage 8 passed: Calendar event created and unified timeline rendered.');
 
-    // ── STAGE 9: In-App Notifications & Read Persistence ──────────────────
-    console.log('  [Stage 9] Testing In-App Notifications Read/Unread State...');
-    // Seed an in-app notification directly for Student A
+    // ── STAGE 9: Active Reminder Processor Execution & Notification Delivery ──
+    console.log('  [Stage 9] Testing Active Reminder Processor Execution & In-App Delivery...');
     const sufiyanUser = await prisma.user.findUnique({
       where: { email: 'sufiyan.shaikh@example.com' },
+      include: { studentProfile: true },
     });
-    assert(sufiyanUser, 'Demo student must exist');
+    assert(sufiyanUser && sufiyanUser.studentProfile, 'Demo student with studentProfile must exist');
 
-    const notifTitle = `Assignment Due Reminder ${randomBytes(3).toString('hex')}`;
-    await prisma.notification.create({
+    const reminderTitle = `Assignment Due Reminder ${randomBytes(3).toString('hex')}`;
+    const testReminder = await prisma.reminder.create({
       data: {
-        userId: sufiyanUser.id,
-        type: NotificationType.ASSIGNMENT_REMINDER,
-        title: notifTitle,
-        message: 'Your assignment is due in 24 hours. Review your submission files.',
-        isRead: false,
+        studentProfileId: sufiyanUser.studentProfile.id,
+        sourceType: 'ASSIGNMENT',
+        sourceId: randomBytes(12).toString('hex'),
+        occurrenceKey: 'due_24h',
+        title: reminderTitle,
+        description: 'Automated in-app alert dispatched by background reminder processor.',
+        triggerAt: new Date(Date.now() - 5000), // due 5 seconds ago
+        deliveryStatus: 'PENDING',
       },
     });
 
-    // Refresh notifications by reloading user data (e.g. reload or navigate)
+    // Execute active reminder processor tick
+    const { reminderService } = await import('../src/services/reminder.service.js');
+    const { processedCount } = await reminderService.processDueReminders();
+    assert(processedCount >= 1, 'Reminder processor must claim and process due reminder');
+
+    // Confirm reminder status transitioned to DELIVERED in database
+    const deliveredReminder = await prisma.reminder.findUnique({
+      where: { id: testReminder.id },
+    });
+    assert.equal(deliveredReminder?.deliveryStatus, 'DELIVERED', 'Reminder must be marked DELIVERED by processor');
+    assert(deliveredReminder?.deliveredAt instanceof Date, 'Reminder deliveredAt must be recorded');
+
+    // Refresh notifications by reloading user data in browser
     await pageA.reload({ waitUntil: 'networkidle' });
     await pageA.waitForSelector('#phase-app');
 
@@ -336,16 +351,16 @@ async function main() {
     // Click bell to open popover
     await pageA.click('button[title="Notifications"]');
     await pageA.waitForSelector('.notif-popover');
-    await pageA.waitForSelector(`.notif-item:has-text("${notifTitle}")`);
+    await pageA.waitForSelector(`.notif-item:has-text("${reminderTitle}")`);
 
     // Click notification item to mark as read
-    await pageA.click(`.notif-item:has-text("${notifTitle}")`);
+    await pageA.click(`.notif-item:has-text("${reminderTitle}")`);
     // Wait for the unread indicator inside the item to vanish
-    await pageA.waitForSelector(`.notif-item:has-text("${notifTitle}").unread`, { state: 'detached' });
+    await pageA.waitForSelector(`.notif-item:has-text("${reminderTitle}").unread`, { state: 'detached' });
 
     // Close popover
     await pageA.click('button[title="Notifications"]');
-    console.log('  ✅ Stage 9 passed: In-app notification received and marked as read.');
+    console.log('  ✅ Stage 9 passed: Reminder processor dispatched alert to in-app notification inbox; marked as read.');
 
     // ── STAGE 10: Page Reload & Silent Session Restoration ────────────────
     console.log('  [Stage 10] Testing Direct Page Reload & Session Restoration...');
@@ -387,8 +402,8 @@ async function main() {
     await pageA.click('.modal-footer button:has-text("Cancel")');
     console.log('  ✅ Stage 11 passed: Error toast surfaced without false success.');
 
-    // ── STAGE 12: Student B Ownership Isolation ───────────────────────────
-    console.log('  [Stage 12] Testing Student B Ownership Isolation in Separate Browser Context...');
+    // ── STAGE 12: Student B Ownership Isolation (Ahmed Khan) ──────────────
+    console.log('  [Stage 12] Testing Student B (Ahmed Khan) Ownership Isolation in Separate Browser Context...');
     const contextB = await browser.newContext({
       viewport: { width: 1280, height: 800 },
     });
@@ -398,9 +413,9 @@ async function main() {
     await pageB.click('button:has-text("Get Started")');
     await pageB.waitForSelector('#phase-login');
 
-    const studentBEmail = `rahul.verma.${randomBytes(4).toString('hex')}@example.com`;
-    await pageB.fill('.form-group:has-text("First Name") input', 'Rahul');
-    await pageB.fill('.form-group:has-text("Last Name") input', 'Verma');
+    const studentBEmail = `ahmed.khan.${randomBytes(4).toString('hex')}@example.com`;
+    await pageB.fill('.form-group:has-text("First Name") input', 'Ahmed');
+    await pageB.fill('.form-group:has-text("Last Name") input', 'Khan');
     await pageB.fill('input[placeholder*="ahmed.khan@example.com"]', studentBEmail);
     await pageB.fill('#phase-login form input[type="password"]', 'Password123!');
     await pageB.click('button[type="submit"]:has-text("Complete Registration")');
@@ -408,7 +423,7 @@ async function main() {
     // Wait for Student B dashboard
     await pageB.waitForSelector('#phase-app', { timeout: 10000 });
     const welcomeB = await pageB.innerText('.welcome h2');
-    assert(welcomeB.includes('Rahul') || welcomeB.includes('Student'), 'Student B must be logged into distinct dashboard');
+    assert(welcomeB.includes('Ahmed') || welcomeB.includes('Student'), 'Student B (Ahmed Khan) must be logged into distinct dashboard');
 
     // Student B must NOT see Student A's tasks
     await pageB.click('.sb-item:has-text("Tasks")');
