@@ -576,6 +576,7 @@ model Task {
   title       String
   description String?        @db.Text
   dueDate     DateTime?
+  completedAt DateTime?
   priority    Priority       @default(MEDIUM)
   status      TaskStatus     @default(TODO)
   createdAt   DateTime       @default(now())

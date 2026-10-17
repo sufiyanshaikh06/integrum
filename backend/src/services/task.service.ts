@@ -19,6 +19,7 @@ export const taskService = {
       description: data.description ?? null,
       dueDate: data.dueDate ? new Date(data.dueDate) : null,
       studyPlanId: data.studyPlanId ?? null,
+      completedAt: data.status === 'DONE' ? new Date() : null,
     };
     if (data.priority !== undefined) taskData.priority = data.priority;
     if (data.status !== undefined) taskData.status = data.status;
@@ -62,7 +63,7 @@ export const taskService = {
   },
 
   async updateTask(studentProfileId: string, taskId: string, data: UpdateTaskInput) {
-    await this.getTaskById(studentProfileId, taskId);
+    const existing = await this.getTaskById(studentProfileId, taskId);
 
     await this.verifyStudyPlanOwnership(studentProfileId, data.studyPlanId);
 
@@ -70,6 +71,7 @@ export const taskService = {
       title?: string;
       description?: string | null;
       dueDate?: Date | null;
+      completedAt?: Date | null;
       priority?: 'LOW' | 'MEDIUM' | 'HIGH';
       status?: 'TODO' | 'IN_PROGRESS' | 'DONE';
       studyPlanId?: string | null;
@@ -78,8 +80,20 @@ export const taskService = {
     if (data.description !== undefined) updateData.description = data.description;
     if (data.dueDate !== undefined) updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
     if (data.priority !== undefined) updateData.priority = data.priority;
-    if (data.status !== undefined) updateData.status = data.status;
     if (data.studyPlanId !== undefined) updateData.studyPlanId = data.studyPlanId;
+
+    if (data.status !== undefined) {
+      updateData.status = data.status;
+      if (data.status === 'DONE') {
+        if (!existing.completedAt) {
+          updateData.completedAt = new Date();
+        }
+      } else {
+        if (existing.completedAt !== null || existing.status === 'DONE') {
+          updateData.completedAt = null;
+        }
+      }
+    }
 
     return prisma.task.update({
       where: { id: taskId },
