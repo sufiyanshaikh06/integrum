@@ -2832,7 +2832,7 @@ According to the approved project synopsis (Section 4: Software Requirements), t
 
 | Tier | Platform | Role & Configuration | Artifacts |
 |---|---|---|---|
-| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://<app>.vercel.app`).<br>Production Branch: `main`<br>Root Directory: `.` (repository root)<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist`<br>Proxy Rewrites: `/api/:path* -> https://<assigned-render-host>/api/:path*` (updated with actual assigned Render URL) | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
+| **Frontend** | **Vercel** | React + Vite Single Page Application (`https://integrum-beta.vercel.app`).<br>Production Branch: `main`<br>Root Directory: `.` (repository root)<br>Build Command: `npm run build --workspace frontend`<br>Output Directory: `frontend/dist`<br>Proxy Rewrites: `/api/:path* -> https://<assigned-render-host>/api/:path*` (updated with actual assigned Render URL) | [`vercel.json`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/vercel.json) |
 | **Backend** | **Render** | Node.js / Express Web Service + continuous background reminder processor.<br>Plan: Free<br>Production Branch: `main`<br>Build Command: `npm install && npm run build --workspace backend` (runs `prisma generate && tsc`)<br>Start Command: `node backend/dist/server.js` | [`render.yaml`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/render.yaml) |
 | **Database** | **Supabase** | Managed PostgreSQL database (`aws-0-[region].pooler.supabase.com`). Dual connection topology: transaction pooler on port 6543 (runtime `DATABASE_URL`) and direct connection on port 5432 (migration `DIRECT_URL`). | [`backend/prisma.config.ts`](file:///d:/ALL_PROJECTS/integrum-backend-transfer/backend/prisma.config.ts) |
 | **Version Control** | **GitHub** | Canonical Git repository (`https://github.com/sufiyanshaikh06/integrum`). Production Branch: `main`. | Git repository |
@@ -2844,7 +2844,7 @@ To provide reliable authentication across modern browsers (avoiding third-party 
 1. **Proxy Routing in `vercel.json`:**
    - The rewrite `/api/:path* -> https://<assigned-render-host>/api/:path*` is placed **strictly before** the SPA fallback route `/(.*) -> /index.html`.
    - The destination is updated with the actual assigned Render URL before deploying Vercel.
-   - The browser communicates exclusively with `https://<app>.vercel.app/api/v1/...`.
+   - The browser communicates exclusively with `https://integrum-beta.vercel.app/api/v1/...`.
    - Vercel reverse-proxies requests to Render, maintaining **same-origin semantics** for the browser.
 
 2. **Cookie Lifetime & Serialized Header Specifications:**
