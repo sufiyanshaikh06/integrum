@@ -294,7 +294,7 @@ export default function Modals(props: ModalsProps) {
                 <span className="badge badge-primary">{props.selectedNote.code || 'CS502'}</span>
                 <span className="badge badge-secondary">{props.selectedNote.date || 'Oct 2026'}</span>
               </div>
-              {props.selectedNote.content}
+              {props.selectedNote.content.replace(/\\n/g, '\n')}
             </div>
             <div className="modal-footer">
               <button className="btn btn-primary" onClick={props.onCloseNoteView}>Close</button>
@@ -576,7 +576,7 @@ export default function Modals(props: ModalsProps) {
                   }}
                 >
                   <strong style={{ fontSize: '22px', color: 'var(--primary)', lineHeight: 1 }}>
-                    {props.resumes[props.inspectingResumeKey].score}
+                    {Number(props.resumes[props.inspectingResumeKey].score || (props.resumes[props.inspectingResumeKey] as any).ats || 85)}
                   </strong>
                   <small style={{ fontSize: '10px', color: 'var(--text-3)' }}>ATS SCORE</small>
                 </div>

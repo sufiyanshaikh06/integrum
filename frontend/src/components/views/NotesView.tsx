@@ -88,7 +88,7 @@ export default function NotesView({
               </h4>
 
               <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: 'var(--text-2)', flex: 1, lineHeight: 1.5 }}>
-                {note.excerpt || note.content.slice(0, 120) + '...'}
+                {(note.excerpt || note.content || '').replace(/\\n/g, ' ').replace(/\n+/g, ' ').slice(0, 130) + '...'}
               </p>
 
               {/* Tags */}

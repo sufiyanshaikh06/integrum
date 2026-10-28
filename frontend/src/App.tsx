@@ -154,6 +154,17 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // ── Role Class Synchronization ──────────────────────────────
+  useEffect(() => {
+    if (userRole === 'admin') {
+      document.body.classList.remove('role-student');
+      document.body.classList.add('role-admin');
+    } else {
+      document.body.classList.remove('role-admin');
+      document.body.classList.add('role-student');
+    }
+  }, [userRole]);
+
   // ── Global Keyboard Shortcuts (Ctrl+K) ──────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -715,19 +726,24 @@ export default function App() {
   };
 
   // ── Attendance Quick Logger ─────────────────────────────────────
+  // ── Attendance Quick Logger ─────────────────────────────────────
   const handleLogAttendanceToday = (code: string, status: 'present' | 'absent' | 'late') => {
     setAttendance((prev) => {
-      const c = prev[code];
-      if (!c) return prev;
+      const key = Object.keys(prev).find((k) => k === code || prev[k]?.code === code);
+      if (!key) return prev;
+      const c = prev[key];
+      const isPresent = status === 'present' || status === 'late';
+      const updated = {
+        ...c,
+        present: isPresent ? c.present + 1 : c.present,
+        absent: status === 'absent' ? c.absent + 1 : c.absent,
+        late: status === 'late' ? c.late + 1 : c.late,
+        total: c.total + 1,
+      };
       return {
         ...prev,
-        [code]: {
-          ...c,
-          present: status === 'present' ? c.present + 1 : c.present,
-          absent: status === 'absent' ? c.absent + 1 : c.absent,
-          late: status === 'late' ? c.late + 1 : c.late,
-          total: c.total + 1,
-        },
+        [key]: updated,
+        ...(c.code ? { [c.code]: updated } : {}),
       };
     });
   };
@@ -737,22 +753,91 @@ export default function App() {
     setResumes((prev) => {
       const r = prev[key];
       if (!r) return prev;
-      const nextMissing = r.missing.filter((k) => k !== keyword);
-      const nextMatched = [...r.matched, keyword];
-      const nextScore = Math.min(100, r.score + 2);
-      const nextKwPct = Math.min(100, r.keywords + 4);
+      const nextMissing = (r.missing || []).filter((k) => k !== keyword);
+      const nextMatched = [...(r.matched || []), keyword];
+      const currentScore = Number(r.score || (r as any).ats || 85);
+      const currentKeywords = Number(r.keywords || (r as any).key || 80);
+      const nextScore = Math.min(100, currentScore + 2);
+      const nextKwPct = Math.min(100, currentKeywords + 4);
       return {
         ...prev,
         [key]: {
           ...r,
           score: nextScore,
           keywords: nextKwPct,
+          format: Number(r.format || 90),
+          impact: Number(r.impact || 88),
+          brevity: Number(r.brevity || 90),
           missing: nextMissing,
           matched: nextMatched,
+          updated: 'Just now',
         },
       };
     });
     showToast(`+ Keyword "${keyword}" integrated into ${key.toUpperCase()} resume! Score boosted.`, 'success');
+  };
+
+  // ── Mumbai University TYCS Template & Blank Curriculum Handlers ─
+  const handleLoadTycsTemplate = () => {
+    setSubjects([
+      { id: 'subj-1', code: '1105111', name: 'Artificial Intelligence', credits: 4 },
+      { id: 'subj-2', code: '1105112', name: 'Cyber & Information Security', credits: 4 },
+      { id: 'subj-3', code: '1105115', name: 'IKS in Computational Systems', credits: 3 },
+      { id: 'subj-4', code: '1105116', name: 'Software Testing & Quality Assurance', credits: 4 },
+      { id: 'subj-5', code: '1105118', name: 'R Programming Practical', credits: 3 },
+    ]);
+    setAssignments(initialPlatformState.assignments as any);
+    showToast('Loaded Mumbai University TYCS Sem 5 Subject Pack & Coursework!', 'success');
+  };
+
+  const handleClearToBlankWorkspace = () => {
+    setSubjects([]);
+    setAssignments([]);
+    showToast('Workspace reset to blank curriculum. Add your custom subjects below.', 'info');
+  };
+
+  // ── Workspace JSON Backup Export & Import ────────────────────────
+  const handleExportWorkspace = () => {
+    const backupData = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      studentInfo,
+      subjects,
+      assignments,
+      tasks,
+      attendance,
+      reminders,
+      notes,
+      resumes,
+      skills,
+      jobs,
+    };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `integrum_backup_${studentInfo.roll || 'workspace'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Workspace backup exported successfully (.json)!', 'success');
+  };
+
+  const handleImportWorkspace = (jsonData: any) => {
+    try {
+      if (jsonData.studentInfo) setStudentInfo(jsonData.studentInfo);
+      if (Array.isArray(jsonData.subjects)) setSubjects(jsonData.subjects);
+      if (Array.isArray(jsonData.assignments)) setAssignments(jsonData.assignments);
+      if (Array.isArray(jsonData.tasks)) setTasks(jsonData.tasks);
+      if (jsonData.attendance) setAttendance(jsonData.attendance);
+      if (Array.isArray(jsonData.reminders)) setReminders(jsonData.reminders);
+      if (Array.isArray(jsonData.notes)) setNotes(jsonData.notes);
+      if (jsonData.resumes) setResumes(jsonData.resumes);
+      if (Array.isArray(jsonData.skills)) setSkills(jsonData.skills);
+      if (Array.isArray(jsonData.jobs)) setJobs(jsonData.jobs);
+      showToast('Workspace data restored successfully from backup!', 'success');
+    } catch {
+      showToast('Failed to parse backup JSON file', 'error');
+    }
   };
 
   return (
@@ -912,6 +997,8 @@ export default function App() {
                   onOpenAsgnModal={() => setIsAsgnModalOpen(true)}
                   onOpenSubjectModal={() => setIsSubjectModalOpen(true)}
                   onViewAsgn={(a) => setSelectedAsgn(a)}
+                  onLoadTycsTemplate={handleLoadTycsTemplate}
+                  onClearBlankWorkspace={handleClearToBlankWorkspace}
                 />
               )}
 
@@ -1037,6 +1124,8 @@ export default function App() {
                     setStudentInfo((prev) => ({ ...prev, name, email }));
                   }}
                   showToast={showToast}
+                  onExportBackup={handleExportWorkspace}
+                  onImportBackup={handleImportWorkspace}
                 />
               )}
             </main>

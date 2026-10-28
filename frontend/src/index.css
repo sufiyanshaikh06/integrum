@@ -399,7 +399,7 @@ body.dark .dash-vital-num { color: var(--secondary); }
 .dash-lower-split { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
 
 /* General Cards & Badges */
-.card { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 24px; transition: all 0.2s var(--ease); }
+.card { background: var(--card-bg, #ffffff); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 24px; box-shadow: var(--shadow-sm); transition: all 0.2s var(--ease); }
 .card:hover { box-shadow: var(--shadow-md); }
 .card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .card-t { font-size: 0.95rem; font-weight: 800; }
@@ -794,4 +794,30 @@ body.dark .stat-card {
 }
 body.dark .login-toggle button.active {
   background: var(--bg-2);
+}
+
+/* --- Timetable Grid Chips & Contrast --- */
+.timetable-chip {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--timetable-chip-bg);
+  color: var(--timetable-chip-text);
+  font-weight: 600;
+  font-size: 11px;
+  display: inline-block;
+  transition: all 0.15s ease;
+}
+.timetable-chip:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+/* --- Media Print Support for Examination Hall Tickets --- */
+@media print {
+  body { background: #fff !important; color: #000 !important; }
+  .sidebar, .app-header, .landing-nav, .lp-footer, #toastContainer, .modal-overlay, button, .mobile-menu-btn {
+    display: none !important;
+  }
+  .main-wrap { margin-left: 0 !important; width: 100% !important; }
+  .card { border: 1px solid #111 !important; box-shadow: none !important; background: #fff !important; }
 }

@@ -14,6 +14,8 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
   const [pomoRunning, setPomoRunning] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState('1105111');
 
+  const [isAddingGoal, setIsAddingGoal] = useState(false);
+  const [newGoalText, setNewGoalText] = useState('');
   const [goals, setGoals] = useState([
     { id: 1, text: 'Complete Artificial Intelligence Revision Modules 1-4', done: true },
     { id: 2, text: 'Write and test STQA Selenium test cases for Login suite', done: false },
@@ -48,9 +50,14 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
   };
 
   const addGoal = () => {
-    const val = prompt('Enter a new semester study goal:');
-    if (val && val.trim()) {
-      setGoals((prev) => [...prev, { id: Date.now(), text: val.trim(), done: false }]);
+    setIsAddingGoal(true);
+  };
+
+  const handleSaveGoal = () => {
+    if (newGoalText.trim()) {
+      setGoals((prev) => [...prev, { id: Date.now(), text: newGoalText.trim(), done: false }]);
+      setNewGoalText('');
+      setIsAddingGoal(false);
       showToast('Study goal added!', 'success');
     }
   };
@@ -136,7 +143,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
           </div>
 
           {/* Digital Timer Display */}
-          <div style={{ fontSize: '3.6rem', fontWeight: 900, color: 'var(--primary)', margin: '16px 0', letterSpacing: '2px' }}>
+          <div style={{ fontSize: '3.6rem', fontWeight: 900, color: 'var(--text-timer, var(--text-1))', margin: '16px 0', letterSpacing: '2px' }}>
             {formatTime(pomoSeconds)}
           </div>
 
@@ -179,6 +186,25 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
               + Add Goal
             </button>
           </div>
+
+          {isAddingGoal && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <input
+                className="form-input"
+                placeholder="Type your study goal and press Enter..."
+                value={newGoalText}
+                onChange={(e) => setNewGoalText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveGoal();
+                  if (e.key === 'Escape') setIsAddingGoal(false);
+                }}
+                autoFocus
+                style={{ fontSize: '13px', padding: '8px 12px' }}
+              />
+              <button className="btn btn-xs btn-primary" onClick={handleSaveGoal}>Save</button>
+              <button className="btn btn-xs btn-secondary" onClick={() => setIsAddingGoal(false)}>✕</button>
+            </div>
+          )}
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {goals.map((g) => (
@@ -235,7 +261,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   <td style={{ padding: '10px', fontWeight: 700, color: 'var(--text-2)' }}>{row.time}</td>
                   <td style={{ padding: '10px' }}>
                     <span
-                      style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}
+                      className="timetable-chip" style={{ cursor: 'pointer' }}
                       onClick={() => showToast(`📅 Mon ${row.time}: ${row.mon}`, 'info')}
                     >
                       {row.mon}
@@ -243,7 +269,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   </td>
                   <td style={{ padding: '10px' }}>
                     <span
-                      style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}
+                      className="timetable-chip" style={{ cursor: 'pointer' }}
                       onClick={() => showToast(`📅 Tue ${row.time}: ${row.tue}`, 'info')}
                     >
                       {row.tue}
@@ -251,7 +277,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   </td>
                   <td style={{ padding: '10px' }}>
                     <span
-                      style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}
+                      className="timetable-chip" style={{ cursor: 'pointer' }}
                       onClick={() => showToast(`📅 Wed ${row.time}: ${row.wed}`, 'info')}
                     >
                       {row.wed}
@@ -259,7 +285,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   </td>
                   <td style={{ padding: '10px' }}>
                     <span
-                      style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}
+                      className="timetable-chip" style={{ cursor: 'pointer' }}
                       onClick={() => showToast(`📅 Thu ${row.time}: ${row.thu}`, 'info')}
                     >
                       {row.thu}
@@ -267,7 +293,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   </td>
                   <td style={{ padding: '10px' }}>
                     <span
-                      style={{ cursor: 'pointer', color: 'var(--primary)', fontWeight: 600 }}
+                      className="timetable-chip" style={{ cursor: 'pointer' }}
                       onClick={() => showToast(`📅 Fri ${row.time}: ${row.fri}`, 'info')}
                     >
                       {row.fri}

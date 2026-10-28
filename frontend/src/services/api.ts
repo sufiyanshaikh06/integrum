@@ -63,6 +63,7 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
   if (res.status === 401 && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login')) {
     if (!isRefreshing) {
       isRefreshing = true;
+      let refreshedToken: string | null = null;
       try {
         const refreshRes = await fetch(`${BASE_URL}/auth/refresh`, {
           method: 'POST',
@@ -75,6 +76,7 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
           const newToken = refreshJson?.data?.accessToken;
           if (newToken) {
             setAccessToken(newToken);
+            refreshedToken = newToken;
             onRefreshed(newToken);
           } else {
             setAccessToken(null);
@@ -90,16 +92,21 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
       } finally {
         isRefreshing = false;
       }
-    }
 
-    // Wait for the refresh to complete
-    const retryToken = await new Promise<string | null>((resolve) => {
-      addRefreshSubscriber((token) => resolve(token));
-    });
+      if (refreshedToken) {
+        headers.set('Authorization', `Bearer ${refreshedToken}`);
+        res = await fetch(url, { ...fetchOptions, headers });
+      }
+    } else {
+      // Wait for concurrent in-flight refresh to complete
+      const retryToken = await new Promise<string | null>((resolve) => {
+        addRefreshSubscriber((token) => resolve(token));
+      });
 
-    if (retryToken) {
-      headers.set('Authorization', `Bearer ${retryToken}`);
-      res = await fetch(url, { ...fetchOptions, headers });
+      if (retryToken) {
+        headers.set('Authorization', `Bearer ${retryToken}`);
+        res = await fetch(url, { ...fetchOptions, headers });
+      }
     }
   }
 

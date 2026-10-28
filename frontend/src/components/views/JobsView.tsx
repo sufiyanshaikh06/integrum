@@ -67,7 +67,7 @@ export default function JobsView({ jobs, onOpenCreateModal, onAdvanceStage }: Jo
                   <div
                     key={j.id}
                     style={{
-                      background: '#ffffff',
+                      background: 'var(--card-bg, #ffffff)',
                       border: '1px solid var(--border)',
                       borderRadius: 'var(--radius-sm)',
                       padding: '12px',
@@ -82,7 +82,7 @@ export default function JobsView({ jobs, onOpenCreateModal, onAdvanceStage }: Jo
                       {j.role}
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--text-3)', margin: '4px 0 10px 0' }}>
-                      {j.location} · {j.type}
+                      {[j.location, j.type].filter(Boolean).join(' · ') || 'Campus Opportunity · Engineering'}
                     </div>
 
                     {/* Advance controls */}

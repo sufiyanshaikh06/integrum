@@ -22,3 +22,5 @@ backend/uploads/profiles/
 backend/test-results/
 scratch/
 Integrum Handoff packages/
+
+.worktrees/

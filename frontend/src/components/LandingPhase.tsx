@@ -16,6 +16,8 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
   ]);
   const [simNewTask, setSimNewTask] = useState('');
   const [simTimerSeconds, setSimTimerSeconds] = useState(1500);
+  const [bunkPresent, setBunkPresent] = useState(20);
+  const [bunkTotal, setBunkTotal] = useState(24);
   const [simTimerRunning, setSimTimerRunning] = useState(false);
 
   // Simulator Pomodoro Timer
@@ -109,7 +111,7 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
                   </button>
                   <a className="lp-button secondary" href="#features">Take a closer look</a>
                 </div>
-                <p className="lp-note">Unified academic management · Built for <strong>Sufiyan Shaikh</strong></p>
+                <p className="lp-note">Built for modern university students · Open Source & Privacy-First</p>
               </div>
 
               {/* Live Interactive Workspace Window */}
@@ -179,7 +181,7 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
                         <div className="sim-pane active" id="simPaneOverview">
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                             <div>
-                              <strong style={{ fontSize: '13px', color: 'var(--text-1)' }}>Good morning, Sufiyan</strong>
+                              <strong style={{ fontSize: '13px', color: 'var(--text-1)' }}>Good morning, Alex</strong>
                               <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-3)' }}>Semester 5 (Fall 2026) · CS & Engineering</p>
                             </div>
                             <span className="badge badge-success" style={{ fontSize: '10px', padding: '3px 8px' }}>Active Sprint</span>
@@ -451,6 +453,82 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
           </div>
         </section>
 
+                {/* Interactive Safe-Bunk Calculator Widget */}
+        <section className="lp-section" id="safe-bunk-calculator" style={{ padding: '60px 0', background: 'var(--bg-2)' }}>
+          <div className="lp-wrap" style={{ maxWidth: '800px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+              <span className="badge badge-primary" style={{ marginBottom: '8px' }}>Interactive Math Engine</span>
+              <h2 style={{ fontSize: '1.8rem', fontWeight: 900, margin: '8px 0' }}>Calculate Your Safe Bunks Live</h2>
+              <p style={{ color: 'var(--text-2)', fontSize: '0.95rem' }}>
+                Test your course attendance standing against the mandatory 75% university policy right now.
+              </p>
+            </div>
+
+            <div className="card" style={{ padding: '28px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '6px' }}>
+                    Lectures Attended:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={bunkTotal}
+                    value={bunkPresent}
+                    onChange={(e) => setBunkPresent(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="form-input"
+                    style={{ fontSize: '16px', fontWeight: 800 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '6px' }}>
+                    Total Lectures Conducted:
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={bunkTotal}
+                    onChange={(e) => setBunkTotal(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="form-input"
+                    style={{ fontSize: '16px', fontWeight: 800 }}
+                  />
+                </div>
+              </div>
+
+              {(() => {
+                const pct = bunkTotal > 0 ? (bunkPresent / bunkTotal) * 100 : 0;
+                const isSafe = pct >= 75.0;
+                const maxMiss = Math.max(0, Math.floor(bunkPresent / 0.75 - bunkTotal));
+                const needed = Math.max(1, Math.ceil((0.75 * bunkTotal - bunkPresent) / 0.25));
+
+                return (
+                  <div
+                    style={{
+                      padding: '20px',
+                      borderRadius: 'var(--radius-md)',
+                      background: isSafe ? 'var(--success-light)' : 'var(--warning-light)',
+                      borderLeft: `5px solid ${isSafe ? 'var(--success)' : 'var(--warning)'}`,
+                      color: 'var(--text-1)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong style={{ fontSize: '1.2rem', color: isSafe ? 'var(--success)' : '#B45309' }}>
+                        {isSafe ? '✓ Safe Attendance Standing' : '⚠️ Attendance Warning'}
+                      </strong>
+                      <span style={{ fontSize: '1.5rem', fontWeight: 900 }}>{pct.toFixed(1)}%</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>
+                      {isSafe
+                        ? `You can safely miss up to ${maxMiss} more ${maxMiss === 1 ? 'class' : 'classes'} while maintaining >= 75% attendance.`
+                        : `You are below the 75% threshold. You must attend the next ${needed} consecutive ${needed === 1 ? 'class' : 'classes'} without absence to restore eligibility.`}
+                    </p>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </section>
+
         {/* FAQ Section */}
         <section className="lp-section" id="faq" style={{ background: 'var(--bg-2)' }}>
           <div className="lp-wrap">
@@ -482,7 +560,7 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
         <div className="lp-wrap" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <strong>Integrum</strong> · Student Success Platform
-            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>Engineered for Sufiyan Shaikh · Computer Science & Engineering</p>
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>Built for modern university students · Department of Computer Science & Engineering</p>
           </div>
           <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
             <button className="btn btn-sm btn-outline" onClick={() => onGoLogin('student')}>Student Sign In</button>

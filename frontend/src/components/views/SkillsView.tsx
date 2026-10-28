@@ -82,28 +82,33 @@ export default function SkillsView({ skills, onOpenCreateModal }: SkillsProps) {
 
       {/* Skills Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
-        {filteredSkills.map((s, idx) => (
-          <div key={idx} className="card" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <strong style={{ fontSize: '14px' }}>{s.name}</strong>
-              <span className="badge badge-secondary" style={{ fontSize: '10px' }}>{s.category}</span>
+        {filteredSkills.map((s, idx) => {
+          const rating = s.level <= 5 ? s.level : s.level / 20;
+          const pct = Math.min(100, Math.round(rating * 20));
+
+          return (
+            <div key={idx} className="card" style={{ padding: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <strong style={{ fontSize: '14px' }}>{s.name}</strong>
+                <span className="badge badge-secondary" style={{ fontSize: '10px' }}>{s.category}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-3)', marginBottom: '4px' }}>
+                <span>Proficiency: {rating.toFixed(1)} / 5.0</span>
+                <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{pct}%</span>
+              </div>
+              <div style={{ height: '6px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${pct}%`,
+                    background: 'var(--primary)',
+                    borderRadius: '999px',
+                  }}
+                />
+              </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-3)', marginBottom: '4px' }}>
-              <span>Proficiency</span>
-              <span>{s.level}%</span>
-            </div>
-            <div style={{ height: '6px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
-              <div
-                style={{
-                  height: '100%',
-                  width: `${s.level}%`,
-                  background: 'var(--primary)',
-                  borderRadius: '999px',
-                }}
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

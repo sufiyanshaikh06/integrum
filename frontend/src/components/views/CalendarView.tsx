@@ -8,7 +8,10 @@ interface CalendarProps {
 }
 
 export default function CalendarView({ assignments, events, onOpenEventModal }: CalendarProps) {
-  const [selectedDay, setSelectedDay] = useState(15);
+  const now = new Date();
+  const todayDay = now.getDate();
+  const todayMonthName = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(now);
+  const [selectedDay, setSelectedDay] = useState(todayDay <= 31 ? todayDay : 15);
 
   const examDays: Record<number, { code: string; title: string; time: string; venue: string }> = {
     15: { code: '1105111', title: 'Artificial Intelligence', time: '10:30 AM - 01:30 PM', venue: 'Hall 4A · Row 3' },
@@ -42,7 +45,7 @@ export default function CalendarView({ assignments, events, onOpenEventModal }: 
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>October 2026</h3>
             <div style={{ display: 'flex', gap: '6px' }}>
               <button className="btn btn-xs btn-outline">‹ Prev</button>
-              <button className="btn btn-xs btn-primary" onClick={() => setSelectedDay(15)}>Today (Oct 15)</button>
+              <button className="btn btn-xs btn-primary" onClick={() => setSelectedDay(todayDay <= 31 ? todayDay : 15)}>Today ({todayMonthName} {todayDay})</button>
               <button className="btn btn-xs btn-outline">Next ›</button>
             </div>
           </div>
@@ -69,7 +72,7 @@ export default function CalendarView({ assignments, events, onOpenEventModal }: 
                     justifyContent: 'center',
                     borderRadius: 'var(--radius-sm)',
                     border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
-                    background: isExam ? 'var(--primary-light)' : isSelected ? 'var(--bg-3)' : '#fff',
+                    background: isExam ? 'var(--primary-light)' : isSelected ? 'var(--bg-3)' : 'var(--card-bg, #fff)',
                     cursor: 'pointer',
                     fontSize: '12px',
                     fontWeight: isExam || isSelected ? 800 : 500,
@@ -120,7 +123,7 @@ export default function CalendarView({ assignments, events, onOpenEventModal }: 
                 <span className="badge badge-secondary" style={{ fontSize: '10px' }}>{ev.type}</span>
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '2px' }}>
-                {ev.time} · {ev.venue}
+                {ev.time} · {ev.venue || 'Auditorium Hall 4A, Campus Centre (TBA)'}
               </div>
             </div>
           ))}

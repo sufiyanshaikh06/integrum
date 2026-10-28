@@ -190,7 +190,7 @@ export default function LoginPhase({
                   className="btn btn-primary login-btn"
                   disabled={loading}
                 >
-                  {loading ? 'Signing in...' : 'Sign In as Sufiyan Shaikh →'}
+                  {loading ? 'Signing in...' : 'Sign In to Student Workspace →'}
                 </button>
               </form>
 

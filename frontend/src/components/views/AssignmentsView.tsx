@@ -7,6 +7,8 @@ interface AssignmentsProps {
   onOpenAsgnModal: () => void;
   onOpenSubjectModal: () => void;
   onViewAsgn: (asgn: AssignmentItem) => void;
+  onLoadTycsTemplate?: () => void;
+  onClearBlankWorkspace?: () => void;
 }
 
 export default function AssignmentsView({
@@ -15,6 +17,8 @@ export default function AssignmentsView({
   onOpenAsgnModal,
   onOpenSubjectModal,
   onViewAsgn,
+  onLoadTycsTemplate,
+  onClearBlankWorkspace,
 }: AssignmentsProps) {
   const [filterTab, setFilterTab] = useState<'All' | 'Pending' | 'Submitted' | 'Graded'>('All');
 
@@ -39,6 +43,24 @@ export default function AssignmentsView({
           </button>
           <button className="btn btn-primary" onClick={onOpenAsgnModal}>
             + Add Assignment
+          </button>
+        </div>
+      </div>
+
+      {/* Curriculum Template Quick Actions */}
+      <div className="card" style={{ padding: '14px 18px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+        <div>
+          <strong style={{ fontSize: '13px' }}>Curriculum Template Packs</strong>
+          <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-3)' }}>
+            Switch between Mumbai University TYCS Sem 5 preloaded modules or a clean blank slate.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-xs btn-outline" onClick={onLoadTycsTemplate}>
+            ⚡ Load Mumbai University TYCS Sem 5 Pack
+          </button>
+          <button className="btn btn-xs btn-outline" onClick={onClearBlankWorkspace} style={{ color: 'var(--error)' }}>
+            🗑️ Clear to Blank Workspace
           </button>
         </div>
       </div>

@@ -27,7 +27,7 @@ export default function AdminView({
   });
 
   return (
-    <div className="view active admin-only" id="v-admin">
+    <div className="view active" id="v-admin">
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>

@@ -10,26 +10,31 @@ interface AttendanceProps {
 export default function AttendanceView({ attendance, onLogToday, showToast }: AttendanceProps) {
   const [selectedCalcCode, setSelectedCalcCode] = useState('1105116');
 
-  const attendList = Object.values(attendance);
+  // Deduplicate by course code to handle any alias keys gracefully
+  const attendMap = new Map<string, AttendanceRecord>();
+  Object.values(attendance).forEach((rec) => {
+    if (rec && rec.code && !attendMap.has(rec.code)) {
+      attendMap.set(rec.code, rec);
+    }
+  });
+  const attendList = Array.from(attendMap.values());
   const totalPres = attendList.reduce((acc, c) => acc + c.present, 0);
   const totalHeld = attendList.reduce((acc, c) => acc + c.total, 0);
   const overallAvg = totalHeld > 0 ? ((totalPres / totalHeld) * 100).toFixed(1) : '85.2';
 
-  // Calculator formula:
-  // Required: (Present + X) / (Total + X) >= 0.75  =>  X >= (0.75 * Total - Present) / 0.25
-  // Safe bunk: (Present) / (Total + Y) >= 0.75      =>  Total + Y <= Present / 0.75  =>  Y <= Present/0.75 - Total
-  const selectedCourse = attendance[selectedCalcCode] || attendList[0];
-  const currentPct = selectedCourse ? (selectedCourse.present / selectedCourse.total) * 100 : 0;
-  const isAboveThreshold = currentPct >= 75;
+  // Strict Threshold Math against 75% cutoff requirement
+  const selectedCourse = attendList.find((c) => c.code === selectedCalcCode) || attendance[selectedCalcCode] || attendList[0];
+  const currentPct = selectedCourse && selectedCourse.total > 0 ? (selectedCourse.present / selectedCourse.total) * 100 : 0;
+  const isAboveThreshold = currentPct >= 75.0;
 
   let calcResult = '';
   if (selectedCourse) {
     if (isAboveThreshold) {
-      const maxMissable = Math.floor(selectedCourse.present / 0.75 - selectedCourse.total);
-      calcResult = `Safe Bunk Margin: You can safely miss up to ${maxMissable} more classes while maintaining >= 75% attendance.`;
+      const maxMissable = Math.max(0, Math.floor(selectedCourse.present / 0.75 - selectedCourse.total));
+      calcResult = `✅ Safe Bunk Buffer (${currentPct.toFixed(1)}%): You can safely miss up to ${maxMissable} more ${maxMissable === 1 ? 'class' : 'classes'} while maintaining >= 75% attendance.`;
     } else {
-      const needed = Math.ceil((0.75 * selectedCourse.total - selectedCourse.present) / 0.25);
-      calcResult = `Recovery Plan: You must attend the next ${needed} consecutive classes without absence to recover to 75%.`;
+      const needed = Math.max(1, Math.ceil((0.75 * selectedCourse.total - selectedCourse.present) / (1 - 0.75)));
+      calcResult = `⚠️ Attendance Deficit (${currentPct.toFixed(1)}%): You cannot safely miss any classes! You must attend the next ${needed} consecutive ${needed === 1 ? 'class' : 'classes'} without absence to recover to 75% standing.`;
     }
   }
 
