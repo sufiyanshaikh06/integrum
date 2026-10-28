@@ -17,6 +17,8 @@ interface HeaderProps {
   onToggleNotif: () => void;
   onMarkNotifRead: (id: string) => void;
   onMarkAllNotifsRead: () => void;
+  onNavigate?: (view: ActiveView) => void;
+  onDismissNotif?: (id: string) => void;
   onLogout: () => void;
 }
 
@@ -54,11 +56,35 @@ export default function Header({
   onToggleNotif,
   onMarkNotifRead,
   onMarkAllNotifsRead,
+  onNavigate,
+  onDismissNotif,
   onLogout,
 }: HeaderProps) {
   const unreadCount = notifications.filter((n) => n.unread).length;
   const displayName = user?.name || (userRole === 'admin' ? adminInfo.name : studentInfo.name);
   const avatarText = userRole === 'admin' ? adminInfo.avatar : studentInfo.avatar;
+
+  const handleNotifClick = (n: any) => {
+    onMarkNotifRead(n.id);
+    if (!onNavigate) return;
+    const title = (n.title || '').toLowerCase();
+    const desc = (n.msg || n.description || '').toLowerCase();
+    if (title.includes('attendance') || desc.includes('attendance') || title.includes('stqa')) {
+      onNavigate('attend');
+    } else if (title.includes('exam') || title.includes('calendar') || desc.includes('venue') || desc.includes('oct')) {
+      onNavigate('cal');
+    } else if (title.includes('hall ticket')) {
+      onNavigate('profile');
+    } else if (title.includes('assignment') || title.includes('lab')) {
+      onNavigate('asgn');
+    } else if (title.includes('task') || title.includes('tlb')) {
+      onNavigate('tasks');
+    } else if (title.includes('resume') || title.includes('ats')) {
+      onNavigate('resumes');
+    } else if (title.includes('job') || title.includes('placement')) {
+      onNavigate('jobs');
+    }
+  };
 
   return (
     <header className="app-header">
@@ -191,12 +217,33 @@ export default function Header({
                     <div
                       key={n.id}
                       className={`notif-item ${n.unread ? 'unread' : ''}`}
-                      onClick={() => onMarkNotifRead(n.id)}
-                      style={{ cursor: 'pointer' }}
+                      onClick={() => handleNotifClick(n)}
+                      style={{ cursor: 'pointer', position: 'relative' }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: 700, fontSize: '12px' }}>{n.title}</span>
-                        <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{n.time || 'Today'}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-3)' }}>{n.time || 'Today'}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onDismissNotif) onDismissNotif(n.id);
+                              else onMarkNotifRead(n.id);
+                            }}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              cursor: 'pointer',
+                              color: 'var(--text-3)',
+                              fontSize: '12px',
+                              lineHeight: 1,
+                              padding: '2px 4px',
+                            }}
+                            title="Dismiss notification"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-2)', marginTop: '2px' }}>
                         {n.msg || n.description}

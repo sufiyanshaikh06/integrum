@@ -404,7 +404,7 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
             <div className="lp-section-hdr">
               <span className="lp-pill">Architecture</span>
               <h2>Designed with precision and academic integrity</h2>
-              <p>Built on Supabase PostgreSQL, Prisma ORM, and secure dual-portal access.</p>
+              <p>Local-First Browser Persistence paired with Supabase PostgreSQL and Render Cloud Sync.</p>
             </div>
 
             <div className="lp-steps-grid">

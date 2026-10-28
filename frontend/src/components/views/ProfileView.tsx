@@ -276,7 +276,7 @@ export default function ProfileView({
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px', marginBottom: '16px', background: '#f9fafb', padding: '12px', borderRadius: '6px' }}>
                 <div>Candidate Name: <b>{studentInfo.name}</b></div>
-                <div>Seat Number: <b>INT2024001</b></div>
+                <div>Seat Number: <b>{studentInfo.roll}</b></div>
                 <div>PRN / Roll No: <b>{studentInfo.roll}</b></div>
                 <div>Centre Code: <b>042 · Auditorium Hall 4A</b></div>
                 <div style={{ gridColumn: '1 / -1' }}>Examination Venue: <b>Metropolitan Institute Examination Centre (Hall 4A, Row 3)</b></div>

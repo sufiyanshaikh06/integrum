@@ -105,7 +105,7 @@ export default function ResumesView({
               </button>
               <button
                 className="btn btn-sm btn-outline"
-                onClick={() => onDownloadPdf(`${key}-resume-sufiyan.pdf`)}
+                onClick={() => onDownloadPdf(`${key}-resume.pdf`)}
               >
                 Download PDF
               </button>

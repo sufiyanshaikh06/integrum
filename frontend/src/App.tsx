@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useLocalStorageState } from './hooks/useLocalStorageState';
+import ErrorBoundary from './components/ErrorBoundary';
 import type {
   Phase,
   UserRole,
@@ -55,17 +57,17 @@ import ProfileView from './components/views/ProfileView';
 
 export default function App() {
   // Navigation & Phase State
-  const [phase, setPhase] = useState<Phase>('landing');
-  const [activeView, setActiveView] = useState<ActiveView>('dashboard');
-  const [userRole, setUserRole] = useState<UserRole>('student');
+  const [phase, setPhase] = useLocalStorageState<Phase>('integrum_phase', 'landing');
+  const [activeView, setActiveView] = useLocalStorageState<ActiveView>('integrum_active_view', 'dashboard');
+  const [userRole, setUserRole] = useLocalStorageState<UserRole>('integrum_user_role', 'student');
   const [loginMode, setLoginMode] = useState<'student' | 'admin' | 'register'>('student');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
 
   // User & Identity State
-  const [user, setUser] = useState<any>(null);
-  const [studentInfo, setStudentInfo] = useState<StudentInfo>(initialPlatformState.studentInfo);
+  const [user, setUser] = useLocalStorageState<any>('integrum_user', null);
+  const [studentInfo, setStudentInfo] = useLocalStorageState<StudentInfo>('integrum_student_info', initialPlatformState.studentInfo);
   const [adminInfo] = useState<AdminInfo>(initialPlatformState.adminInfo);
 
   // Theme & Toasts
@@ -81,16 +83,16 @@ export default function App() {
   const [assignments, setAssignments] = useState<AssignmentItem[]>(
     initialPlatformState.assignments as any
   );
-  const [tasks, setTasks] = useState<TaskItem[]>(initialPlatformState.tasks as any);
+  const [tasks, setTasks] = useLocalStorageState<TaskItem[]>('integrum_tasks', initialPlatformState.tasks as any);
   const [reminders, setReminders] = useState<ReminderItem[]>(
     initialPlatformState.reminders as any
   );
-  const [notes, setNotes] = useState<NoteItem[]>(initialPlatformState.notes as any);
+  const [notes, setNotes] = useLocalStorageState<NoteItem[]>('integrum_notes', initialPlatformState.notes as any);
   const [resumes, setResumes] = useState<Record<string, ResumeVersion>>(
     initialPlatformState.resumes as any
   );
-  const [skills, setSkills] = useState<SkillItem[]>(initialPlatformState.skills as any);
-  const [jobs, setJobs] = useState<JobItem[]>(initialPlatformState.jobs as any);
+  const [skills, setSkills] = useLocalStorageState<SkillItem[]>('integrum_skills', initialPlatformState.skills as any);
+  const [jobs, setJobs] = useLocalStorageState<JobItem[]>('integrum_jobs', initialPlatformState.jobs as any);
   const [notifications, setNotifications] = useState<any[]>(
     initialPlatformState.notifications as any
   );
@@ -105,7 +107,7 @@ export default function App() {
   );
 
   // Focus & Study Hours
-  const [studyLogged, setStudyLogged] = useState(18.5);
+  const [studyLogged, setStudyLogged] = useLocalStorageState<number>('integrum_study_logged', 18.5);
   const [studyTarget] = useState(25.0);
 
   // Backend Synchronized Entities
@@ -940,6 +942,7 @@ export default function App() {
 
             {/* View Render Area */}
             <main className="main-content">
+              <ErrorBoundary>
               {/* 1. Dashboard */}
               {activeView === 'dashboard' && (
                 <DashboardView
@@ -1097,7 +1100,7 @@ export default function App() {
               {activeView === 'analytics' && <AnalyticsView />}
 
               {/* 13. AI Assistant */}
-              {activeView === 'ai' && <AIAssistantView />}
+              {activeView === 'ai' && <AIAssistantView studentInfo={studentInfo} subjects={subjects} attendance={attendance} tasks={tasks} />}
 
               {/* 14. Administration Portal */}
               {activeView === 'admin' && (
@@ -1128,6 +1131,7 @@ export default function App() {
                   onImportBackup={handleImportWorkspace}
                 />
               )}
+              </ErrorBoundary>
             </main>
           </div>
 

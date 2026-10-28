@@ -113,7 +113,7 @@ export default function LoginPhase({
             <li><span className="check">✓</span> Resume ATS optimization & skill gap analysis</li>
           </ul>
           <div style={{ marginTop: 'auto', paddingTop: '24px', fontSize: '0.75rem', opacity: 0.85 }}>
-            Workspace of <strong>Sufiyan Shaikh</strong> · Computer Science & Engineering
+            Student Workspace · Computer Science & Engineering
           </div>
         </div>
 

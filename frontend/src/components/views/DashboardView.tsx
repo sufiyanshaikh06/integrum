@@ -35,6 +35,7 @@ export default function DashboardView({
   const totalPres = attendList.reduce((acc, c) => acc + c.present, 0);
   const totalHeld = attendList.reduce((acc, c) => acc + c.total, 0);
   const avgAttend = totalHeld > 0 ? ((totalPres / totalHeld) * 100).toFixed(1) : '85.2';
+  const overallBunks = Math.floor(totalPres / 0.75 - totalHeld);
 
   const pendingAsgns = assignments.filter((a) => a.status === 'Pending');
   const activeRems = reminders.filter((r) => r.status === 'active');
@@ -77,7 +78,7 @@ export default function DashboardView({
           <div className="stat-val" style={{ color: 'var(--success)', fontSize: '1.8rem', fontWeight: 800 }}>
             {avgAttend}%
           </div>
-          <small style={{ color: 'var(--text-2)' }}>Safe bunk margin: <strong>+6 classes</strong></small>
+          <small style={{ color: overallBunks >= 0 ? 'var(--text-2)' : 'var(--error)' }}>Safe bunk margin: <strong>{overallBunks >= 0 ? `+${overallBunks} classes` : `${overallBunks} classes (Recovery required)`}</strong></small>
         </div>
 
         <div className="stat-card card">

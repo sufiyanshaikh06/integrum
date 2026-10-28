@@ -30,6 +30,8 @@ interface ModalsProps {
   // Assignment View Modal
   selectedAsgn: AssignmentItem | null;
   onCloseAsgnView: () => void;
+  onUpdateAsgnStatus?: (id: string, newStatus: 'Pending' | 'Submitted' | 'Graded') => void;
+  onDeleteAsgn?: (id: string) => void;
 
   // Reminder Modal
   isRemModalOpen: boolean;
@@ -136,27 +138,32 @@ export default function Modals(props: ModalsProps) {
   // Command palette state
   const [cmdQuery, setCmdQuery] = useState('');
 
-  const cmdList: Array<{ label: string; view: ActiveView; icon: string }> = [
-    { label: 'Dashboard Overview', view: 'dashboard', icon: '📊' },
-    { label: 'Study Planner & Pomodoro', view: 'study', icon: '⏱️' },
-    { label: 'Academic Notes Manager', view: 'notes', icon: '📝' },
-    { label: 'Courses & Assignments', view: 'asgn', icon: '📚' },
-    { label: 'Attendance Tracker & Safe-Bunk Calculator', view: 'attend', icon: '🛡️' },
-    { label: 'October 2026 Examination Calendar', view: 'cal', icon: '📅' },
-    { label: 'Productivity Tasks', view: 'tasks', icon: '✓' },
-    { label: 'Reminders & Examination Alerts', view: 'rems', icon: '🔔' },
-    { label: 'Resume Versions & ATS Audit', view: 'resumes', icon: '📄' },
-    { label: 'Technical Skills Matrix', view: 'skills', icon: '⚡' },
-    { label: 'Placement & Job Tracking', view: 'jobs', icon: '💼' },
-    { label: 'Analytics & Success Index', view: 'analytics', icon: '📈' },
-    { label: 'Integrum AI Assistant', view: 'ai', icon: '🤖' },
-    { label: 'University Administration Portal', view: 'admin', icon: '🏛️' },
-    { label: 'Student Profile & Settings', view: 'profile', icon: '👤' },
+  const cmdList: Array<{ label: string; view: ActiveView; icon: string; keywords?: string[] }> = [
+    { label: 'Dashboard Overview', view: 'dashboard', icon: '📊', keywords: ['home', 'overview', 'stats', 'kpi', 'summary'] },
+    { label: 'Study Planner & Pomodoro', view: 'study', icon: '⏱️', keywords: ['timer', 'pomodoro', 'focus', 'hours', 'timetable', 'schedule'] },
+    { label: 'Academic Notes Manager', view: 'notes', icon: '📝', keywords: ['notes', 'study notes', 'cheatsheet', 'lecture', 'revision'] },
+    { label: 'Courses & Assignments', view: 'asgn', icon: '📚', keywords: ['courses', 'assignments', 'homework', 'curriculum', 'subjects', 'syllabus'] },
+    { label: 'Attendance Tracker & Safe-Bunk Calculator', view: 'attend', icon: '🛡️', keywords: ['attendance', 'bunk', 'safe-bunk', 'calculator', '75%', 'present', 'absent'] },
+    { label: 'October 2026 Examination Calendar', view: 'cal', icon: '📅', keywords: ['calendar', 'exam', 'dates', 'deadlines', 'agenda', 'october'] },
+    { label: 'Productivity Tasks', view: 'tasks', icon: '✓', keywords: ['tasks', 'todo', 'checklist', 'atomic', 'w07'] },
+    { label: 'Reminders & Examination Alerts', view: 'rems', icon: '🔔', keywords: ['reminders', 'alerts', 'notifications', 'alarm'] },
+    { label: 'Resume Versions & ATS Audit', view: 'resumes', icon: '📄', keywords: ['resumes', 'ats', 'cv', 'audit', 'score', 'keywords'] },
+    { label: 'Technical Skills Matrix', view: 'skills', icon: '⚡', keywords: ['skills', 'matrix', 'competencies', 'gap analysis', 'ratings'] },
+    { label: 'Placement & Job Tracking', view: 'jobs', icon: '💼', keywords: ['jobs', 'placement', 'internship', 'kanban', 'applications', 'interview'] },
+    { label: 'Analytics & Success Index', view: 'analytics', icon: '📈', keywords: ['analytics', 'success index', 'gpa', 'sgpa', 'simulator', 'metrics'] },
+    { label: 'Integrum AI Assistant', view: 'ai', icon: '🤖', keywords: ['ai', 'assistant', 'advisor', 'bot', 'chat', 'help'] },
+    { label: 'University Administration Portal', view: 'admin', icon: '🏛️', keywords: ['admin', 'faculty', 'portal', 'circulars', 'directory', 'students'] },
+    { label: 'Student Profile & Settings', view: 'profile', icon: '👤', keywords: ['profile', 'settings', 'hall ticket', 'backup', 'export', 'import', 'json'] },
   ];
 
-  const filteredCmds = cmdList.filter((c) =>
-    c.label.toLowerCase().includes(cmdQuery.toLowerCase())
-  );
+  const filteredCmds = cmdList.filter((c) => {
+    const q = cmdQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      c.label.toLowerCase().includes(q) ||
+      (c.keywords && c.keywords.some((kw) => kw.toLowerCase().includes(q)))
+    );
+  });
 
   return (
     <div id="modalsContainer">
@@ -428,15 +435,48 @@ export default function Modals(props: ModalsProps) {
               <button className="modal-close" onClick={props.onCloseAsgnView}>✕</button>
             </div>
             <div className="modal-body" style={{ fontSize: '13px', lineHeight: 1.6 }}>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
                 <span className="badge badge-primary">{props.selectedAsgn.code} · {props.selectedAsgn.subject}</span>
                 <span className="badge badge-warning">{props.selectedAsgn.priority} Priority</span>
                 <span className="badge badge-info">{props.selectedAsgn.status}</span>
               </div>
               <p><b>Due Date:</b> {props.selectedAsgn.dueDate || 'October 28, 2026'}</p>
               <p>{props.selectedAsgn.desc || 'Comprehensive coursework assignment for Semester 5 academic evaluation.'}</p>
+
+              {props.onUpdateAsgnStatus && (
+                <div style={{ margin: '16px 0 8px 0', padding: '12px', background: 'var(--bg-3)', borderRadius: 'var(--radius-sm)' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 700, display: 'block', marginBottom: '8px' }}>
+                    Submission Status:
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {(['Pending', 'Submitted', 'Graded'] as const).map((st) => (
+                      <button
+                        key={st}
+                        className={`btn btn-xs ${props.selectedAsgn!.status === st ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => {
+                          props.onUpdateAsgnStatus!(props.selectedAsgn!.id, st);
+                        }}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              {props.onDeleteAsgn ? (
+                <button
+                  className="btn btn-outline"
+                  onClick={() => {
+                    props.onDeleteAsgn!(props.selectedAsgn!.id);
+                    props.onCloseAsgnView();
+                  }}
+                  style={{ color: 'var(--error)' }}
+                >
+                  🗑️ Delete Assignment
+                </button>
+              ) : <div />}
               <button className="btn btn-primary" onClick={props.onCloseAsgnView}>Close</button>
             </div>
           </div>

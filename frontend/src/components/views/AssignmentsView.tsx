@@ -7,6 +7,9 @@ interface AssignmentsProps {
   onOpenAsgnModal: () => void;
   onOpenSubjectModal: () => void;
   onViewAsgn: (asgn: AssignmentItem) => void;
+  onUpdateAsgnStatus?: (id: string, newStatus: 'Pending' | 'Submitted' | 'Graded') => void;
+  onDeleteAsgn?: (id: string) => void;
+  onDeleteSubject?: (id: string) => void;
   onLoadTycsTemplate?: () => void;
   onClearBlankWorkspace?: () => void;
 }
@@ -17,6 +20,9 @@ export default function AssignmentsView({
   onOpenAsgnModal,
   onOpenSubjectModal,
   onViewAsgn,
+  onUpdateAsgnStatus,
+  onDeleteAsgn,
+  onDeleteSubject,
   onLoadTycsTemplate,
   onClearBlankWorkspace,
 }: AssignmentsProps) {
@@ -30,7 +36,7 @@ export default function AssignmentsView({
   return (
     <div className="view active" id="v-asgn">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Courses & Assignments</h2>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
@@ -73,7 +79,26 @@ export default function AssignmentsView({
             <div key={s.id || s.code} className="card" style={{ padding: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="badge badge-primary">{s.code || 'CS502'}</span>
-                <small style={{ color: 'var(--text-3)' }}>{s.credits ? `${s.credits} Credits` : '4 Credits'}</small>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <small style={{ color: 'var(--text-3)' }}>{s.credits ? `${s.credits} Credits` : '4 Credits'}</small>
+                  {onDeleteSubject && (
+                    <button
+                      onClick={() => onDeleteSubject(s.id || s.code)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        color: 'var(--text-3)',
+                        padding: '0 4px',
+                        lineHeight: 1,
+                      }}
+                      title="Remove subject"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
               <strong style={{ display: 'block', margin: '8px 0 4px 0', fontSize: '13px' }}>{s.name}</strong>
               <small style={{ color: 'var(--text-2)' }}>Semester 5 (Fall 2026)</small>
@@ -132,21 +157,46 @@ export default function AssignmentsView({
                     </span>
                   </td>
                   <td style={{ padding: '12px 14px' }}>
-                    <span
-                      className={`badge ${
-                        a.status === 'Graded' ? 'badge-success' : a.status === 'Submitted' ? 'badge-info' : 'badge-warning'
-                      }`}
-                    >
-                      {a.status}
-                    </span>
+                    {onUpdateAsgnStatus ? (
+                      <select
+                        className="form-select"
+                        value={a.status}
+                        onChange={(e) => onUpdateAsgnStatus(a.id, e.target.value as any)}
+                        style={{ fontSize: '11px', padding: '3px 8px', fontWeight: 700, borderRadius: 'var(--radius-sm)' }}
+                      >
+                        <option value="Pending">⏳ Pending</option>
+                        <option value="Submitted">📤 Submitted</option>
+                        <option value="Graded">✓ Graded</option>
+                      </select>
+                    ) : (
+                      <span
+                        className={`badge ${
+                          a.status === 'Graded' ? 'badge-success' : a.status === 'Submitted' ? 'badge-info' : 'badge-warning'
+                        }`}
+                      >
+                        {a.status}
+                      </span>
+                    )}
                   </td>
                   <td style={{ padding: '12px 14px' }}>
-                    <button
-                      className="btn btn-xs btn-outline"
-                      onClick={() => onViewAsgn(a)}
-                    >
-                      View Details
-                    </button>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <button
+                        className="btn btn-xs btn-outline"
+                        onClick={() => onViewAsgn(a)}
+                      >
+                        View Details
+                      </button>
+                      {onDeleteAsgn && (
+                        <button
+                          className="btn btn-xs btn-outline"
+                          onClick={() => onDeleteAsgn(a.id)}
+                          style={{ color: 'var(--error)' }}
+                          title="Delete assignment"
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

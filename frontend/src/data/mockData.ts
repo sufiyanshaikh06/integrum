@@ -9,13 +9,13 @@ export const initialPlatformState = {
   selectedCalDay: 15,  // Thursday, Oct 15, 2026
   
   studentInfo: {
-    name: 'Sufiyan Shaikh',
-    roll: 'INT2024001',
+    name: 'Alex Morgan',
+    roll: 'INT2026101',
     branch: 'Computer Science & Engineering',
     year: '3rd Year',
     sem: 'Semester 5 (Fall 2026)',
-    email: 'sufiyan.shaikh@university.edu',
-    avatar: 'SS'
+    email: 'alex.morgan@university.edu',
+    avatar: 'AM'
   },
 
   adminInfo: {
@@ -167,25 +167,25 @@ export const initialPlatformState = {
   notifications: [
     { id: 'n1', title: 'Artificial Intelligence Theory Exam (1105111)', desc: 'Exam on Mon, Oct 19 | Reporting: 02:00 PM at Metropolitan Institute Centre.', time: '15 min ago', unread: true, type: 'exam' },
     { id: 'n2', title: 'Software Testing Attendance Recovery Alert', desc: 'Current standing is 72.7%. Attend remaining lab sessions to restore safe 76.0%.', time: '1 hour ago', unread: true, type: 'warn' },
-    { id: 'n3', title: 'Hall Ticket Verification Completed', desc: 'Seat number and Ulhasnagar exam centre confirmed on university portal.', time: 'Today', unread: false, type: 'due' },
+    { id: 'n3', title: 'Hall Ticket Verification Completed', desc: 'Seat number and Metropolitan exam centre confirmed on university portal.', time: 'Today', unread: false, type: 'due' },
     { id: 'n4', title: 'Minor Exam Venue Reminder (Oct 28)', desc: 'Regression Analysis in R is held at your own college: Campus Science Block (Lab 1).', time: 'Yesterday', unread: false, type: 'career' }
   ],
 
   // Official Campus Circulars
   announcements: [
-    { id: 'an1', title: 'Semester 5 University Theory Examination Schedule (Oct 19 – Oct 28)', cat: 'Exam', target: 'All Departments', body: 'The Semester 5 theory examinations commence Oct 19. External centre for courses 1105111, 1105112, 1105115, 1105116 is Metropolitan Institute Examination Centre (Hall 4A). Minor exam on Oct 28 is held at Campus Science Block (Lab 1). Reporting time 02:00 PM.' },
-    { id: 'an2', title: 'Hall Ticket Distribution & Verification Guidelines', cat: 'Exam', target: '3rd Year CSE', body: 'Students must verify subject codes and examination centres on their hall tickets. Entry into examination halls requires college ID and university hall ticket.' },
-    { id: 'an3', title: 'Campus Placement Day 1 Shortlists & Prep Sessions', cat: 'Placement', target: '3rd & 4th Year', body: 'Placement interviews will proceed immediately following the theory examination window. Keep your ATS resumes updated.' }
+    { id: 'an1', title: 'Semester 5 University Theory Examination Schedule (Oct 19 – Oct 28)', category: 'Exam', date: 'Oct 15, 2026', author: 'Office of the Dean', content: 'The Semester 5 theory examinations commence Oct 19. External centre for courses 1105111, 1105112, 1105115, 1105116 is Metropolitan Institute Examination Centre (Hall 4A). Minor exam on Oct 28 is held at Campus Science Block (Lab 1). Reporting time 02:00 PM.' },
+    { id: 'an2', title: 'Hall Ticket Distribution & Verification Guidelines', category: 'Exam', date: 'Oct 14, 2026', author: 'Examination Controller', content: 'Students must verify subject codes and examination centres on their hall tickets. Entry into examination halls requires college ID and university hall ticket.' },
+    { id: 'an3', title: 'Campus Placement Day 1 Shortlists & Prep Sessions', category: 'Placement', date: 'Oct 12, 2026', author: 'Training & Placement Cell', content: 'Placement interviews will proceed immediately following the theory examination window. Keep your ATS resumes updated.' }
   ],
 
   // Admin Directory
   students: [
-    { name: 'Sufiyan Shaikh', roll: 'INT2024001', dept: 'CSE', att: '87.0%', status: 'Good' },
-    { name: 'Priya Sharma', roll: 'INT2024002', dept: 'CSE', att: '92.4%', status: 'Good' },
-    { name: 'Rahul Singh', roll: 'INT2024018', dept: 'IT', att: '78.2%', status: 'Good' },
-    { name: 'Ananya Patel', roll: 'INT2024045', dept: 'ECE', att: '84.5%', status: 'Good' },
-    { name: 'Vikram Joshi', roll: 'INT2024062', dept: 'CSE', att: '71.0%', status: 'Warning' },
-    { name: 'Neha Gupta', roll: 'INT2024089', dept: 'ECE', att: '94.0%', status: 'Good' }
+    { name: 'Aarav Sharma', roll: 'INT2026101', branch: 'Computer Science', sem: 'Semester 5', cgpa: 9.15, attendance: 87, status: 'Dean List' },
+    { name: 'Priya Patel', roll: 'INT2026102', branch: 'Computer Science', sem: 'Semester 5', cgpa: 8.80, attendance: 92, status: 'Regular' },
+    { name: 'Rahul Singh', roll: 'INT2026118', branch: 'Information Tech', sem: 'Semester 5', cgpa: 7.65, attendance: 78, status: 'Regular' },
+    { name: 'Ananya Deshmukh', roll: 'INT2026145', branch: 'Computer Science', sem: 'Semester 5', cgpa: 8.45, attendance: 84, status: 'Regular' },
+    { name: 'Vikram Joshi', roll: 'INT2026162', branch: 'Computer Science', sem: 'Semester 5', cgpa: 6.90, attendance: 71, status: 'Academic Caution' },
+    { name: 'Neha Gupta', roll: 'INT2026189', branch: 'Information Tech', sem: 'Semester 5', cgpa: 9.40, attendance: 94, status: 'Dean List' }
   ],
 
   // Real October 2026 Examination Calendar Events
