@@ -45,13 +45,20 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
   let maxMissable = 0;
   let neededClasses = 0;
 
+  const MAX_SEMESTER_LECTURES = 40;
+  const remainingInSemester = Math.max(0, MAX_SEMESTER_LECTURES - totalCount);
+
   if (selectedCourse) {
     if (isAboveThreshold) {
       maxMissable = Math.max(0, Math.floor(presentCount / 0.75 - totalCount));
-      calcResult = `✅ Safe Bunk Buffer (${currentPct.toFixed(1)}%): You can safely miss up to ${maxMissable} more ${maxMissable === 1 ? 'class' : 'classes'} while maintaining >= 75% attendance.`;
+      calcResult = `✅ Safe Bunk Buffer (${currentPct.toFixed(1)}%): You can safely miss up to ${maxMissable} more ${maxMissable === 1 ? 'class' : 'classes'} while maintaining ≥ 75% attendance.`;
     } else {
-      neededClasses = Math.max(1, Math.ceil((0.75 * totalCount - presentCount) / (1 - 0.75)));
-      calcResult = `⚠️ Attendance Deficit (${currentPct.toFixed(1)}%): You cannot safely miss any classes! You must attend the next ${neededClasses} consecutive ${neededClasses === 1 ? 'class' : 'classes'} without absence to recover to 75% standing.`;
+      neededClasses = Math.max(1, Math.ceil((0.75 * totalCount - presentCount) / 0.25));
+      if (totalCount >= MAX_SEMESTER_LECTURES || neededClasses > remainingInSemester) {
+        calcResult = `⛔ Attendance Recovery Impossible This Semester (${currentPct.toFixed(1)}%): Reaching 75% would require attending ${neededClasses} consecutive classes, but only ${remainingInSemester} ${remainingInSemester === 1 ? 'lecture remains' : 'lectures remain'} in the semester (${MAX_SEMESTER_LECTURES} total limit). Please contact your faculty advisor immediately regarding condonation.`;
+      } else {
+        calcResult = `⚠️ Attendance Deficit (${currentPct.toFixed(1)}%): You must attend the next ${neededClasses} consecutive ${neededClasses === 1 ? 'class' : 'classes'} (out of ${remainingInSemester} remaining this semester) without absence to restore 75% standing.`;
+      }
     }
   }
 

@@ -592,86 +592,220 @@ export default function Modals(props: ModalsProps) {
         </div>
       )}
 
-      {/* 9. Resume Inspector Modal */}
-      {props.inspectingResumeKey && props.resumes[props.inspectingResumeKey] && (
-        <div className="modal-overlay open" id="modalResumeInspector">
-          <div className="modal-box" style={{ maxWidth: '640px' }}>
-            <div className="modal-header">
-              <h3 id="inspResumeTitle">{props.resumes[props.inspectingResumeKey].title} · ATS Inspector</h3>
-              <button className="modal-close" onClick={props.onCloseResumeInspector}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '16px' }}>
-                <div
-                  style={{
-                    width: '72px',
-                    height: '72px',
-                    borderRadius: '50%',
-                    background: 'var(--primary-light)',
-                    border: '3px solid var(--primary)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <strong style={{ fontSize: '22px', color: 'var(--primary)', lineHeight: 1 }}>
-                    {Number(props.resumes[props.inspectingResumeKey].score || (props.resumes[props.inspectingResumeKey] as any).ats || 85)}
-                  </strong>
-                  <small style={{ fontSize: '10px', color: 'var(--text-3)' }}>ATS SCORE</small>
-                </div>
+      {/* 9. Resume Inspector Modal — Deep Audit & Full Inspector */}
+      {props.inspectingResumeKey && props.resumes[props.inspectingResumeKey] && (() => {
+        const r = props.resumes[props.inspectingResumeKey];
+        const score = Number(r.score || (r as any).ats || 85);
+        const formatScore = Number(r.format || 94);
+        const kwScore = Number(r.keywords || (r as any).key || 90);
+        const impactScore = Number(r.impact || 92);
+        const brevityScore = Number(r.brevity || 92);
+        const isTopTier = score >= 90;
+
+        return (
+          <div className="modal-overlay open" id="modalResumeInspector">
+            <div className="modal-box" style={{ maxWidth: '680px', maxHeight: '90vh' }}>
+              <div className="modal-header">
                 <div>
-                  <strong style={{ fontSize: '14px', display: 'block' }}>Verified Keyword Scanner</strong>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-2)' }}>
-                    Click missing keywords below to automatically integrate and recalculate ATS score.
+                  <h3 id="inspResumeTitle" style={{ fontSize: '1.2rem', fontWeight: 800 }}>
+                    {r.title}
+                  </h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '11px', color: 'var(--text-3)' }}>
+                    Deep ATS Parsing Audit · Candidate Screening Profile
                   </p>
                 </div>
+                <button className="modal-close" onClick={props.onCloseResumeInspector}>✕</button>
               </div>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '6px' }}>
-                  Matched High-Impact Keywords:
-                </label>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {props.resumes[props.inspectingResumeKey].matched.map((kw, i) => (
-                    <span key={i} className="badge badge-success" style={{ fontSize: '11px' }}>
-                      ✓ {kw}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              <div className="modal-body" style={{ gap: '18px' }}>
+                {/* Score Banner */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '20px',
+                    padding: '16px 20px',
+                    background: 'var(--bg-2)',
+                    border: '1.5px solid var(--border)',
+                    borderRadius: 'var(--radius-lg)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '76px',
+                      height: '76px',
+                      borderRadius: '50%',
+                      background: isTopTier ? 'rgba(16, 185, 129, 0.15)' : 'var(--primary-light)',
+                      border: `3px solid ${isTopTier ? 'var(--success)' : 'var(--primary)'}`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <strong style={{ fontSize: '24px', color: isTopTier ? 'var(--success)' : 'var(--primary)', lineHeight: 1 }}>
+                      {score}
+                    </strong>
+                    <small style={{ fontSize: '9px', fontWeight: 800, color: 'var(--text-3)', letterSpacing: '0.5px' }}>
+                      ATS SCORE
+                    </small>
+                  </div>
 
-              <div>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '6px' }}>
-                  Missing Target Role Keywords (Click to boost):
-                </label>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {props.resumes[props.inspectingResumeKey].missing.length === 0 ? (
-                    <span style={{ fontSize: '12px', color: 'var(--success)' }}>
-                      🎉 Excellent! All high-impact keywords matched!
-                    </span>
-                  ) : (
-                    props.resumes[props.inspectingResumeKey].missing.map((kw, i) => (
-                      <span
-                        key={i}
-                        className="badge badge-warning"
-                        onClick={() => props.onBoostKeyword(props.inspectingResumeKey!, kw)}
-                        style={{ cursor: 'pointer', fontSize: '11px' }}
-                        title="Click to boost"
-                      >
-                        + Add {kw}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <strong style={{ fontSize: '15px' }}>
+                        {isTopTier ? 'Tier-1 Candidate Standing' : 'Competitive Candidate Standing'}
+                      </strong>
+                      <span className={`badge ${isTopTier ? 'badge-success' : 'badge-primary'}`} style={{ fontSize: '10px' }}>
+                        {isTopTier ? 'Top 5% Cohort' : 'Passed Cutoff'}
                       </span>
-                    ))
-                  )}
+                    </div>
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-2)', lineHeight: 1.5 }}>
+                      Machine-scanned for single-column layout, standard section keywords, action verbs, and quantifiable impact metrics.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Sub-Metric Dials */}
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-3)', display: 'block', marginBottom: '8px' }}>
+                    Parser Metric Analysis
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', textAlign: 'center' }}>
+                    <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', padding: '12px 8px', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: 'var(--success)' }}>{formatScore}%</div>
+                      <small style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)' }}>Format & Structure</small>
+                    </div>
+                    <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', padding: '12px 8px', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: 'var(--info)' }}>{kwScore}%</div>
+                      <small style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)' }}>Keyword Coverage</small>
+                    </div>
+                    <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', padding: '12px 8px', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#8B5CF6' }}>{impactScore}%</div>
+                      <small style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)' }}>Metric Impact</small>
+                    </div>
+                    <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', padding: '12px 8px', borderRadius: 'var(--radius-md)' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: 'var(--primary)' }}>{brevityScore}%</div>
+                      <small style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)' }}>Brevity & Conciseness</small>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Keyword Scanner Section */}
+                <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
+                  <div style={{ marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-1)' }}>
+                        ✓ Matched High-Impact Keywords ({r.matched.length})
+                      </label>
+                      <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 700 }}>Scored</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {r.matched.map((kw, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '4px 9px',
+                            borderRadius: '6px',
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            color: '#065F46',
+                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                          }}
+                        >
+                          ✓ {kw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-1)' }}>
+                        Target Role Keywords ({r.missing.length})
+                      </label>
+                      <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Click any keyword to integrate & boost score</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {r.missing.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 700, padding: '4px 0' }}>
+                          🎉 100% Keyword Alignment! No missing core competencies detected.
+                        </div>
+                      ) : (
+                        r.missing.map((kw, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => props.onBoostKeyword(props.inspectingResumeKey!, kw)}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              background: '#FEF3C7',
+                              color: '#92400E',
+                              border: '1.5px solid #FCD34D',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              transition: 'transform 0.15s ease',
+                            }}
+                            title="Click to integrate keyword into resume"
+                          >
+                            + Add {kw}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ATS Diagnostic Checklist */}
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-3)', display: 'block', marginBottom: '8px' }}>
+                    Automated Formatting Diagnostics
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                      <span style={{ color: 'var(--success)', fontWeight: 900 }}>✓</span>
+                      <span>Single-column linear structure</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                      <span style={{ color: 'var(--success)', fontWeight: 900 }}>✓</span>
+                      <span>Standard typography & hierarchy</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                      <span style={{ color: 'var(--success)', fontWeight: 900 }}>✓</span>
+                      <span>Quantified performance metrics</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                      <span style={{ color: 'var(--success)', fontWeight: 900 }}>✓</span>
+                      <span>No tables, headers or footer traps</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Candidate Recommendation Box */}
+                <div style={{ padding: '12px 16px', background: 'var(--primary-light)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', fontSize: '12px', color: 'var(--text-1)' }}>
+                  <strong>💡 Tailoring Strategy:</strong> Your technical experience shows high correlation with modern engineering roles. Integrating the suggested missing keywords will maximize ATS pipeline advancement.
                 </div>
               </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-primary" onClick={props.onCloseResumeInspector}>Done</button>
+
+              <div className="modal-footer">
+                <button className="btn btn-primary" onClick={props.onCloseResumeInspector}>
+                  Done & Close Inspector
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 10. Resume Create Modal */}
       {props.isResumeCreateOpen && (

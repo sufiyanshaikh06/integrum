@@ -21,12 +21,12 @@ export default function LoginPhase({
   const [portal, setPortal] = useState<'student' | 'admin' | 'register'>(initialMode);
 
   // Student credentials
-  const [studentEmail, setStudentEmail] = useState('sufiyan.shaikh@example.com');
-  const [studentPass, setStudentPass] = useState('password123');
+  const [studentEmail, setStudentEmail] = useState('');
+  const [studentPass, setStudentPass] = useState('');
 
   // Admin credentials
-  const [adminEmail, setAdminEmail] = useState('admin.cse@university.edu');
-  const [adminPass, setAdminPass] = useState('adminSecret2026');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPass, setAdminPass] = useState('');
 
   // Register credentials (e.g. Ahmed Khan in tests)
   const [regFirstName, setRegFirstName] = useState('Ahmed');
@@ -192,6 +192,19 @@ export default function LoginPhase({
                 >
                   {loading ? 'Signing in...' : 'Sign In to Student Workspace →'}
                 </button>
+                <div style={{ textAlign: 'center', marginTop: '10px', marginBottom: '14px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStudentEmail('sufiyan.shaikh@example.com');
+                      setStudentPass('password123');
+                      showToast('Pre-filled student demo credentials', 'info');
+                    }}
+                    style={{ fontSize: '11px', color: 'var(--text-3)', textDecoration: 'underline', cursor: 'pointer', background: 'none', border: 'none' }}
+                  >
+                    ⚡ Click to fill demo student credentials
+                  </button>
+                </div>
               </form>
 
               <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-3)', marginTop: '12px' }}>

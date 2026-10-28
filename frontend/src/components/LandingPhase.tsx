@@ -65,6 +65,8 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
           <div className="lp-links">
             <a href="#features">The workspace</a>
             <a href="#how">How it works</a>
+            <a href="#safe-bunk-calculator">Attendance Math</a>
+            <a href="#university">University Portal</a>
             <a href="#roadmap">Platform roadmap</a>
             <a href="#faq">FAQ</a>
           </div>
@@ -496,31 +498,38 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
               </div>
 
               {(() => {
-                const pct = bunkTotal > 0 ? (bunkPresent / bunkTotal) * 100 : 0;
+                const MAX_SEMESTER_LECTURES = 40;
+                const safeTotal = Math.min(MAX_SEMESTER_LECTURES, Math.max(1, bunkTotal));
+                const safePresent = Math.min(safeTotal, Math.max(0, bunkPresent));
+                const pct = safeTotal > 0 ? (safePresent / safeTotal) * 100 : 0;
                 const isSafe = pct >= 75.0;
-                const maxMiss = Math.max(0, Math.floor(bunkPresent / 0.75 - bunkTotal));
-                const needed = Math.max(1, Math.ceil((0.75 * bunkTotal - bunkPresent) / 0.25));
+                const maxMiss = Math.max(0, Math.floor(safePresent / 0.75 - safeTotal));
+                const needed = Math.max(1, Math.ceil((0.75 * safeTotal - safePresent) / 0.25));
+                const remaining = Math.max(0, MAX_SEMESTER_LECTURES - safeTotal);
+                const isImpossible = !isSafe && (safeTotal >= MAX_SEMESTER_LECTURES || needed > remaining);
 
                 return (
                   <div
                     style={{
                       padding: '20px',
                       borderRadius: 'var(--radius-md)',
-                      background: isSafe ? 'var(--success-light)' : 'var(--warning-light)',
-                      borderLeft: `5px solid ${isSafe ? 'var(--success)' : 'var(--warning)'}`,
+                      background: isSafe ? 'var(--success-light)' : isImpossible ? 'var(--error-light)' : 'var(--warning-light)',
+                      borderLeft: `5px solid ${isSafe ? 'var(--success)' : isImpossible ? 'var(--error)' : 'var(--warning)'}`,
                       color: 'var(--text-1)',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <strong style={{ fontSize: '1.2rem', color: isSafe ? 'var(--success)' : '#B45309' }}>
-                        {isSafe ? '✓ Safe Attendance Standing' : '⚠️ Attendance Warning'}
+                      <strong style={{ fontSize: '1.2rem', color: isSafe ? 'var(--success)' : isImpossible ? 'var(--error)' : '#B45309' }}>
+                        {isSafe ? '✓ Safe Attendance Standing' : isImpossible ? '⛔ Recovery Mathematically Impossible' : '⚠️ Attendance Warning'}
                       </strong>
                       <span style={{ fontSize: '1.5rem', fontWeight: 900 }}>{pct.toFixed(1)}%</span>
                     </div>
                     <p style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>
                       {isSafe
-                        ? `You can safely miss up to ${maxMiss} more ${maxMiss === 1 ? 'class' : 'classes'} while maintaining >= 75% attendance.`
-                        : `You are below the 75% threshold. You must attend the next ${needed} consecutive ${needed === 1 ? 'class' : 'classes'} without absence to restore eligibility.`}
+                        ? `You can safely miss up to ${maxMiss} more ${maxMiss === 1 ? 'class' : 'classes'} while maintaining ≥ 75% attendance.`
+                        : isImpossible
+                        ? `Recovery impossible this semester: Reaching 75% would require ${needed} consecutive classes, but only ${remaining} ${remaining === 1 ? 'lecture remains' : 'lectures remain'} in the semester (${MAX_SEMESTER_LECTURES} total limit). Please contact your faculty advisor regarding condonation.`
+                        : `You are below the 75% threshold. You must attend the next ${needed} consecutive ${needed === 1 ? 'class' : 'classes'} (out of ${remaining} remaining this semester) without absence to restore eligibility.`}
                     </p>
                   </div>
                 );
@@ -530,6 +539,71 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
         </section>
 
         {/* FAQ Section */}
+        
+        {/* Dedicated University Administration Suite Section */}
+        <section className="lp-section" id="university" style={{ padding: '80px 0', background: 'radial-gradient(ellipse at 50% 10%, rgba(68,44,67,0.08) 0, transparent 70%)' }}>
+          <div className="lp-wrap">
+            <div className="lp-section-hdr" style={{ textAlign: 'center', maxWidth: '720px', margin: '0 auto 48px' }}>
+              <span className="lp-pill">Enterprise Academic Governance</span>
+              <h2 style={{ fontSize: 'clamp(28px, 3.5vw, 42px)', fontWeight: 900, letterSpacing: '-1.5px', margin: '14px 0' }}>
+                University Administration & Faculty Governance
+              </h2>
+              <p style={{ color: 'var(--text-2)', fontSize: '16px', lineHeight: 1.7 }}>
+                Purpose-built for Engineering Department Heads, Examination Controllers, and Deans. Monitor attendance risk rosters, issue cryptographically verified circulars, and maintain accreditation compliance without paper trails.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '40px' }}>
+              <div className="card" style={{ padding: '28px' }}>
+                <div style={{ fontSize: '28px', marginBottom: '14px' }}>🏛️</div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>Autonomous Caution Registry</h3>
+                <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.6 }}>
+                  Automatically detects students dropping under the 75% attendance threshold or 6.5 SGPA cutoff before semester exam hall tickets are locked.
+                </p>
+              </div>
+
+              <div className="card" style={{ padding: '28px' }}>
+                <div style={{ fontSize: '28px', marginBottom: '14px' }}>📢</div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>Verified Circular Distribution</h3>
+                <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.6 }}>
+                  Broadcast official academic notifications, placement shortlists, and timetable amendments with verified delivery receipts across the entire cohort.
+                </p>
+              </div>
+
+              <div className="card" style={{ padding: '28px' }}>
+                <div style={{ fontSize: '28px', marginBottom: '14px' }}>📊</div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>NAAC & NIRF Institutional Dossiers</h3>
+                <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.6 }}>
+                  Export verified cohort progression statistics, placement percentages, and course outcome metrics formatted directly for accreditation bodies.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--bg-2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-xl)', padding: '36px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
+              <div>
+                <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 6px 0' }}>Deploy Integrum for Your Institution</h3>
+                <p style={{ margin: 0, color: 'var(--text-2)', fontSize: '14px' }}>
+                  Speak with our university implementation team or request a tailored faculty portal demonstration.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  className="btn btn-outline btn-md"
+                  onClick={() => onGoLogin('admin')}
+                >
+                  Faculty Sign In ↗
+                </button>
+                <button
+                  className="btn btn-primary btn-md"
+                  onClick={() => alert('Institutional Implementation Support: Please email enterprise@integrum.ac.in or schedule a campus walkthrough.')}
+                >
+                  Request Institution Demo →
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="lp-section" id="faq" style={{ background: 'var(--bg-2)' }}>
           <div className="lp-wrap">
             <div className="lp-section-hdr">
@@ -556,15 +630,66 @@ export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) 
       </main>
 
       {/* Footer */}
-      <footer className="lp-footer">
-        <div className="lp-wrap" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <strong>Integrum</strong> · Student Success Platform
-            <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>Built for modern university students · Department of Computer Science & Engineering</p>
+            {/* Rich Multi-Column Enterprise SaaS Footer */}
+      <footer className="lp-footer" role="contentinfo">
+        <div className="lp-wrap">
+          <div className="lp-footer-grid">
+            <div className="lp-footer-brand">
+              <h4>
+                <span className="lp-mark" style={{ width: '28px', height: '28px', fontSize: '16px' }}>i</span>
+                Integrum
+              </h4>
+              <p>
+                The unified academic and career platform for modern university students and university administrators.
+              </p>
+              <div style={{ marginTop: '16px' }}>
+                <span className="status-indicator-pill">
+                  Operational · Mumbai Cloud Sync
+                </span>
+              </div>
+            </div>
+
+            <div className="lp-footer-col">
+              <h5>Student Workspace</h5>
+              <ul className="lp-footer-links">
+                <li><button onClick={() => onGoLogin('student')}>Study Planner & Pomodoro</button></li>
+                <li><button onClick={() => onGoLogin('student')}>Academic Courses & Notes</button></li>
+                <li><a href="#safe-bunk-calculator">Safe-Bunk Calculator</a></li>
+                <li><button onClick={() => onGoLogin('student')}>October 2026 Exam Calendar</button></li>
+                <li><button onClick={() => onGoLogin('student')}>Integrum AI Assistant</button></li>
+              </ul>
+            </div>
+
+            <div className="lp-footer-col">
+              <h5>Career & Growth</h5>
+              <ul className="lp-footer-links">
+                <li><button onClick={() => onGoLogin('student')}>Resume ATS Scanner</button></li>
+                <li><button onClick={() => onGoLogin('student')}>Technical Skills Matrix</button></li>
+                <li><button onClick={() => onGoLogin('student')}>Placement Kanban Board</button></li>
+                <li><button onClick={() => onGoLogin('student')}>SGPA Grade Simulator</button></li>
+              </ul>
+            </div>
+
+            <div className="lp-footer-col">
+              <h5>Administration</h5>
+              <ul className="lp-footer-links">
+                <li><button onClick={() => onGoLogin('admin')}>Faculty Administration Portal</button></li>
+                <li><a href="#university">Campus Governance Overview</a></li>
+                <li><button onClick={() => alert('Enterprise Implementation: Contact enterprise@integrum.ac.in')}>Request University Demo</button></li>
+                <li><button onClick={() => alert('Support Desk: support@integrum.ac.in')}>Faculty Support Desk</button></li>
+              </ul>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
-            <button className="btn btn-sm btn-outline" onClick={() => onGoLogin('student')}>Student Sign In</button>
-            <button className="btn btn-sm btn-primary" onClick={() => onGoLogin('admin')}>Faculty Portal</button>
+
+          <div className="lp-footer-bottom">
+            <div>
+              © 2026 Integrum Systems Inc. Built for Department of Computer Science & Engineering. All rights reserved.
+            </div>
+            <div style={{ display: 'flex', gap: '20px' }}>
+              <span style={{ cursor: 'pointer' }} onClick={() => alert('Integrum is FERPA & GDPR aligned. Personal academic data is stored local-first.')}>Privacy Notice</span>
+              <span style={{ cursor: 'pointer' }} onClick={() => alert('Academic Integrity: All tools comply with university examination conduct guidelines.')}>Honor Code</span>
+              <span style={{ cursor: 'pointer' }} onClick={() => alert('Integrum Cloud Infrastructure: Hosted on Supabase Mumbai & Render.')}>System Architecture</span>
+            </div>
           </div>
         </div>
       </footer>

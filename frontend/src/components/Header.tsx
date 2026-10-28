@@ -51,7 +51,7 @@ export default function Header({
   notifications,
   onToggleSidebar,
   onOpenCmdPalette,
-  onToggleRole,
+  onToggleRole: _onToggleRole,
   onToggleDarkMode,
   onToggleNotif,
   onMarkNotifRead,
@@ -116,14 +116,25 @@ export default function Header({
 
       <div className="hdr-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         {/* Role Toggle */}
-        <button
-          className="btn btn-xs btn-outline"
-          onClick={onToggleRole}
-          title="Switch view mode"
-          style={{ fontSize: '11px', padding: '4px 10px' }}
+        <span
+          className="role-indicator-badge"
+          id="headerRoleBadge"
+          style={{
+            fontSize: '11px',
+            padding: '4px 10px',
+            borderRadius: '9999px',
+            fontWeight: 700,
+            background: userRole === 'admin' ? 'rgba(245, 158, 11, 0.15)' : 'var(--primary-light)',
+            color: userRole === 'admin' ? '#B45309' : 'var(--primary)',
+            border: `1px solid ${userRole === 'admin' ? '#FDE68A' : 'var(--border)'}`,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
         >
-          {userRole === 'admin' ? '🏛️ Admin View' : '🎓 Student View'}
-        </button>
+          <span>{userRole === 'admin' ? '🏛️' : '🎓'}</span>
+          <span>{userRole === 'admin' ? 'Faculty Admin' : 'Student'}</span>
+        </span>
 
         {/* Dark Mode Toggle */}
         <button

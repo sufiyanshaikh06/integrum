@@ -5,14 +5,16 @@ interface AdminProps {
   students?: StudentDirectoryItem[];
   announcements?: AnnouncementItem[];
   onOpenAnnounceModal: () => void;
-  onSwitchToStudentView: () => void;
+  onSwitchToStudentView?: () => void;
+  onOpenDemoModal?: () => void;
 }
 
 export default function AdminView({
   students = [],
   announcements = [],
   onOpenAnnounceModal,
-  onSwitchToStudentView,
+  onSwitchToStudentView: _onSwitchToStudentView,
+  onOpenDemoModal,
 }: AdminProps) {
   const [studentSearch, setStudentSearch] = useState('');
   const [branchFilter, setBranchFilter] = useState('ALL');
@@ -49,8 +51,18 @@ export default function AdminView({
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-outline" onClick={onSwitchToStudentView}>
-            🎓 Switch to Student View
+          <button
+            className="btn btn-outline"
+            id="btnAdminSupport"
+            onClick={() => {
+              if (onOpenDemoModal) {
+                onOpenDemoModal();
+              } else {
+                alert('University Enterprise Support: Connect directly at enterprise@integrum.ac.in or request a guided administrative walkthrough.');
+              }
+            }}
+          >
+            💬 Institutional Support & Demo
           </button>
           <button className="btn btn-primary" onClick={onOpenAnnounceModal}>
             + Post Circular

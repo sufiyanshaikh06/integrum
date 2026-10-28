@@ -53,152 +53,203 @@ export default function Sidebar({
           </div>
         </div>
 
-        <nav className="sb-nav">
-          <div className="sb-section">
-            <div className="sb-section-label">Main</div>
-            <div
-              className={`sb-item ${activeView === 'dashboard' ? 'active' : ''}`}
-              onClick={() => onNavigate('dashboard')}
-            >
-              <span className="sb-icon">📊</span>Dashboard
-            </div>
-          </div>
-
-          <div className="sb-section">
-            <div className="sb-section-label">Learning</div>
-            <div className="sb-item" onClick={() => setLearningOpen(!learningOpen)}>
-              <span className="sb-icon">📚</span>Academic<span className="sb-arrow">{learningOpen ? '▾' : '›'}</span>
-            </div>
-            {learningOpen && (
-              <div className="sb-sub open">
-                <div
-                  className={`sb-sub-item ${activeView === 'study' ? 'active' : ''}`}
-                  onClick={() => onNavigate('study')}
-                >
-                  Study Planner
-                </div>
-                <div
-                  className={`sb-sub-item sb-item ${activeView === 'notes' ? 'active' : ''}`}
-                  onClick={() => onNavigate('notes')}
-                >
-                  Study Notes
-                </div>
-                <div
-                  className={`sb-sub-item sb-item ${activeView === 'asgn' ? 'active' : ''}`}
-                  onClick={() => onNavigate('asgn')}
-                >
-                  Courses & Assignments
-                </div>
-                <div
-                  className={`sb-sub-item ${activeView === 'attend' ? 'active' : ''}`}
-                  onClick={() => onNavigate('attend')}
-                >
-                  Attendance Tracker
-                </div>
-                <div
-                  className={`sb-sub-item sb-item ${activeView === 'cal' ? 'active' : ''}`}
-                  onClick={() => onNavigate('cal')}
-                >
-                  Calendar & Deadlines
-                </div>
-              </div>
-            )}
-
-            <div className="sb-item" onClick={() => setProdOpen(!prodOpen)}>
-              <span className="sb-icon">⚡</span>Productivity<span className="sb-arrow">{prodOpen ? '▾' : '›'}</span>
-            </div>
-            {prodOpen && (
-              <div className="sb-sub open">
-                <div
-                  className={`sb-sub-item sb-item ${activeView === 'tasks' ? 'active' : ''}`}
-                  onClick={() => onNavigate('tasks')}
-                >
-                  Tasks
-                </div>
-                <div
-                  className={`sb-sub-item ${activeView === 'rems' ? 'active' : ''}`}
-                  onClick={() => onNavigate('rems')}
-                >
-                  Reminders
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="sb-section">
-            <div className="sb-section-label">Growth</div>
-            <div className="sb-item" onClick={() => setCareerOpen(!careerOpen)}>
-              <span className="sb-icon">💼</span>Career<span className="sb-arrow">{careerOpen ? '▾' : '›'}</span>
-            </div>
-            {careerOpen && (
-              <div className="sb-sub open">
-                <div
-                  className={`sb-sub-item ${activeView === 'resumes' ? 'active' : ''}`}
-                  onClick={() => onNavigate('resumes')}
-                >
-                  Resumes & ATS
-                </div>
-                <div
-                  className={`sb-sub-item ${activeView === 'skills' ? 'active' : ''}`}
-                  onClick={() => onNavigate('skills')}
-                >
-                  Skills Matrix
-                </div>
-                <div
-                  className={`sb-sub-item ${activeView === 'jobs' ? 'active' : ''}`}
-                  onClick={() => onNavigate('jobs')}
-                >
-                  Job Tracking
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="sb-section">
-            <div className="sb-section-label">Insights</div>
-            <div
-              className={`sb-item ${activeView === 'analytics' ? 'active' : ''}`}
-              onClick={() => onNavigate('analytics')}
-            >
-              <span className="sb-icon">📈</span>Analytics Hub
-            </div>
-            <div
-              className={`sb-item ${activeView === 'ai' ? 'active' : ''}`}
-              onClick={() => onNavigate('ai')}
-            >
-              <span className="sb-icon">🤖</span>AI Assistant
-            </div>
-          </div>
-
-          <div className="sb-section">
-            <div className="sb-section-label">System</div>
-            {userRole === 'admin' && (
+        {/* ── ROLE-BASED ISOLATED NAVIGATION ────────────────────────── */}
+        {userRole === 'admin' ? (
+          /* EXCLUSIVE FACULTY & ADMINISTRATION PORTAL NAVIGATION */
+          <nav className="sb-nav" id="adminSidebarNav">
+            <div className="sb-section">
+              <div className="sb-section-label">Governance</div>
               <div
-                className={`sb-item admin-only ${activeView === 'admin' ? 'active' : ''}`}
+                className={`sb-item ${activeView === 'admin' ? 'active' : ''}`}
                 onClick={() => onNavigate('admin')}
                 id="sbAdminItem"
               >
                 <span className="sb-icon">🏛️</span>Administration
               </div>
-            )}
-            <div
-              className={`sb-item ${activeView === 'profile' ? 'active' : ''}`}
-              onClick={() => onNavigate('profile')}
-            >
-              <span className="sb-icon">👤</span>Profile & Settings
+              <div
+                className={`sb-item ${activeView === 'analytics' ? 'active' : ''}`}
+                onClick={() => onNavigate('analytics')}
+              >
+                <span className="sb-icon">📈</span>Campus Analytics
+              </div>
             </div>
-          </div>
 
-          <div style={{ marginTop: 'auto', padding: '16px' }}>
-            <button
-              className="btn btn-outline btn-sm logout-btn"
-              onClick={onLogout}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-            >
-              <span>🚪</span> Sign Out
-            </button>
-          </div>
-        </nav>
+            <div className="sb-section">
+              <div className="sb-section-label">Institutional Records</div>
+              <div
+                className={`sb-item ${activeView === 'admin' ? 'active' : ''}`}
+                onClick={() => onNavigate('admin')}
+              >
+                <span className="sb-icon">📢</span>Official Circulars
+              </div>
+              <div
+                className={`sb-item ${activeView === 'admin' ? 'active' : ''}`}
+                onClick={() => onNavigate('admin')}
+              >
+                <span className="sb-icon">👥</span>Student Directory
+              </div>
+            </div>
+
+            <div className="sb-section">
+              <div className="sb-section-label">System</div>
+              <div
+                className={`sb-item ${activeView === 'profile' ? 'active' : ''}`}
+                onClick={() => onNavigate('profile')}
+              >
+                <span className="sb-icon">⚙️</span>Faculty Settings
+              </div>
+            </div>
+
+            <div style={{ marginTop: 'auto', padding: '16px' }}>
+              <button
+                className="btn btn-outline btn-sm logout-btn"
+                onClick={onLogout}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <span>🚪</span> Sign Out (Faculty)
+              </button>
+            </div>
+          </nav>
+        ) : (
+          /* EXCLUSIVE STUDENT SUCCESS PLATFORM NAVIGATION */
+          <nav className="sb-nav" id="studentSidebarNav">
+            <div className="sb-section">
+              <div className="sb-section-label">Main</div>
+              <div
+                className={`sb-item ${activeView === 'dashboard' ? 'active' : ''}`}
+                onClick={() => onNavigate('dashboard')}
+              >
+                <span className="sb-icon">📊</span>Dashboard
+              </div>
+            </div>
+
+            <div className="sb-section">
+              <div className="sb-section-label">Learning</div>
+              <div className="sb-item" onClick={() => setLearningOpen(!learningOpen)}>
+                <span className="sb-icon">📚</span>Academic<span className="sb-arrow">{learningOpen ? '▾' : '›'}</span>
+              </div>
+              {learningOpen && (
+                <div className="sb-sub open">
+                  <div
+                    className={`sb-sub-item ${activeView === 'study' ? 'active' : ''}`}
+                    onClick={() => onNavigate('study')}
+                  >
+                    Study Planner
+                  </div>
+                  <div
+                    className={`sb-sub-item sb-item ${activeView === 'notes' ? 'active' : ''}`}
+                    onClick={() => onNavigate('notes')}
+                  >
+                    Study Notes
+                  </div>
+                  <div
+                    className={`sb-sub-item sb-item ${activeView === 'asgn' ? 'active' : ''}`}
+                    onClick={() => onNavigate('asgn')}
+                  >
+                    Courses & Assignments
+                  </div>
+                  <div
+                    className={`sb-sub-item ${activeView === 'attend' ? 'active' : ''}`}
+                    onClick={() => onNavigate('attend')}
+                  >
+                    Attendance Tracker
+                  </div>
+                  <div
+                    className={`sb-sub-item sb-item ${activeView === 'cal' ? 'active' : ''}`}
+                    onClick={() => onNavigate('cal')}
+                  >
+                    Calendar & Deadlines
+                  </div>
+                </div>
+              )}
+
+              <div className="sb-item" onClick={() => setProdOpen(!prodOpen)}>
+                <span className="sb-icon">⚡</span>Productivity<span className="sb-arrow">{prodOpen ? '▾' : '›'}</span>
+              </div>
+              {prodOpen && (
+                <div className="sb-sub open">
+                  <div
+                    className={`sb-sub-item sb-item ${activeView === 'tasks' ? 'active' : ''}`}
+                    onClick={() => onNavigate('tasks')}
+                  >
+                    Tasks
+                  </div>
+                  <div
+                    className={`sb-sub-item ${activeView === 'rems' ? 'active' : ''}`}
+                    onClick={() => onNavigate('rems')}
+                  >
+                    Reminders
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="sb-section">
+              <div className="sb-section-label">Growth</div>
+              <div className="sb-item" onClick={() => setCareerOpen(!careerOpen)}>
+                <span className="sb-icon">💼</span>Career<span className="sb-arrow">{careerOpen ? '▾' : '›'}</span>
+              </div>
+              {careerOpen && (
+                <div className="sb-sub open">
+                  <div
+                    className={`sb-sub-item ${activeView === 'resumes' ? 'active' : ''}`}
+                    onClick={() => onNavigate('resumes')}
+                  >
+                    Resumes & ATS
+                  </div>
+                  <div
+                    className={`sb-sub-item ${activeView === 'skills' ? 'active' : ''}`}
+                    onClick={() => onNavigate('skills')}
+                  >
+                    Skills Matrix
+                  </div>
+                  <div
+                    className={`sb-sub-item ${activeView === 'jobs' ? 'active' : ''}`}
+                    onClick={() => onNavigate('jobs')}
+                  >
+                    Job Tracking
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="sb-section">
+              <div className="sb-section-label">Insights</div>
+              <div
+                className={`sb-item ${activeView === 'analytics' ? 'active' : ''}`}
+                onClick={() => onNavigate('analytics')}
+              >
+                <span className="sb-icon">📈</span>Analytics Hub
+              </div>
+              <div
+                className={`sb-item ${activeView === 'ai' ? 'active' : ''}`}
+                onClick={() => onNavigate('ai')}
+              >
+                <span className="sb-icon">🤖</span>AI Assistant
+              </div>
+            </div>
+
+            <div className="sb-section">
+              <div className="sb-section-label">System</div>
+              <div
+                className={`sb-item ${activeView === 'profile' ? 'active' : ''}`}
+                onClick={() => onNavigate('profile')}
+              >
+                <span className="sb-icon">👤</span>Profile & Settings
+              </div>
+            </div>
+
+            <div style={{ marginTop: 'auto', padding: '16px' }}>
+              <button
+                className="btn btn-outline btn-sm logout-btn"
+                onClick={onLogout}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              >
+                <span>🚪</span> Sign Out
+              </button>
+            </div>
+          </nav>
+        )}
       </aside>
     </>
   );
