@@ -20,3 +20,5 @@ backend/uploads/profiles/
 
 # Disposable native verification reports
 backend/test-results/
+scratch/
+Integrum Handoff packages/

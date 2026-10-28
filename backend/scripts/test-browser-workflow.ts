@@ -29,15 +29,7 @@ async function main() {
   const jwtRefreshSecret = randomBytes(32).toString('hex');
 
   const serverArgs = windowsShutdown
-    ? [
-        '-e',
-        `
-        require('./dist/server.js');
-        process.once('message', message => {
-          if (message === 'integrum-test-shutdown') process.emit('SIGTERM');
-        });
-      `,
-      ]
+    ? ['-e', "require('./dist/server.js'); process.once('message', (m) => { if (m === 'integrum-test-shutdown') process.emit('SIGTERM'); });"]
     : ['dist/server.js'];
 
   console.log(`  Spawning production Express server on port ${PORT}...`);
