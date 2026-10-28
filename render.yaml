@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: integrum-backend
+    name: integrum
     env: node
     plan: free
     branch: main
