@@ -80,6 +80,32 @@ interface ModalsProps {
   onNavigate: (view: ActiveView) => void;
 }
 
+
+const CloseIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <line x1="18" y1="6" x2="6" y2="18"></line>
+    <line x1="6" y1="6" x2="18" y2="18"></line>
+  </svg>
+);
+
+const viewIcons: Record<ActiveView, React.ReactNode> = {
+  dashboard: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>,
+  study: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>,
+  notes: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>,
+  asgn: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>,
+  attend: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>,
+  cal: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>,
+  tasks: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>,
+  rems: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>,
+  resumes: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>,
+  skills: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>,
+  jobs: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>,
+  analytics: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>,
+  ai: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M9 10h.01"></path><path d="M15 10h.01"></path><path d="M9.5 15a3.5 3.5 0 0 0 5 0"></path></svg>,
+  admin: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M3 10h18M5 10v11M9 10v11M15 10v11M19 10v11M12 2l10 5H2l10-5z"></path></svg>,
+  profile: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>,
+};
+
 export default function Modals(props: ModalsProps) {
   // Task state
   const [taskTitle, setTaskTitle] = useState('');
@@ -138,25 +164,24 @@ export default function Modals(props: ModalsProps) {
   // Command palette state
   const [cmdQuery, setCmdQuery] = useState('');
 
-  const cmdList: Array<{ label: string; view: ActiveView; icon: string; keywords?: string[] }> = [
-    { label: 'Dashboard Overview', view: 'dashboard', icon: '📊', keywords: ['home', 'overview', 'stats', 'kpi', 'summary'] },
-    { label: 'Study Planner & Pomodoro', view: 'study', icon: '⏱️', keywords: ['timer', 'pomodoro', 'focus', 'hours', 'timetable', 'schedule'] },
-    { label: 'Academic Notes Manager', view: 'notes', icon: '📝', keywords: ['notes', 'study notes', 'cheatsheet', 'lecture', 'revision'] },
-    { label: 'Courses & Assignments', view: 'asgn', icon: '📚', keywords: ['courses', 'assignments', 'homework', 'curriculum', 'subjects', 'syllabus'] },
-    { label: 'Attendance Tracker & Safe-Bunk Calculator', view: 'attend', icon: '🛡️', keywords: ['attendance', 'bunk', 'safe-bunk', 'calculator', '75%', 'present', 'absent'] },
-    { label: 'October 2026 Examination Calendar', view: 'cal', icon: '📅', keywords: ['calendar', 'exam', 'dates', 'deadlines', 'agenda', 'october'] },
-    { label: 'Productivity Tasks', view: 'tasks', icon: '✓', keywords: ['tasks', 'todo', 'checklist', 'atomic', 'w07'] },
-    { label: 'Reminders & Examination Alerts', view: 'rems', icon: '🔔', keywords: ['reminders', 'alerts', 'notifications', 'alarm'] },
-    { label: 'Resume Versions & ATS Audit', view: 'resumes', icon: '📄', keywords: ['resumes', 'ats', 'cv', 'audit', 'score', 'keywords'] },
-    { label: 'Technical Skills Matrix', view: 'skills', icon: '⚡', keywords: ['skills', 'matrix', 'competencies', 'gap analysis', 'ratings'] },
-    { label: 'Placement & Job Tracking', view: 'jobs', icon: '💼', keywords: ['jobs', 'placement', 'internship', 'kanban', 'applications', 'interview'] },
-    { label: 'Analytics & Success Index', view: 'analytics', icon: '📈', keywords: ['analytics', 'success index', 'gpa', 'sgpa', 'simulator', 'metrics'] },
-    { label: 'Integrum AI Assistant', view: 'ai', icon: '🤖', keywords: ['ai', 'assistant', 'advisor', 'bot', 'chat', 'help'] },
-    { label: 'University Administration Portal', view: 'admin', icon: '🏛️', keywords: ['admin', 'faculty', 'portal', 'circulars', 'directory', 'students'] },
-    { label: 'Student Profile & Settings', view: 'profile', icon: '👤', keywords: ['profile', 'settings', 'hall ticket', 'backup', 'export', 'import', 'json'] },
+  const cmdList: Array<{ label: string; view: ActiveView; keywords?: string[] }> = [
+    { label: 'Dashboard Overview', view: 'dashboard', keywords: ['home', 'overview', 'stats', 'kpi', 'summary'] },
+    { label: 'Study Planner & Pomodoro', view: 'study', keywords: ['timer', 'pomodoro', 'focus', 'hours', 'timetable', 'schedule'] },
+    { label: 'Academic Notes Manager', view: 'notes', keywords: ['notes', 'study notes', 'cheatsheet', 'lecture', 'revision'] },
+    { label: 'Courses & Assignments', view: 'asgn', keywords: ['courses', 'assignments', 'homework', 'curriculum', 'subjects', 'syllabus'] },
+    { label: 'Attendance Health & Course Standing', view: 'attend', keywords: ['attendance', 'eligibility', 'standing', 'calculator', '75%', 'present', 'absent'] },
+    { label: 'October 2026 Examination Calendar', view: 'cal', keywords: ['calendar', 'exam', 'dates', 'deadlines', 'agenda', 'october'] },
+    { label: 'Productivity Tasks', view: 'tasks', keywords: ['tasks', 'todo', 'checklist', 'atomic', 'w07'] },
+    { label: 'Reminders & Examination Alerts', view: 'rems', keywords: ['reminders', 'alerts', 'notifications', 'alarm'] },
+    { label: 'Resume Versions & ATS Audit', view: 'resumes', keywords: ['resumes', 'ats', 'cv', 'audit', 'score', 'keywords'] },
+    { label: 'Technical Skills Matrix', view: 'skills', keywords: ['skills', 'matrix', 'competencies', 'gap analysis', 'ratings'] },
+    { label: 'Placement & Job Tracking', view: 'jobs', keywords: ['jobs', 'placement', 'internship', 'kanban', 'applications', 'interview'] },
+    { label: 'Analytics & Success Index', view: 'analytics', keywords: ['analytics', 'success index', 'gpa', 'sgpa', 'simulator', 'metrics'] },
+    { label: 'Integrum AI Assistant', view: 'ai', keywords: ['ai', 'assistant', 'advisor', 'bot', 'chat', 'help'] },
+    { label: 'University Administration Portal', view: 'admin', keywords: ['admin', 'faculty', 'portal', 'circulars', 'directory', 'students'] },
+    { label: 'Student Profile & Settings', view: 'profile', keywords: ['profile', 'settings', 'hall ticket', 'backup', 'export', 'import', 'json'] },
   ];
-
-  const filteredCmds = cmdList.filter((c) => {
+const filteredCmds = cmdList.filter((c) => {
     const q = cmdQuery.toLowerCase().trim();
     if (!q) return true;
     return (
@@ -173,7 +198,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3 id="modalTaskTitle">Create New Task</h3>
-              <button className="modal-close" onClick={props.onCloseTaskModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseTaskModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -230,7 +255,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Create Study Note</h3>
-              <button className="modal-close" onClick={props.onCloseNoteModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseNoteModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -294,7 +319,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box" style={{ maxWidth: '640px' }}>
             <div className="modal-header">
               <h3>{props.selectedNote.title}</h3>
-              <button className="modal-close" onClick={props.onCloseNoteView}>✕</button>
+              <button className="modal-close" onClick={props.onCloseNoteView} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '13px' }}>
               <div style={{ marginBottom: '12px', display: 'flex', gap: '6px' }}>
@@ -316,7 +341,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Add Enrolled Subject</h3>
-              <button className="modal-close" onClick={props.onCloseSubjectModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseSubjectModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -361,7 +386,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Add Course Assignment</h3>
-              <button className="modal-close" onClick={props.onCloseAsgnModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseAsgnModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -432,7 +457,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>{props.selectedAsgn.title}</h3>
-              <button className="modal-close" onClick={props.onCloseAsgnView}>✕</button>
+              <button className="modal-close" onClick={props.onCloseAsgnView} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body" style={{ fontSize: '13px', lineHeight: 1.6 }}>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -474,7 +499,7 @@ export default function Modals(props: ModalsProps) {
                   }}
                   style={{ color: 'var(--error)' }}
                 >
-                  🗑️ Delete Assignment
+                  Delete assignment
                 </button>
               ) : <div />}
               <button className="btn btn-primary" onClick={props.onCloseAsgnView}>Close</button>
@@ -489,7 +514,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Schedule Examination Alert</h3>
-              <button className="modal-close" onClick={props.onCloseRemModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseRemModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -543,7 +568,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Add Calendar Event</h3>
-              <button className="modal-close" onClick={props.onCloseEventModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseEventModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -614,7 +639,7 @@ export default function Modals(props: ModalsProps) {
                     Deep ATS Parsing Audit · Candidate Screening Profile
                   </p>
                 </div>
-                <button className="modal-close" onClick={props.onCloseResumeInspector}>✕</button>
+                <button className="modal-close" onClick={props.onCloseResumeInspector} aria-label="Close dialog"><CloseIcon /></button>
               </div>
 
               <div className="modal-body" style={{ gap: '18px' }}>
@@ -682,7 +707,7 @@ export default function Modals(props: ModalsProps) {
                       <small style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)' }}>Keyword Coverage</small>
                     </div>
                     <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', padding: '12px 8px', borderRadius: 'var(--radius-md)' }}>
-                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#8B5CF6' }}>{impactScore}%</div>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: 'var(--primary)' }}>{impactScore}%</div>
                       <small style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-2)' }}>Metric Impact</small>
                     </div>
                     <div style={{ background: 'var(--bg-2)', border: '1px solid var(--border)', padding: '12px 8px', borderRadius: 'var(--radius-md)' }}>
@@ -697,7 +722,7 @@ export default function Modals(props: ModalsProps) {
                   <div style={{ marginBottom: '14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <label style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-1)' }}>
-                        ✓ Matched High-Impact Keywords ({r.matched.length})
+                        Matched high-impact keywords ({r.matched.length})
                       </label>
                       <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 700 }}>Scored</span>
                     </div>
@@ -718,7 +743,7 @@ export default function Modals(props: ModalsProps) {
                             fontWeight: 700,
                           }}
                         >
-                          ✓ {kw}
+                          {kw}
                         </span>
                       ))}
                     </div>
@@ -734,7 +759,7 @@ export default function Modals(props: ModalsProps) {
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       {r.missing.length === 0 ? (
                         <div style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 700, padding: '4px 0' }}>
-                          🎉 100% Keyword Alignment! No missing core competencies detected.
+                          100% Keyword Alignment! No missing core competencies detected.
                         </div>
                       ) : (
                         r.missing.map((kw, i) => (
@@ -773,19 +798,19 @@ export default function Modals(props: ModalsProps) {
                   </label>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                      <span style={{ color: 'var(--success)', fontWeight: 900 }}>✓</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}><polyline points="20 6 9 17 4 12"></polyline></svg>
                       <span>Single-column linear structure</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                      <span style={{ color: 'var(--success)', fontWeight: 900 }}>✓</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}><polyline points="20 6 9 17 4 12"></polyline></svg>
                       <span>Standard typography & hierarchy</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                      <span style={{ color: 'var(--success)', fontWeight: 900 }}>✓</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}><polyline points="20 6 9 17 4 12"></polyline></svg>
                       <span>Quantified performance metrics</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                      <span style={{ color: 'var(--success)', fontWeight: 900 }}>✓</span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}><polyline points="20 6 9 17 4 12"></polyline></svg>
                       <span>No tables, headers or footer traps</span>
                     </div>
                   </div>
@@ -793,7 +818,7 @@ export default function Modals(props: ModalsProps) {
 
                 {/* Candidate Recommendation Box */}
                 <div style={{ padding: '12px 16px', background: 'var(--primary-light)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', fontSize: '12px', color: 'var(--text-1)' }}>
-                  <strong>💡 Tailoring Strategy:</strong> Your technical experience shows high correlation with modern engineering roles. Integrating the suggested missing keywords will maximize ATS pipeline advancement.
+                  <strong>Tailoring strategy:</strong> Your technical experience shows high correlation with modern engineering roles. Integrating the suggested missing keywords will maximize ATS pipeline advancement.
                 </div>
               </div>
 
@@ -813,7 +838,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Create Tailored Resume</h3>
-              <button className="modal-close" onClick={props.onCloseResumeCreate}>✕</button>
+              <button className="modal-close" onClick={props.onCloseResumeCreate} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -850,7 +875,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Add Technical Skill</h3>
-              <button className="modal-close" onClick={props.onCloseSkillModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseSkillModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -912,7 +937,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Add Job Application</h3>
-              <button className="modal-close" onClick={props.onCloseJobModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseJobModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -973,7 +998,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Post Campus Circular</h3>
-              <button className="modal-close" onClick={props.onCloseAnnounceModal}>✕</button>
+              <button className="modal-close" onClick={props.onCloseAnnounceModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -1031,7 +1056,7 @@ export default function Modals(props: ModalsProps) {
           <div className="modal-box">
             <div className="modal-header">
               <h3>Change University Password</h3>
-              <button className="modal-close" onClick={props.onClosePasswordModal}>✕</button>
+              <button className="modal-close" onClick={props.onClosePasswordModal} aria-label="Close dialog"><CloseIcon /></button>
             </div>
             <div className="modal-body">
               <div className="form-group" style={{ marginBottom: '12px' }}>
@@ -1084,7 +1109,7 @@ export default function Modals(props: ModalsProps) {
         >
           <div className="modal-box" style={{ maxWidth: '540px', padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '18px' }}>🔍</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-3)", flexShrink: 0 }}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input
                 className="form-input"
                 id="cmdSearchInput"
@@ -1094,7 +1119,7 @@ export default function Modals(props: ModalsProps) {
                 autoFocus
                 style={{ border: 'none', background: 'transparent', outline: 'none', boxShadow: 'none', fontSize: '14px', width: '100%' }}
               />
-              <button className="modal-close" onClick={props.onCloseCmd}>✕</button>
+              <button className="modal-close" onClick={props.onCloseCmd} aria-label="Close dialog"><CloseIcon /></button>
             </div>
 
             <div style={{ maxHeight: '320px', overflowY: 'auto', padding: '8px' }}>
@@ -1118,7 +1143,7 @@ export default function Modals(props: ModalsProps) {
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-3)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <span style={{ fontSize: '16px' }}>{item.icon}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--primary)' }}>{viewIcons[item.view]}</span>
                   <span style={{ flex: 1 }}>{item.label}</span>
                   <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>Jump ↵</span>
                 </div>

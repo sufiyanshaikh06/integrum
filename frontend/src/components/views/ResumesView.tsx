@@ -83,7 +83,7 @@ export default function ResumesView({
               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                 {res.matched.slice(0, 5).map((kw, i) => (
                   <span key={i} className="badge badge-success" style={{ fontSize: '10px' }}>
-                    ✓ {kw}
+                    {kw}
                   </span>
                 ))}
                 {res.matched.length > 5 && (

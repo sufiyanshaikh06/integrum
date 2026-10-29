@@ -92,8 +92,13 @@ export default function TasksView({
                       <span
                         className={`tcheck ${isDone ? 'done' : ''}`}
                         onClick={() => onToggleTask(t.id)}
+                        aria-label={isDone ? 'Mark as incomplete' : 'Mark as complete'}
+                        role="checkbox"
+                        aria-checked={isDone}
                       >
-                        {isDone ? '✓' : ''}
+                        {isDone ? (
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        ) : null}
                       </span>
                     </td>
                     <td className={isDone ? 'done-txt' : ''} style={{ padding: '12px 14px' }}>

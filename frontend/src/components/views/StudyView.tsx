@@ -32,7 +32,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
     } else if (pomoSeconds === 0 && pomoRunning) {
       setPomoRunning(false);
       onLogHours(pomoMode / 60);
-      showToast(`🎉 Pomodoro completed! ${pomoMode} minutes logged to your study sprint.`, 'success');
+      showToast(`Pomodoro completed! ${pomoMode} minutes logged to your study sprint.`, 'success');
     }
     return () => clearInterval(interval);
   }, [pomoRunning, pomoSeconds, pomoMode]);
@@ -170,7 +170,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
               className="btn btn-outline"
               onClick={() => {
                 onLogHours(0.5);
-                showToast('✓ 30 minutes (0.5h) logged manually to study sprint!', 'success');
+                showToast('30 minutes (0.5h) logged manually to study sprint!', 'success');
               }}
             >
               + Log 30m
@@ -202,7 +202,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                 style={{ fontSize: '13px', padding: '8px 12px' }}
               />
               <button className="btn btn-xs btn-primary" onClick={handleSaveGoal}>Save</button>
-              <button className="btn btn-xs btn-secondary" onClick={() => setIsAddingGoal(false)}>✕</button>
+              <button className="btn btn-xs btn-secondary" onClick={() => setIsAddingGoal(false)}>Cancel</button>
             </div>
           )}
 
@@ -262,7 +262,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   <td style={{ padding: '10px' }}>
                     <span
                       className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`📅 Mon ${row.time}: ${row.mon}`, 'info')}
+                      onClick={() => showToast(`Mon ${row.time}: ${row.mon}`, 'info')}
                     >
                       {row.mon}
                     </span>
@@ -270,7 +270,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   <td style={{ padding: '10px' }}>
                     <span
                       className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`📅 Tue ${row.time}: ${row.tue}`, 'info')}
+                      onClick={() => showToast(`Tue ${row.time}: ${row.tue}`, 'info')}
                     >
                       {row.tue}
                     </span>
@@ -278,7 +278,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   <td style={{ padding: '10px' }}>
                     <span
                       className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`📅 Wed ${row.time}: ${row.wed}`, 'info')}
+                      onClick={() => showToast(`Wed ${row.time}: ${row.wed}`, 'info')}
                     >
                       {row.wed}
                     </span>
@@ -286,7 +286,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   <td style={{ padding: '10px' }}>
                     <span
                       className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`📅 Thu ${row.time}: ${row.thu}`, 'info')}
+                      onClick={() => showToast(`Thu ${row.time}: ${row.thu}`, 'info')}
                     >
                       {row.thu}
                     </span>
@@ -294,7 +294,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
                   <td style={{ padding: '10px' }}>
                     <span
                       className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`📅 Fri ${row.time}: ${row.fri}`, 'info')}
+                      onClick={() => showToast(`Fri ${row.time}: ${row.fri}`, 'info')}
                     >
                       {row.fri}
                     </span>

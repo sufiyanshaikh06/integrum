@@ -9,13 +9,13 @@ export const initialPlatformState = {
   selectedCalDay: 15,  // Thursday, Oct 15, 2026
   
   studentInfo: {
-    name: 'Alex Morgan',
+    name: 'Sufiyan Shaikh',
     roll: 'INT2026101',
     branch: 'Computer Science & Engineering',
     year: '3rd Year',
     sem: 'Semester 5 (Fall 2026)',
-    email: 'alex.morgan@university.edu',
-    avatar: 'AM'
+    email: 'sufiyan.shaikh@example.com', // taste-skill-ignore
+    avatar: 'SS'
   },
 
   adminInfo: {

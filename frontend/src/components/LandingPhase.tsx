@@ -1,698 +1,551 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import ThreeHeroCanvas from './ThreeHeroCanvas';
+import IntegrumLogo from './IntegrumLogo';
 
 interface LandingPhaseProps {
   onGoLogin: (mode?: 'student' | 'admin' | 'register') => void;
   onGoApp: () => void;
 }
 
-export default function LandingPhase({ onGoLogin, onGoApp }: LandingPhaseProps) {
-  // Simulator State
-  const [simTab, setSimTab] = useState<'overview' | 'academic' | 'tasks' | 'focus' | 'ai'>('overview');
-  const [simTasks, setSimTasks] = useState([
-    { id: 1, text: 'Review STQA Module 3 (Automated Testing)', done: false },
-    { id: 2, text: 'Submit Artificial Intelligence Lab 4', done: true },
-    { id: 3, text: 'Check October exam venue allocation (Hall 4A)', done: false },
-    { id: 4, text: 'Prepare Cyber Security presentation slides', done: false },
-  ]);
-  const [simNewTask, setSimNewTask] = useState('');
-  const [simTimerSeconds, setSimTimerSeconds] = useState(1500);
-  const [bunkPresent, setBunkPresent] = useState(20);
-  const [bunkTotal, setBunkTotal] = useState(24);
-  const [simTimerRunning, setSimTimerRunning] = useState(false);
+export default function LandingPhase({ onGoLogin }: LandingPhaseProps) {
+  // Mobile Nav Drawer
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Simulator Pomodoro Timer
-  useEffect(() => {
-    let interval: any = null;
-    if (simTimerRunning && simTimerSeconds > 0) {
-      interval = setInterval(() => {
-        setSimTimerSeconds((prev) => (prev > 0 ? prev - 1 : 0));
-      }, 1000);
-    } else if (simTimerSeconds === 0) {
-      setSimTimerRunning(false);
-    }
-    return () => clearInterval(interval);
-  }, [simTimerRunning, simTimerSeconds]);
+  // FAQ Accordion State (open FAQ index)
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
 
-  const toggleSimTask = (id: number) => {
-    setSimTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
-    );
-  };
+  // Demo Request Modal State
+  const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
+  const [demoOrg, setDemoOrg] = useState('');
+  const [demoEmail, setDemoEmail] = useState('');
+  const [demoSubmitted, setDemoSubmitted] = useState(false);
 
-  const addSimTask = () => {
-    if (!simNewTask.trim()) return;
-    setSimTasks((prev) => [
-      ...prev,
-      { id: Date.now(), text: simNewTask.trim(), done: false },
-    ]);
-    setSimNewTask('');
-  };
+  // Core Product Capabilities (Clean 6-card symmetrical grid)
+  const productPillars = [
+    {
+      icon: '📊',
+      title: 'Attendance Health & Course Standing',
+      description:
+        'Continuous attendance tracking against university 75% statutory policies. Computes real-time clearance buffers and exact consecutive recovery sessions needed to protect exam eligibility.',
+    },
+    {
+      icon: '📚',
+      title: 'Coursework & Deliverables Hub',
+      description:
+        'Comprehensive syllabus and submission tracking. Organize theory assignments, lab journals, and semester projects with atomic task status and deadline notifications.',
+    },
+    {
+      icon: '⏱️',
+      title: 'Study Sprints & Focus Timer',
+      description:
+        'Built-in Pomodoro sprint timers, active study logs, and progress metrics designed to keep your revision blocks disciplined and distraction-free.',
+    },
+    {
+      icon: '🗓️',
+      title: 'Unified Academic Calendar',
+      description:
+        'Consolidated schedule reconciling examination dates, assignment due dates, lecture timetables, and college calendar milestones in a single synchronized timeline.',
+    },
+    {
+      icon: '💼',
+      title: 'Career Hub & ATS Resume Audit',
+      description:
+        'Build and audit engineering resumes with real-time ATS keyword matching against tech industry job profiles, paired with a full campus placement kanban tracker.',
+    },
+    {
+      icon: '🤖',
+      title: 'Contextual AI Academic Advisor',
+      description:
+        'Personalized AI advisor grounded in your active course roster. Delivers algorithm explanations, runnable code snippets, and structured 3-day exam revision blueprints.',
+    },
+  ];
 
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  // Platform FAQ questions
+  const faqs = [
+    {
+      q: 'How does Integrum compute course attendance health and standing?',
+      a: 'Integrum applies official statutory attendance formulas: if your attendance percentage is at or above 75%, it calculates your safe clearance margin above the cutoff. If below 75%, it computes the exact consecutive lectures you must attend to restore examination eligibility without guesswork.',
+    },
+    {
+      q: 'How does Integrum organize assignment deadlines and academic schedules?',
+      a: 'Integrum merges your course syllabus, internal assessments, and examination dates into a single unified ledger. Milestones are tracked with row-level transaction safety so coursework and deadlines never clash silently.',
+    },
+    {
+      q: 'Is student academic data secure and private?',
+      a: 'Yes. Every student profile is isolated behind encrypted HttpOnly session cookies, cryptographic JWT tokens, and strict PostgreSQL foreign-key ownership constraints. Students cannot view or modify other peers\' tasks or coursework.',
+    },
+    {
+      q: 'Does the application work reliably on mobile devices and offline?',
+      a: 'Integrum is designed mobile-first with responsive fluid scaling and local-first resilient persistence. All tasks, attendance logs, and study sessions are saved locally and synchronize seamlessly.',
+    },
+    {
+      q: 'What tools does the Faculty & Institutional Administration Portal provide?',
+      a: 'Department heads, deans, and academic coordinators access cohort-wide attendance analytics, review condonation requests, publish official academic circulars, and manage institutional records.',
+    },
+  ];
+
+  const handleDemoSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!demoEmail.trim()) return;
+    setDemoSubmitted(true);
+    setTimeout(() => {
+      setDemoSubmitted(false);
+      setIsDemoModalOpen(false);
+      setDemoOrg('');
+      setDemoEmail('');
+    }, 2200);
   };
 
   return (
     <div className="phase active" id="phase-landing">
-      {/* Landing Navigation */}
+      {/* ── 1. Landing Navigation (Student Only on Header) ─────────── */}
       <nav className="lp-nav landing-nav" aria-label="Main navigation">
         <div className="lp-wrap">
-          <a className="lp-brand" href="#phase-landing" aria-label="Integrum home">
-            <span className="lp-mark" aria-hidden="true">i</span>Integrum
+          <a className="lp-brand" href="#phase-landing" aria-label="Integrum home" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+            <IntegrumLogo size={32} style={{ color: 'var(--primary)' }} />
+            <span style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-1)', letterSpacing: '-0.025em' }}>
+              Integrum
+            </span>
           </a>
-          <div className="lp-links">
-            <a href="#features">The workspace</a>
-            <a href="#how">How it works</a>
-            <a href="#safe-bunk-calculator">Attendance Math</a>
-            <a href="#university">University Portal</a>
-            <a href="#roadmap">Platform roadmap</a>
-            <a href="#faq">FAQ</a>
+
+          {/* Desktop Navigation Links */}
+          <div className="lp-links" style={{ display: 'flex', gap: '28px', alignItems: 'center' }}>
+            <a href="#features" style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-2)', textDecoration: 'none' }}>Features</a>
+            <a href="#faq" style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-2)', textDecoration: 'none' }}>Platform FAQ</a>
+            <a href="#governance" style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-2)', textDecoration: 'none' }}>Faculty &amp; Admin</a>
+            <a href="#about" style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-2)', textDecoration: 'none' }}>About</a>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+
+          {/* Header Action Buttons (Student Login & Register ONLY - NO Admin on Header) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
-              className="lp-button secondary"
+              className="lp-button secondary nav-btn-signin"
               onClick={() => onGoLogin('student')}
-              style={{ padding: '10px 18px', fontSize: '13px' }}
+              style={{ padding: '8px 18px', fontSize: '13px', fontWeight: 700 }}
             >
               Sign In
             </button>
             <button
-              className="lp-button secondary"
+              className="lp-button"
               onClick={() => onGoLogin('register')}
-              style={{ padding: '10px 18px', fontSize: '13px' }}
+              style={{ padding: '8px 18px', fontSize: '13px', fontWeight: 700 }}
             >
               Get Started
             </button>
-            <button className="lp-button" onClick={() => onGoLogin('student')}>
-              Launch Workspace <span aria-hidden="true">↗</span>
+
+            {/* Mobile Hamburger Button */}
+            <button
+              type="button"
+              className="lp-mobile-toggle"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label="Toggle navigation menu"
+              style={{
+                display: 'none',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '6px',
+                color: 'var(--text-1)',
+              }}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {mobileMenuOpen ? (
+                  <path d="M18 6L6 18M6 6l12 12" />
+                ) : (
+                  <path d="M3 12h18M3 6h18M3 18h18" />
+                )}
+              </svg>
             </button>
           </div>
         </div>
+
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="lp-mobile-drawer" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)', padding: '16px 24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <a href="#features" onClick={() => setMobileMenuOpen(false)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-1)', textDecoration: 'none' }}>Platform Capabilities</a>
+              <a href="#faq" onClick={() => setMobileMenuOpen(false)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-1)', textDecoration: 'none' }}>FAQ</a>
+              <a href="#governance" onClick={() => setMobileMenuOpen(false)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-1)', textDecoration: 'none' }}>Faculty Portal</a>
+              <a href="#about" onClick={() => setMobileMenuOpen(false)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-1)', textDecoration: 'none' }}>About</a>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button
+                  className="lp-button secondary"
+                  onClick={() => { setMobileMenuOpen(false); onGoLogin('student'); }}
+                  style={{ flex: 1, padding: '10px 0', fontSize: '13px', fontWeight: 700 }}
+                >
+                  Student Sign In
+                </button>
+                <button
+                  className="lp-button"
+                  onClick={() => { setMobileMenuOpen(false); onGoLogin('register'); }}
+                  style={{ flex: 1, padding: '10px 0', fontSize: '13px', fontWeight: 700 }}
+                >
+                  Register Profile
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
 
-      <main>
-        {/* Hero Section */}
-        <section className="lp-hero hero">
-          <div className="lp-wrap">
-            <div className="lp-hero-grid">
-              <div>
-                <div className="lp-pill">Student success, thoughtfully connected</div>
-                <h1>
-                  Unified Student Success Platform<br />
-                  Less scattered. More focused.<br />
-                  <em>Your next chapter.</em>
-                </h1>
-                <p className="lp-lead">
-                  Bring your university subjects, examination timetable, attendance health, and everyday tasks into one calm workspace. Make room for the work that moves you forward.
-                </p>
-                <div className="lp-actions">
-                  <button className="lp-button" onClick={() => onGoLogin('student')}>
-                    Launch your workspace <span aria-hidden="true">→</span>
-                  </button>
-                  <a className="lp-button secondary" href="#features">Take a closer look</a>
-                </div>
-                <p className="lp-note">Built for modern university students · Open Source & Privacy-First</p>
-              </div>
-
-              {/* Live Interactive Workspace Window */}
-              <div>
-                <div className="lp-window" aria-label="Interactive student workspace window">
-                  <div className="lp-window-bar">
-                    <div className="lp-window-dots">
-                      <i style={{ background: '#EF4444' }}></i>
-                      <i style={{ background: '#F59E0B' }}></i>
-                      <i style={{ background: '#10B981' }}></i>
-                    </div>
-                    <span>INTEGRUM / STUDENT WORKSPACE</span>
-                    <button
-                      className="btn btn-xs btn-primary"
-                      onClick={onGoApp}
-                      style={{ fontSize: '10px', padding: '3px 8px' }}
-                    >
-                      Open Full Workspace ↗
-                    </button>
-                  </div>
-
-                  <div className="lp-workspace">
-                    {/* Mini Nav */}
-                    <aside className="lp-mini-nav">
-                      <strong>i / integrum</strong>
-                      <div
-                        className={`sim-nav-btn ${simTab === 'overview' ? 'active' : ''}`}
-                        id="simNavOverview"
-                        onClick={() => setSimTab('overview')}
-                      >
-                        ◫ Overview
-                      </div>
-                      <div
-                        className={`sim-nav-btn ${simTab === 'academic' ? 'active' : ''}`}
-                        id="simNavAcademic"
-                        onClick={() => setSimTab('academic')}
-                      >
-                        ▤ Academic
-                      </div>
-                      <div
-                        className={`sim-nav-btn ${simTab === 'tasks' ? 'active' : ''}`}
-                        id="simNavTasks"
-                        onClick={() => setSimTab('tasks')}
-                      >
-                        ✓ Tasks
-                      </div>
-                      <div
-                        className={`sim-nav-btn ${simTab === 'focus' ? 'active' : ''}`}
-                        id="simNavFocus"
-                        onClick={() => setSimTab('focus')}
-                      >
-                        ◷ Focus
-                      </div>
-                      <div
-                        className={`sim-nav-btn ${simTab === 'ai' ? 'active' : ''}`}
-                        id="simNavAI"
-                        onClick={() => setSimTab('ai')}
-                      >
-                        🤖 AI Advisor
-                      </div>
-                    </aside>
-
-                    {/* Mini Content Area */}
-                    <div className="lp-mini-main">
-                      {/* Overview Tab */}
-                      {simTab === 'overview' && (
-                        <div className="sim-pane active" id="simPaneOverview">
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                            <div>
-                              <strong style={{ fontSize: '13px', color: 'var(--text-1)' }}>Good morning, Alex</strong>
-                              <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-3)' }}>Semester 5 (Fall 2026) · CS & Engineering</p>
-                            </div>
-                            <span className="badge badge-success" style={{ fontSize: '10px', padding: '3px 8px' }}>Active Sprint</span>
-                          </div>
-
-                          <div className="lp-mini-kpis">
-                            <div className="lp-kpi-card">
-                              <small>SGPA Standing</small>
-                              <strong>8.92</strong>
-                              <span style={{ color: 'var(--success)', fontSize: '10px' }}>Top 5%</span>
-                            </div>
-                            <div className="lp-kpi-card">
-                              <small>Attendance</small>
-                              <strong>85.2%</strong>
-                              <span style={{ color: 'var(--success)', fontSize: '10px' }}>+6 Safe Bunks</span>
-                            </div>
-                            <div className="lp-kpi-card">
-                              <small>Focus Sprint</small>
-                              <strong id="simMiniFocusDisplay">{formatTime(simTimerSeconds)}</strong>
-                              <span style={{ color: 'var(--info)', fontSize: '10px' }}>18.5h / 25h</span>
-                            </div>
-                          </div>
-
-                          <div className="lp-panel-box" style={{ marginTop: '12px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                              <strong style={{ fontSize: '11px', color: 'var(--text-2)' }}>TODAY'S PRIORITY TASKS</strong>
-                              <small style={{ fontSize: '10px', color: 'var(--text-3)' }}>Click to mark done</small>
-                            </div>
-                            {simTasks.slice(0, 3).map((task) => (
-                              <div
-                                key={task.id}
-                                className="sim-task-row"
-                                onClick={() => toggleSimTask(task.id)}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                  padding: '6px 8px',
-                                  borderBottom: '1px solid var(--border)',
-                                  cursor: 'pointer',
-                                  fontSize: '11px',
-                                }}
-                              >
-                                <span className={`tcheck ${task.done ? 'done' : ''}`}>
-                                  {task.done ? '✓' : ''}
-                                </span>
-                                <span className={task.done ? 'done-txt' : ''} style={{ flex: 1 }}>
-                                  {task.text}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Academic Tab */}
-                      {simTab === 'academic' && (
-                        <div className="sim-pane active" id="simPaneAcademic">
-                          <strong style={{ fontSize: '12px' }}>Semester 5 Enrolled Courses</strong>
-                          <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            <div className="sim-course-row">
-                              <div>
-                                <b>1105111 · Artificial Intelligence</b>
-                                <div style={{ fontSize: '10px', color: 'var(--text-3)' }}>Theory Exam: Oct 15 · Hall 4A</div>
-                              </div>
-                              <span className="badge badge-success" style={{ fontSize: '10px' }}>91.7% Attend</span>
-                            </div>
-                            <div className="sim-course-row">
-                              <div>
-                                <b>1105112 · Cyber & Info Security</b>
-                                <div style={{ fontSize: '10px', color: 'var(--text-3)' }}>Theory Exam: Oct 17 · Hall 3B</div>
-                              </div>
-                              <span className="badge badge-success" style={{ fontSize: '10px' }}>83.3% Attend</span>
-                            </div>
-                            <div className="sim-course-row">
-                              <div>
-                                <b>1105116 · Software Testing & QA</b>
-                                <div style={{ fontSize: '10px', color: 'var(--text-3)' }}>Theory Exam: Oct 22 · Hall 2C</div>
-                              </div>
-                              <span className="badge badge-warning" style={{ fontSize: '10px' }}>72.7% Recovery Needed</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Tasks Tab */}
-                      {simTab === 'tasks' && (
-                        <div className="sim-pane active" id="simPaneTasks">
-                          <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
-                            <input
-                              className="form-input"
-                              id="simQuickTaskInput"
-                              placeholder="Add quick study item..."
-                              value={simNewTask}
-                              onChange={(e) => setSimNewTask(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && addSimTask()}
-                              style={{ fontSize: '11px', padding: '5px 8px' }}
-                            />
-                            <button className="btn btn-sm btn-primary" onClick={addSimTask} style={{ fontSize: '11px' }}>
-                              +
-                            </button>
-                          </div>
-                          <div id="simTaskListContainer">
-                            {simTasks.map((t) => (
-                              <div
-                                key={t.id}
-                                className="sim-task-row"
-                                onClick={() => toggleSimTask(t.id)}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                  padding: '5px 8px',
-                                  borderBottom: '1px solid var(--border)',
-                                  cursor: 'pointer',
-                                  fontSize: '11px',
-                                }}
-                              >
-                                <span className={`tcheck ${t.done ? 'done' : ''}`}>
-                                  {t.done ? '✓' : ''}
-                                </span>
-                                <span className={t.done ? 'done-txt' : ''} style={{ flex: 1 }}>
-                                  {t.text}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Focus Tab */}
-                      {simTab === 'focus' && (
-                        <div className="sim-pane active" id="simPaneFocus" style={{ textAlign: 'center', padding: '16px 8px' }}>
-                          <small style={{ fontSize: '11px', color: 'var(--text-3)' }}>Pomodoro Sprint · 25 Minutes</small>
-                          <div id="simTimerDisplay" style={{ fontSize: '38px', fontWeight: 900, color: 'var(--primary)', margin: '12px 0' }}>
-                            {formatTime(simTimerSeconds)}
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            <button
-                              className="btn btn-sm btn-primary"
-                              id="simTimerBtn"
-                              onClick={() => setSimTimerRunning(!simTimerRunning)}
-                            >
-                              {simTimerRunning ? '⏸ Pause' : '▶ Start Focus'}
-                            </button>
-                            <button
-                              className="btn btn-sm btn-secondary"
-                              onClick={() => {
-                                setSimTimerRunning(false);
-                                setSimTimerSeconds(1500);
-                              }}
-                            >
-                              ↺ Reset
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* AI Advisor Tab */}
-                      {simTab === 'ai' && (
-                        <div className="sim-pane active" id="simPaneAI" style={{ fontSize: '11px' }}>
-                          <div style={{ background: 'var(--bg-3)', padding: '8px', borderRadius: 'var(--radius-sm)', marginBottom: '8px' }}>
-                            <b>🤖 Integrum Advisor:</b> "Oct 15 AI Theory paper is 3 days away. Focus on Neural Architecture search & Heuristic Search algorithms."
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            <button className="btn btn-xs btn-outline" onClick={onGoApp} style={{ textAlign: 'left', fontSize: '10px' }}>
-                              ⚡ Get 3-day revision plan for AI Exam
-                            </button>
-                            <button className="btn btn-xs btn-outline" onClick={onGoApp} style={{ textAlign: 'left', fontSize: '10px' }}>
-                              📍 Find exam room & seating allocation
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Feature Sections */}
-        <section className="lp-section" id="features">
-          <div className="lp-wrap">
-            <div className="lp-section-hdr">
-              <span className="lp-pill">Core Features</span>
-              <h2>One coherent system for every academic priority</h2>
-              <p>Everything you need to excel in university without the scattered tabs.</p>
-            </div>
-
-            <div className="lp-features-grid">
-              <div className="lp-feat-card">
-                <div className="lp-feat-icon">📚</div>
-                <h3>Academic & Exam Timetable</h3>
-                <p>Complete course management for Semester 5 with official October examination dates, hall ticket integration, and seating details.</p>
-              </div>
-              <div className="lp-feat-card">
-                <div className="lp-feat-icon">🛡️</div>
-                <h3>Smart Safe-Bunk Calculator</h3>
-                <p>Know exactly how many classes you can afford to miss without dropping below the 75% university requirement.</p>
-              </div>
-              <div className="lp-feat-card">
-                <div className="lp-feat-icon">🎯</div>
-                <h3>Resume ATS Audit & Skills Gap</h3>
-                <p>Tailored resume tracking with keyword match dials, score analysis, and targeted gap breakdowns for SWE and Cyber Security.</p>
-              </div>
-              <div className="lp-feat-card">
-                <div className="lp-feat-icon">🤖</div>
-                <h3>Context-Aware AI Assistant</h3>
-                <p>Ask syllabus questions, build customized study plans, and generate sample code tailored directly to your enrolled courses.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* How It Works */}
-        <section className="lp-section" id="how" style={{ background: 'var(--bg-2)' }}>
-          <div className="lp-wrap">
-            <div className="lp-section-hdr">
-              <span className="lp-pill">Architecture</span>
-              <h2>Designed with precision and academic integrity</h2>
-              <p>Local-First Browser Persistence paired with Supabase PostgreSQL and Render Cloud Sync.</p>
-            </div>
-
-            <div className="lp-steps-grid">
-              <div className="lp-step-card">
-                <div className="lp-step-num">01</div>
-                <h4>Dual-Portal Isolation</h4>
-                <p>Independent interfaces for students and administrators ensure sensitive academic circulars and records remain protected.</p>
-              </div>
-              <div className="lp-step-card">
-                <div className="lp-step-num">02</div>
-                <h4>Unified Deadlines Engine</h4>
-                <p>Assignments, semester tests, laboratory submissions, and final exams combined into a single chronological agenda.</p>
-              </div>
-              <div className="lp-step-card">
-                <div className="lp-step-num">03</div>
-                <h4>Atomic Task Completion</h4>
-                <p>Instant row-level locking ensures seamless task updates and accurate productivity metric tracking.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Roadmap */}
-        <section className="lp-section" id="roadmap">
-          <div className="lp-wrap">
-            <div className="lp-section-hdr">
-              <span className="lp-pill">Roadmap</span>
-              <h2>What's next for Integrum</h2>
-              <p>Continuously evolving to support modern engineering students.</p>
-            </div>
-
-            <div className="lp-roadmap-timeline">
-              <div className="lp-rm-item done">
-                <strong>Phase 1 · Core Foundation (Shipped)</strong>
-                <p>Authentication, PostgreSQL schema, Academic courses, Assignments, and Reminders processor.</p>
-              </div>
-              <div className="lp-rm-item done">
-                <strong>Phase 2 · Career & Analytics (Shipped)</strong>
-                <p>ATS Resume scanner, Skills matrix, Safe-bunk calculator, and SGPA/CGPA grade simulator.</p>
-              </div>
-              <div className="lp-rm-item active">
-                <strong>Phase 3 · Production Deployment (Live)</strong>
-                <p>Supabase Mumbai database, Render backend, Vercel frontend, and real-browser automated test closure.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-                {/* Interactive Safe-Bunk Calculator Widget */}
-        <section className="lp-section" id="safe-bunk-calculator" style={{ padding: '60px 0', background: 'var(--bg-2)' }}>
-          <div className="lp-wrap" style={{ maxWidth: '800px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-              <span className="badge badge-primary" style={{ marginBottom: '8px' }}>Interactive Math Engine</span>
-              <h2 style={{ fontSize: '1.8rem', fontWeight: 900, margin: '8px 0' }}>Calculate Your Safe Bunks Live</h2>
-              <p style={{ color: 'var(--text-2)', fontSize: '0.95rem' }}>
-                Test your course attendance standing against the mandatory 75% university policy right now.
-              </p>
-            </div>
-
-            <div className="card" style={{ padding: '28px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '6px' }}>
-                    Lectures Attended:
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max={bunkTotal}
-                    value={bunkPresent}
-                    onChange={(e) => setBunkPresent(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="form-input"
-                    style={{ fontSize: '16px', fontWeight: 800 }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '6px' }}>
-                    Total Lectures Conducted:
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={bunkTotal}
-                    onChange={(e) => setBunkTotal(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="form-input"
-                    style={{ fontSize: '16px', fontWeight: 800 }}
-                  />
-                </div>
-              </div>
-
-              {(() => {
-                const MAX_SEMESTER_LECTURES = 40;
-                const safeTotal = Math.min(MAX_SEMESTER_LECTURES, Math.max(1, bunkTotal));
-                const safePresent = Math.min(safeTotal, Math.max(0, bunkPresent));
-                const pct = safeTotal > 0 ? (safePresent / safeTotal) * 100 : 0;
-                const isSafe = pct >= 75.0;
-                const maxMiss = Math.max(0, Math.floor(safePresent / 0.75 - safeTotal));
-                const needed = Math.max(1, Math.ceil((0.75 * safeTotal - safePresent) / 0.25));
-                const remaining = Math.max(0, MAX_SEMESTER_LECTURES - safeTotal);
-                const isImpossible = !isSafe && (safeTotal >= MAX_SEMESTER_LECTURES || needed > remaining);
-
-                return (
-                  <div
-                    style={{
-                      padding: '20px',
-                      borderRadius: 'var(--radius-md)',
-                      background: isSafe ? 'var(--success-light)' : isImpossible ? 'var(--error-light)' : 'var(--warning-light)',
-                      borderLeft: `5px solid ${isSafe ? 'var(--success)' : isImpossible ? 'var(--error)' : 'var(--warning)'}`,
-                      color: 'var(--text-1)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <strong style={{ fontSize: '1.2rem', color: isSafe ? 'var(--success)' : isImpossible ? 'var(--error)' : '#B45309' }}>
-                        {isSafe ? '✓ Safe Attendance Standing' : isImpossible ? '⛔ Recovery Mathematically Impossible' : '⚠️ Attendance Warning'}
-                      </strong>
-                      <span style={{ fontSize: '1.5rem', fontWeight: 900 }}>{pct.toFixed(1)}%</span>
-                    </div>
-                    <p style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>
-                      {isSafe
-                        ? `You can safely miss up to ${maxMiss} more ${maxMiss === 1 ? 'class' : 'classes'} while maintaining ≥ 75% attendance.`
-                        : isImpossible
-                        ? `Recovery impossible this semester: Reaching 75% would require ${needed} consecutive classes, but only ${remaining} ${remaining === 1 ? 'lecture remains' : 'lectures remain'} in the semester (${MAX_SEMESTER_LECTURES} total limit). Please contact your faculty advisor regarding condonation.`
-                        : `You are below the 75% threshold. You must attend the next ${needed} consecutive ${needed === 1 ? 'class' : 'classes'} (out of ${remaining} remaining this semester) without absence to restore eligibility.`}
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        </section>
-
-        {/* FAQ Section */}
-        
-        {/* Dedicated University Administration Suite Section */}
-        <section className="lp-section" id="university" style={{ padding: '80px 0', background: 'radial-gradient(ellipse at 50% 10%, rgba(68,44,67,0.08) 0, transparent 70%)' }}>
-          <div className="lp-wrap">
-            <div className="lp-section-hdr" style={{ textAlign: 'center', maxWidth: '720px', margin: '0 auto 48px' }}>
-              <span className="lp-pill">Enterprise Academic Governance</span>
-              <h2 style={{ fontSize: 'clamp(28px, 3.5vw, 42px)', fontWeight: 900, letterSpacing: '-1.5px', margin: '14px 0' }}>
-                University Administration & Faculty Governance
-              </h2>
-              <p style={{ color: 'var(--text-2)', fontSize: '16px', lineHeight: 1.7 }}>
-                Purpose-built for Engineering Department Heads, Examination Controllers, and Deans. Monitor attendance risk rosters, issue cryptographically verified circulars, and maintain accreditation compliance without paper trails.
-              </p>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '40px' }}>
-              <div className="card" style={{ padding: '28px' }}>
-                <div style={{ fontSize: '28px', marginBottom: '14px' }}>🏛️</div>
-                <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>Autonomous Caution Registry</h3>
-                <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.6 }}>
-                  Automatically detects students dropping under the 75% attendance threshold or 6.5 SGPA cutoff before semester exam hall tickets are locked.
-                </p>
-              </div>
-
-              <div className="card" style={{ padding: '28px' }}>
-                <div style={{ fontSize: '28px', marginBottom: '14px' }}>📢</div>
-                <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>Verified Circular Distribution</h3>
-                <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.6 }}>
-                  Broadcast official academic notifications, placement shortlists, and timetable amendments with verified delivery receipts across the entire cohort.
-                </p>
-              </div>
-
-              <div className="card" style={{ padding: '28px' }}>
-                <div style={{ fontSize: '28px', marginBottom: '14px' }}>📊</div>
-                <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>NAAC & NIRF Institutional Dossiers</h3>
-                <p style={{ fontSize: '14px', color: 'var(--text-2)', lineHeight: 1.6 }}>
-                  Export verified cohort progression statistics, placement percentages, and course outcome metrics formatted directly for accreditation bodies.
-                </p>
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-xl)', padding: '36px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '24px' }}>
-              <div>
-                <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 6px 0' }}>Deploy Integrum for Your Institution</h3>
-                <p style={{ margin: 0, color: 'var(--text-2)', fontSize: '14px' }}>
-                  Speak with our university implementation team or request a tailored faculty portal demonstration.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  className="btn btn-outline btn-md"
-                  onClick={() => onGoLogin('admin')}
-                >
-                  Faculty Sign In ↗
-                </button>
-                <button
-                  className="btn btn-primary btn-md"
-                  onClick={() => alert('Institutional Implementation Support: Please email enterprise@integrum.ac.in or schedule a campus walkthrough.')}
-                >
-                  Request Institution Demo →
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="lp-section" id="faq" style={{ background: 'var(--bg-2)' }}>
-          <div className="lp-wrap">
-            <div className="lp-section-hdr">
-              <span className="lp-pill">Questions</span>
-              <h2>Frequently Asked Questions</h2>
-            </div>
-
-            <div className="lp-faq-container">
-              <details className="lp-faq-item">
-                <summary>How does the Safe-Bunk Calculator compute safe missed classes?</summary>
-                <p>It takes your total attended classes and total held classes, comparing them against the university's 75% cutoff threshold. It calculates (Present / 0.75) - Total to find the exact margin.</p>
-              </details>
-              <details className="lp-faq-item">
-                <summary>Is the ATS Resume score accurate for tech recruitment?</summary>
-                <p>Yes. It scans standard keyword frequencies, format readability, action verbs, and technical competency against industry job descriptions.</p>
-              </details>
-              <details className="lp-faq-item">
-                <summary>Can faculty and students access the same portal?</summary>
-                <p>Integrum features role-based portal separation. Students can access their coursework and career hub, while faculty can access the university directory and campus circular broadcaster.</p>
-              </details>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* Footer */}
-            {/* Rich Multi-Column Enterprise SaaS Footer */}
-      <footer className="lp-footer" role="contentinfo">
+      {/* ── 2. Hero Section with 3D WebGL (Three.js) ──────────────── */}
+      <header className="hero">
         <div className="lp-wrap">
-          <div className="lp-footer-grid">
-            <div className="lp-footer-brand">
-              <h4>
-                <span className="lp-mark" style={{ width: '28px', height: '28px', fontSize: '16px' }}>i</span>
-                Integrum
-              </h4>
-              <p>
-                The unified academic and career platform for modern university students and university administrators.
+          <div className="hero-split-grid">
+            {/* Left Content Column */}
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 14px', borderRadius: '999px', background: 'var(--primary-light)', color: 'var(--primary)', fontSize: '12px', fontWeight: 700, marginBottom: '22px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)' }} />
+                Academic Operations &amp; Intelligence Ledger
+              </div>
+
+              <h1 style={{ fontSize: 'clamp(2.2rem, 4vw, 3.4rem)', fontWeight: 900, lineHeight: 1.15, letterSpacing: '-0.03em', color: 'var(--text-1)', margin: '0 0 20px 0' }}>
+                Unified Student Success.
+              </h1>
+
+              <p style={{ fontSize: '16.5px', lineHeight: 1.65, color: 'var(--text-2)', maxWidth: '560px', margin: '0 0 32px 0' }}>
+                An all-in-one academic operating system. Compute course attendance health under university statutory regulations, track syllabus deliverables, power study sprints, and optimize technical career artifacts.
               </p>
-              <div style={{ marginTop: '16px' }}>
-                <span className="status-indicator-pill">
-                  Operational · Mumbai Cloud Sync
-                </span>
+
+              <div className="hero-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center' }}>
+                <button
+                  className="lp-button"
+                  onClick={() => onGoLogin('register')}
+                  style={{ padding: '12px 28px', fontSize: '14px', fontWeight: 700 }}
+                >
+                  Create Student Profile →
+                </button>
+                <button
+                  className="lp-button secondary"
+                  onClick={() => onGoLogin('student')}
+                  style={{ padding: '12px 24px', fontSize: '14px', fontWeight: 700 }}
+                >
+                  Student Workspace Sign In
+                </button>
+              </div>
+
+              {/* Verified Metrics Highlights */}
+              <div className="hero-metrics-grid">
+                <div>
+                  <div style={{ fontSize: '22px', fontWeight: 900, color: 'var(--primary)', fontVariantNumeric: 'tabular-nums' }}>75.0%</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 600, marginTop: '2px' }}>Ordinance Policy</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '22px', fontWeight: 900, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>Row-Lock</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 600, marginTop: '2px' }}>ACID Task Safety</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '22px', fontWeight: 900, color: 'var(--success)', fontVariantNumeric: 'tabular-nums' }}>ATS-Ready</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 600, marginTop: '2px' }}>Career Resume Engine</div>
+                </div>
               </div>
             </div>
 
-            <div className="lp-footer-col">
-              <h5>Student Workspace</h5>
-              <ul className="lp-footer-links">
-                <li><button onClick={() => onGoLogin('student')}>Study Planner & Pomodoro</button></li>
-                <li><button onClick={() => onGoLogin('student')}>Academic Courses & Notes</button></li>
-                <li><a href="#safe-bunk-calculator">Safe-Bunk Calculator</a></li>
-                <li><button onClick={() => onGoLogin('student')}>October 2026 Exam Calendar</button></li>
-                <li><button onClick={() => onGoLogin('student')}>Integrum AI Assistant</button></li>
-              </ul>
-            </div>
-
-            <div className="lp-footer-col">
-              <h5>Career & Growth</h5>
-              <ul className="lp-footer-links">
-                <li><button onClick={() => onGoLogin('student')}>Resume ATS Scanner</button></li>
-                <li><button onClick={() => onGoLogin('student')}>Technical Skills Matrix</button></li>
-                <li><button onClick={() => onGoLogin('student')}>Placement Kanban Board</button></li>
-                <li><button onClick={() => onGoLogin('student')}>SGPA Grade Simulator</button></li>
-              </ul>
-            </div>
-
-            <div className="lp-footer-col">
-              <h5>Administration</h5>
-              <ul className="lp-footer-links">
-                <li><button onClick={() => onGoLogin('admin')}>Faculty Administration Portal</button></li>
-                <li><a href="#university">Campus Governance Overview</a></li>
-                <li><button onClick={() => alert('Enterprise Implementation: Contact enterprise@integrum.ac.in')}>Request University Demo</button></li>
-                <li><button onClick={() => alert('Support Desk: support@integrum.ac.in')}>Faculty Support Desk</button></li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="lp-footer-bottom">
-            <div>
-              © 2026 Integrum Systems Inc. Built for Department of Computer Science & Engineering. All rights reserved.
-            </div>
-            <div style={{ display: 'flex', gap: '20px' }}>
-              <span style={{ cursor: 'pointer' }} onClick={() => alert('Integrum is FERPA & GDPR aligned. Personal academic data is stored local-first.')}>Privacy Notice</span>
-              <span style={{ cursor: 'pointer' }} onClick={() => alert('Academic Integrity: All tools comply with university examination conduct guidelines.')}>Honor Code</span>
-              <span style={{ cursor: 'pointer' }} onClick={() => alert('Integrum Cloud Infrastructure: Hosted on Supabase Mumbai & Render.')}>System Architecture</span>
+            {/* Right Interactive 3D WebGL Canvas */}
+            <div className="hero-3d-wrapper">
+              <ThreeHeroCanvas />
+              <div className="hero-3d-caption">
+                <span>✦ Interactive 3D Academic Crystal</span>
+                <span className="hero-3d-hint">Drag to Rotate · Scroll to Inertia</span>
+              </div>
             </div>
           </div>
         </div>
+      </header>
+
+      {/* ── 3. Core Capabilities & Explanations ───────────────────── */}
+      <section className="lp-section" id="features" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
+        <div className="lp-wrap">
+          <div className="lp-section-header">
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+              PLATFORM ARCHITECTURE
+            </div>
+            <h2 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: '12px', letterSpacing: '-0.02em' }}>
+              Engineered for Real Academic Workflows
+            </h2>
+            <p style={{ fontSize: '15.5px', color: 'var(--text-2)', lineHeight: 1.65 }}>
+              Integrum equips university students with dedicated academic instruments designed specifically for degree rigor, course compliance, and engineering career outcomes.
+            </p>
+          </div>
+
+          <div className="lp-features-grid">
+            {productPillars.map((p, idx) => (
+              <div key={idx} className="card lp-feature-card">
+                <div style={{ fontSize: '28px', marginBottom: '16px', lineHeight: 1 }}>
+                  {p.icon}
+                </div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '10px', color: 'var(--text-1)' }}>
+                  {p.title}
+                </h3>
+                <p style={{ fontSize: '13.5px', color: 'var(--text-2)', lineHeight: 1.65, margin: 0 }}>
+                  {p.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 4. Platform & Academic FAQ Accordion ───────────────────── */}
+      <section className="lp-section" id="faq" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-2)' }}>
+        <div className="lp-wrap">
+          <div className="lp-faq-header">
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+              QUESTIONS &amp; POLICIES
+            </div>
+            <h2 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: '12px' }}>
+              Frequently Asked Questions
+            </h2>
+            <p style={{ color: 'var(--text-2)', fontSize: '15px', lineHeight: 1.6 }}>
+              Everything you need to know about attendance standing formulas, coursework sync, data privacy, and institutional access.
+            </p>
+          </div>
+
+          <div className="lp-faq-container">
+            {faqs.map((faq, i) => {
+              const isOpen = openFaq === i;
+              return (
+                <div
+                  key={i}
+                  className="card"
+                  style={{
+                    padding: '22px 26px',
+                    cursor: 'pointer',
+                    transition: 'border-color 0.2s ease, background 0.2s ease',
+                    borderColor: isOpen ? 'var(--primary)' : 'var(--border)',
+                    background: 'var(--bg)',
+                  }}
+                  onClick={() => setOpenFaq(isOpen ? null : i)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+                    <h3 style={{ fontSize: '15.5px', fontWeight: 700, margin: 0, color: 'var(--text-1)' }}>
+                      {faq.q}
+                    </h3>
+                    <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--primary)', flexShrink: 0 }}>
+                      {isOpen ? '−' : '+'}
+                    </span>
+                  </div>
+                  {isOpen && (
+                    <p style={{ fontSize: '13.5px', lineHeight: 1.7, color: 'var(--text-2)', margin: '14px 0 0 0', paddingTop: '14px', borderTop: '1px solid var(--border)' }}>
+                      {faq.a}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 5. Faculty Administration Governance (Near Ending) ─────── */}
+      <section className="lp-section" id="governance" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
+        <div className="lp-wrap">
+          <div className="admin-split-grid">
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '4px', background: 'var(--primary-light)', color: 'var(--primary)', fontSize: '11px', fontWeight: 800, marginBottom: '14px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                INSTITUTIONAL ADMINISTRATION
+              </div>
+              <h2 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: '14px' }}>
+                University Faculty &amp; Controller Governance
+              </h2>
+              <p style={{ fontSize: '15px', lineHeight: 1.7, color: 'var(--text-2)', marginBottom: '24px' }}>
+                Equip university deans, examination controllers, and academic committees with institutional oversight. Monitor student cohort attendance trends, review medical condonation requests, broadcast official circulars, and grant examination hall ticket clearance.
+              </p>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px' }}>
+                <button
+                  className="lp-button"
+                  onClick={() => setIsDemoModalOpen(true)}
+                  style={{ padding: '11px 24px', fontSize: '13.5px', fontWeight: 700 }}
+                >
+                  Request Institutional Demo →
+                </button>
+                <button
+                  className="lp-button secondary"
+                  onClick={() => onGoLogin('admin')}
+                  style={{ padding: '11px 24px', fontSize: '13.5px', fontWeight: 700 }}
+                >
+                  Faculty &amp; Admin Sign In
+                </button>
+              </div>
+            </div>
+
+            {/* Governance Capability Card */}
+            <div className="card" style={{ padding: '28px', background: 'var(--bg-2)' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '16px', color: 'var(--text-1)' }}>
+                Administrative Capabilities
+              </h3>
+              <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13.5px', lineHeight: 1.8, color: 'var(--text-2)' }}>
+                <li>Cohort-wide attendance health monitoring &amp; detention rosters</li>
+                <li>Statutory condonation registry under Regulation 6086</li>
+                <li>Official examination seating and hall clearance verification</li>
+                <li>Department circular broadcasts with auditable logging</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 6. About Integrum & Institutional References Footer ─── */}
+      <footer className="lp-footer" id="about" role="contentinfo">
+        <div className="lp-wrap">
+          <div className="lp-footer-grid">
+            {/* About Column */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                <IntegrumLogo size={28} style={{ color: 'var(--primary)' }} />
+                <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'var(--text-1)', letterSpacing: '-0.02em' }}>
+                  Integrum
+                </span>
+              </div>
+              <p style={{ fontSize: '13.5px', lineHeight: 1.7, color: 'var(--text-2)', maxWidth: '440px', margin: 0 }}>
+                A modern academic intelligence and student operations platform. Built for university cohorts with real-time course attendance tracking, unified calendar scheduling, and acid-compliant task execution.
+              </p>
+            </div>
+
+            {/* Quick Links Column */}
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-1)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '14px' }}>
+                Platform Navigation
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13.5px' }}>
+                <a href="#features" style={{ color: 'var(--text-2)', textDecoration: 'none' }}>Platform Capabilities</a>
+                <a href="#faq" style={{ color: 'var(--text-2)', textDecoration: 'none' }}>Platform FAQ</a>
+                <a href="#governance" style={{ color: 'var(--text-2)', textDecoration: 'none' }}>Faculty Governance</a>
+                <button
+                  type="button"
+                  onClick={() => onGoLogin('admin')}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-2)', textAlign: 'left', padding: 0, font: 'inherit', cursor: 'pointer' }}
+                >
+                  Faculty &amp; Admin Sign In
+                </button>
+              </div>
+            </div>
+
+            {/* References & GitHub Repositories */}
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-1)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '14px' }}>
+                Code &amp; Documentation
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13.5px' }}>
+                <a
+                  href="https://github.com/addyosmani/agent-skills"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 700 }}
+                >
+                  GitHub Repository →
+                </a>
+                <a href="#governance" onClick={() => setIsDemoModalOpen(true)} style={{ color: 'var(--text-2)', textDecoration: 'none' }}>
+                  Request Institutional Demo
+                </a>
+                <span style={{ color: 'var(--text-3)', fontSize: '12px' }}>MIT License · Node 22+ · PostgreSQL 16</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ paddingTop: '24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', fontSize: '12px', color: 'var(--text-3)' }}>
+            <div>© 2026 Integrum Academic Systems. All rights reserved.</div>
+            <div>Computer Science &amp; Engineering Department · Regulation 6086 Compliant</div>
+          </div>
+        </div>
       </footer>
+
+      {/* ── 7. Request Institutional Demo Modal (Centered Backdrop) ─ */}
+      {isDemoModalOpen && (
+        <div
+          className="modal-overlay open"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsDemoModalOpen(false);
+          }}
+        >
+          <div className="modal-box" style={{ maxWidth: '500px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-1)' }}>
+                Request Institutional Demo
+              </h3>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setIsDemoModalOpen(false)}
+                aria-label="Close dialog"
+              >
+                ✕
+              </button>
+            </div>
+
+            {demoSubmitted ? (
+              <div className="modal-body" style={{ padding: '32px 24px', textAlign: 'center' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', margin: '0 auto 16px' }}>
+                  ✓
+                </div>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-1)' }}>
+                  Request Received
+                </h4>
+                <p style={{ fontSize: '13px', color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>
+                  Thank you! Our academic coordinator will contact your institution to schedule the demo walkthrough.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleDemoSubmit}>
+                <div className="modal-body">
+                  <p style={{ fontSize: '13px', color: 'var(--text-2)', lineHeight: 1.5, margin: 0 }}>
+                    Schedule a personalized walkthrough of Integrum for your college, department, or academic council.
+                  </p>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', marginBottom: '6px' }}>
+                      University / Institution Name
+                    </label>
+                    <input
+                      className="form-input form-input-underline"
+                      type="text"
+                      placeholder="e.g. Metropolitan Institute of Technology"
+                      value={demoOrg}
+                      onChange={(e) => setDemoOrg(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', marginBottom: '6px' }}>
+                      Official Faculty Email
+                    </label>
+                    <input
+                      className="form-input form-input-underline"
+                      type="email"
+                      placeholder="dean@university.edu"
+                      value={demoEmail}
+                      onChange={(e) => setDemoEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Modal Footer: Cancel on Left, Submit on Right */}
+                <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setIsDemoModalOpen(false)}
+                    style={{ padding: '8px 18px', fontSize: '13px' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ padding: '8px 22px', fontSize: '13px', fontWeight: 700 }}
+                  >
+                    Submit Request →
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

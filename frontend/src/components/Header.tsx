@@ -27,7 +27,7 @@ const titles: Record<ActiveView, string> = {
   study: 'Study Planner & Pomodoro',
   notes: 'Academic Notes Manager',
   asgn: 'Courses & Assignments',
-  attend: 'Attendance Tracker & Safe-Bunk Calculator',
+  attend: 'Attendance Health & Course Standing',
   cal: 'October 2026 Examination Calendar',
   tasks: 'Productivity Tasks',
   rems: 'Reminders & Examination Alerts',
@@ -89,8 +89,8 @@ export default function Header({
   return (
     <header className="app-header">
       <div className="hdr-left">
-        <button className="mobile-menu-btn" onClick={onToggleSidebar} aria-label="Open menu">
-          ☰
+        <button className="mobile-menu-btn" onClick={onToggleSidebar} aria-label="Open menu" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
         <h2 id="pageTitle" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>
           {titles[activeView] || 'Integrum'}
@@ -109,7 +109,7 @@ export default function Header({
           style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
           title="Click or press Ctrl+K"
         >
-          <span>🔍</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
           <span style={{ color: 'var(--text-3)', fontSize: '13px' }}>Jump anywhere... (Ctrl+K)</span>
         </div>
       </div>
@@ -122,18 +122,17 @@ export default function Header({
           style={{
             fontSize: '11px',
             padding: '4px 10px',
-            borderRadius: '9999px',
-            fontWeight: 700,
-            background: userRole === 'admin' ? 'rgba(245, 158, 11, 0.15)' : 'var(--primary-light)',
-            color: userRole === 'admin' ? '#B45309' : 'var(--primary)',
+            borderRadius: 'var(--radius-control)',
+            fontWeight: 600,
+            background: userRole === 'admin' ? 'var(--warning-light)' : 'var(--primary-light)',
+            color: userRole === 'admin' ? 'var(--warning)' : 'var(--primary)',
             border: `1px solid ${userRole === 'admin' ? '#FDE68A' : 'var(--border)'}`,
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
           }}
         >
-          <span>{userRole === 'admin' ? '🏛️' : '🎓'}</span>
-          <span>{userRole === 'admin' ? 'Faculty Admin' : 'Student'}</span>
+          <span>{userRole === 'admin' ? 'Faculty Admin' : 'Student Workspace'}</span>
         </span>
 
         {/* Dark Mode Toggle */}
@@ -145,14 +144,15 @@ export default function Header({
           style={{
             background: 'var(--bg-3)',
             border: '1px solid var(--border)',
-            borderRadius: '50%',
-            width: '36px',
-            height: '36px',
+            borderRadius: 'var(--radius-control)',
+            padding: '4px 10px',
             cursor: 'pointer',
-            fontSize: '16px',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: 'var(--text-1)',
           }}
         >
-          {darkMode ? '☀️' : '🌙'}
+          {darkMode ? 'Light' : 'Dark'}
         </button>
 
         {/* Notifications Popover */}
@@ -166,13 +166,16 @@ export default function Header({
               background: 'var(--bg-3)',
               border: '1px solid var(--border)',
               borderRadius: '50%',
-              width: '36px',
-              height: '36px',
+              width: '32px',
+              height: '32px',
               cursor: 'pointer',
-              fontSize: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-1)',
             }}
           >
-            🔔
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
             {unreadCount > 0 && (
               <span
                 id="notifBadge"
@@ -252,7 +255,7 @@ export default function Header({
                             }}
                             title="Dismiss notification"
                           >
-                            ✕
+                            Dismiss
                           </button>
                         </div>
                       </div>

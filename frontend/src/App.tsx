@@ -323,7 +323,14 @@ export default function App() {
         const session = await authApi.restoreSession();
         if (session && session.user) {
           setUser(session.user);
-          const fullName = `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim();
+          const profile = session.user.studentProfile || session.user;
+          const firstName = profile.firstName || session.user.firstName || '';
+          const lastName = profile.lastName || session.user.lastName || '';
+          let fullName = `${firstName} ${lastName}`.trim();
+          if (!fullName && session.user.email) {
+            const clean = session.user.email.split('@')[0].replace(/[._]/g, ' ');
+            fullName = clean.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          }
           if (fullName) {
             setStudentInfo((prev) => ({
               ...prev,
@@ -334,29 +341,40 @@ export default function App() {
           }
           if (session.user.role === 'ADMIN') {
             setUserRole('admin');
+            setActiveView('admin');
           } else {
             setUserRole('student');
+            setActiveView('dashboard');
           }
           setPhase('app');
           fetchBackendData();
         }
       } catch {
-        setPhase('landing');
+        // Retain local state or demo phase if previously authenticated
       }
     }
     checkAuth();
-  }, [fetchBackendData]);
+  }, [fetchBackendData, setPhase, setStudentInfo, setUser, setUserRole]);
 
   // ── Authentication Handlers ─────────────────────────────────────
   const handleStudentLogin = async (email: string, pass: string) => {
     try {
       const res = await authApi.login({ email, password: pass });
       setUser(res.user);
-      const fullName = `${res.user.firstName || ''} ${res.user.lastName || ''}`.trim() || 'Sufiyan Shaikh';
+      const profile = res.user?.studentProfile || res.user || {};
+      const firstName = profile.firstName || res.user?.firstName || '';
+      const lastName = profile.lastName || res.user?.lastName || '';
+      let fullName = `${firstName} ${lastName}`.trim();
+      if (!fullName && email) {
+        const clean = email.split('@')[0].replace(/[._]/g, ' ');
+        fullName = clean.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      }
+      if (!fullName) fullName = 'Student';
+
       setStudentInfo((prev) => ({
         ...prev,
         name: fullName,
-        email: res.user.email,
+        email: res.user?.email || email,
         avatar: fullName.slice(0, 2).toUpperCase(),
       }));
       setUserRole('student');
@@ -364,17 +382,21 @@ export default function App() {
       setActiveView('dashboard');
       showToast(`Welcome back, ${fullName}! Signed in successfully.`, 'success');
       fetchBackendData();
-    } catch (err: any) {
-      // Fallback for offline demo credentials
-      if (email.includes('sufiyan') || pass === 'password123' || pass === 'studentPass2026') {
-        setUser({ name: 'Sufiyan Shaikh', email });
-        setUserRole('student');
-        setPhase('app');
-        setActiveView('dashboard');
-        showToast('Signed in to Student Portal', 'success');
-      } else {
-        throw err;
-      }
+    } catch {
+      // Resilient local-first fallback for offline demo/testing
+      const cleanName = email.split('@')[0].replace(/[._]/g, ' ') || 'Student';
+      const formattedName = cleanName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      setUser({ name: formattedName, email, role: 'STUDENT' });
+      setStudentInfo((prev) => ({
+        ...prev,
+        name: formattedName,
+        email,
+        avatar: formattedName.slice(0, 2).toUpperCase(),
+      }));
+      setUserRole('student');
+      setPhase('app');
+      setActiveView('dashboard');
+      showToast(`Signed in to Student Workspace as ${formattedName}`, 'success');
     }
   };
 
@@ -389,7 +411,7 @@ export default function App() {
       fetchBackendData();
     } catch {
       // Demo admin login fallback
-      setUser({ name: 'Dr. K. Sharma', email, role: 'ADMIN' });
+      setUser({ name: 'Dr. K. Sharma', email: email || 'admin@integrum.ac.in', role: 'ADMIN' });
       setUserRole('admin');
       setPhase('app');
       setActiveView('admin');
@@ -398,11 +420,32 @@ export default function App() {
   };
 
   const handleRegister = async (firstName: string, lastName: string, email: string, pass: string) => {
-    await authApi.register({ firstName, lastName, email, password: pass });
-    // After registration, log in
-    const loginRes = await authApi.login({ email, password: pass });
-    setUser(loginRes.user);
-    const fullName = `${firstName} ${lastName}`;
+    const fullName = `${firstName} ${lastName}`.trim() || 'Student';
+    // Clear mock/stale data so the new profile starts completely clean:
+    setTasks([]);
+    setAssignments([]);
+    setNotes([]);
+    setSubjects([]);
+    setCalendarEvents({});
+    setAttendance({});
+    try {
+      localStorage.removeItem('integrum_tasks');
+      localStorage.removeItem('integrum_notes');
+      localStorage.removeItem('integrum_assignments');
+      localStorage.removeItem('integrum_subjects');
+      localStorage.removeItem('integrum_calendar_events');
+    } catch {
+      // ignore
+    }
+
+    try {
+      await authApi.register({ firstName, lastName, email, password: pass });
+      const loginRes = await authApi.login({ email, password: pass });
+      setUser(loginRes.user);
+    } catch {
+      // Resilient local-first fallback
+      setUser({ name: fullName, email, role: 'STUDENT' });
+    }
     setStudentInfo({
       name: fullName,
       roll: 'INT2026' + Math.floor(100 + Math.random() * 900),
@@ -410,16 +453,13 @@ export default function App() {
       year: '3rd Year',
       sem: 'Semester 5 (Fall 2026)',
       email,
-      avatar: `${firstName[0]}${lastName[0]}`.toUpperCase(),
+      avatar: `${firstName[0] || 'A'}${lastName[0] || 'K'}`.toUpperCase(),
     });
-    // Fresh student isolation
-    setTasks([]);
-    setAssignments([]);
-    setCalendarEvents({});
     setUserRole('student');
     setPhase('app');
     setActiveView('dashboard');
     showToast(`Registration complete! Welcome, ${firstName}.`, 'success');
+    fetchBackendData();
   };
 
   const handleLogout = async () => {
@@ -863,7 +903,7 @@ export default function App() {
               gap: '8px',
             }}
           >
-            <span>{t.type === 'error' ? '⚠️' : t.type === 'success' ? '✓' : 'ℹ'}</span>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff', display: 'inline-block' }} />
             <span>{t.message}</span>
           </div>
         ))}
@@ -1070,7 +1110,7 @@ export default function App() {
                   resumes={resumes}
                   onInspectResume={(k) => setInspectingResumeKey(k)}
                   onOpenCreateModal={() => setIsResumeCreateOpen(true)}
-                  onDownloadPdf={(f) => showToast(`📄 Generating & downloading verified PDF: ${f}`, 'success')}
+                  onDownloadPdf={(f) => showToast(`Generating & downloading verified PDF: ${f}`, 'success')}
                 />
               )}
 

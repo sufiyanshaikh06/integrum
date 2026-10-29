@@ -23,4 +23,5 @@ backend/test-results/
 scratch/
 Integrum Handoff packages/
 
+.taste-skill/
 .worktrees/

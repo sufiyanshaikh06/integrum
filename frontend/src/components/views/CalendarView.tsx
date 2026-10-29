@@ -159,10 +159,10 @@ export default function CalendarView({ assignments, events, onOpenEventModal }: 
                 <span className="badge badge-error">Theory Exam</span>
               </div>
               <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-2)' }}>
-                <div>⏰ <b>Time:</b> {examDays[selectedDay].time}</div>
-                <div>📍 <b>Venue & Seating:</b> {examDays[selectedDay].venue}</div>
-                <div>📋 <b>Centre:</b> Examination Hall B - Centre Code 042 (Main Campus)</div>
-                <div>⚠️ <b>Reporting:</b> Closed book theory paper. Hall ticket mandatory.</div>
+                <div><b>Time:</b> {examDays[selectedDay].time}</div>
+                <div><b>Venue & Seating:</b> {examDays[selectedDay].venue}</div>
+                <div><b>Centre:</b> Examination Hall B - Centre Code 042 (Main Campus)</div>
+                <div><b>Reporting:</b> Closed book theory paper. Hall ticket mandatory.</div>
               </div>
             </div>
           ) : (

@@ -25,21 +25,21 @@ export default function ProfileView({
 }: ProfileProps) {
   const [name, setName] = useState(studentInfo.name);
   const [email, setEmail] = useState(studentInfo.email);
-  const [isTicketModalOpen, setIsTicketModalOpen] = useState(false);
 
+  // Interface & Notification Settings
   const [alertsEnabled, setAlertsEnabled] = useState(true);
-  const [bunkWarnEnabled, setBunkWarnEnabled] = useState(true);
+  const [attendWarnEnabled, setAttendWarnEnabled] = useState(true);
   const [aiDigestEnabled, setAiDigestEnabled] = useState(false);
+  const [compactDensity, setCompactDensity] = useState(false);
 
   const handleSave = (e: FormEvent) => {
     e.preventDefault();
-    onSaveProfile(name, email);
-    showToast('Profile credentials updated successfully!', 'success');
-  };
-
-  const downloadHallTicket = () => {
-    setIsTicketModalOpen(true);
-    showToast('📄 Opened October 2026 Examination Hall Ticket preview', 'success');
+    if (!name.trim() || !email.trim()) {
+      showToast('Name and email cannot be empty', 'error');
+      return;
+    }
+    onSaveProfile(name.trim(), email.trim());
+    showToast('Profile credentials saved successfully!', 'success');
   };
 
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -50,6 +50,7 @@ export default function ProfileView({
       try {
         const json = JSON.parse(event.target?.result as string);
         onImportBackup?.(json);
+        showToast('Workspace backup restored successfully!', 'success');
       } catch {
         showToast('Invalid JSON backup file', 'error');
       }
@@ -60,280 +61,246 @@ export default function ProfileView({
   return (
     <div className="view active" id="v-profile">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Student Profile & Settings</h2>
+          <h2 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 800 }}>Profile & Workspace Settings</h2>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
-            Manage identity credentials, examination seat verification, security, and notification preferences.
+            Manage account credentials, display preferences, notifications, and local workspace data portability.
           </p>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
-        {/* Academic Credentials Card */}
-        <div className="card" style={{ padding: '24px' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: 800 }}>Academic Identity & Venue</h3>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '24px', marginBottom: '24px' }}>
+        {/* 1. Student Profile & Credentials Form */}
+        <div className="card" style={{ padding: '28px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '18px', marginBottom: '24px', paddingBottom: '20px', borderBottom: '1px solid var(--border)' }}>
             <div
               style={{
-                width: '64px',
-                height: '64px',
+                width: '68px',
+                height: '68px',
                 borderRadius: '50%',
-                background: 'var(--primary)',
+                background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)',
                 color: '#fff',
-                fontSize: '24px',
+                fontSize: '26px',
                 fontWeight: 900,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(15, 76, 66, 0.25)',
+                flexShrink: 0,
               }}
             >
-              {studentInfo.avatar}
+              {studentInfo.avatar || name.charAt(0) || 'S'}
             </div>
             <div>
-              <strong style={{ fontSize: '1.2rem', display: 'block' }}>{studentInfo.name}</strong>
-              <small style={{ color: 'var(--text-3)' }}>Roll: <b>{studentInfo.roll}</b> · {studentInfo.year}</small>
+              <strong style={{ fontSize: '1.25rem', display: 'block', color: 'var(--text-1)' }}>{name}</strong>
+              <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '2px', fontWeight: 600 }}>
+                Roll / PRN: <span style={{ color: 'var(--text-1)' }}>{studentInfo.roll || 'CS2026-042'}</span>
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--text-3)', marginTop: '1px' }}>
+                {studentInfo.branch || 'Computer Science & Engineering'} · Semester {studentInfo.sem || '5'}
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ color: 'var(--text-3)' }}>Department / Branch:</span>
-              <b>{studentInfo.branch}</b>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ color: 'var(--text-3)' }}>Current Semester:</span>
-              <b>{studentInfo.sem}</b>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ color: 'var(--text-3)' }}>Exam Centre Allocated:</span>
-              <b>Auditorium Hall 4A · Metropolitan Centre 042</b>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ color: 'var(--text-3)' }}>Seating Row & Bench:</span>
-              <b>Row 3 · Bench B-14</b>
-            </div>
-          </div>
+          <h3 style={{ margin: '0 0 16px 0', fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-1)' }}>
+            Edit Account Credentials
+          </h3>
 
-          <button
-            className="btn btn-primary"
-            onClick={downloadHallTicket}
-            style={{ width: '100%', marginTop: '20px' }}
-          >
-            Download Hall Ticket
-          </button>
-        </div>
-
-        {/* Profile Credentials Form */}
-        <div className="card" style={{ padding: '24px' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: 800 }}>Profile Credentials</h3>
-
-          <form onSubmit={handleSave}>
-            <div className="form-group" style={{ marginBottom: '14px' }}>
-              <label className="form-label">Full Name</label>
+          <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', marginBottom: '6px' }}>
+                Full Student Name
+              </label>
               <input
-                className="form-input"
+                className="form-input form-input-underline"
                 id="profNameInput"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Sufiyan Shaikh"
                 required
               />
             </div>
 
-            <div className="form-group" style={{ marginBottom: '14px' }}>
-              <label className="form-label">University Email Address</label>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', marginBottom: '6px' }}>
+                University Email Address
+              </label>
               <input
-                className="form-input"
+                className="form-input form-input-underline"
+                id="profEmailInput"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="e.g. student@university.edu"
                 required
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
-              Save Profile Details
-            </button>
+            <div style={{ marginTop: '10px' }}>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                style={{ padding: '10px 24px', fontSize: '13px', fontWeight: 700 }}
+              >
+                Save Profile Details
+              </button>
+            </div>
           </form>
-
-          {/* Security & Password */}
-          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-            <h4 style={{ margin: '0 0 10px 0', fontSize: '1rem', fontWeight: 800 }}>Security & Password</h4>
-            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: 'var(--text-2)' }}>
-              Multi-factor authentication is active on student university sessions.
-            </p>
-            <button className="btn btn-outline" onClick={onOpenPasswordModal} style={{ width: '100%' }}>
-              Change Password
-            </button>
-          </div>
         </div>
 
-        {/* Notification Preferences & Theme */}
-        <div className="card" style={{ padding: '24px' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: 800 }}>Preferences & Theme</h3>
+        {/* 2. Display & Interface Settings */}
+        <div className="card" style={{ padding: '28px', display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ margin: '0 0 18px 0', fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-1)' }}>
+            Display &amp; Interface Settings
+          </h3>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            {/* Theme Toggle */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px', background: 'var(--bg-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
               <div>
-                <strong style={{ fontSize: '13px', display: 'block' }}>Examination & Deadline Alerts</strong>
-                <small style={{ color: 'var(--text-3)' }}>In-app and reminder popups</small>
-              </div>
-              <input
-                type="checkbox"
-                checked={alertsEnabled}
-                onChange={() => {
-                  setAlertsEnabled(!alertsEnabled);
-                  showToast(`Examination alerts ${!alertsEnabled ? 'enabled' : 'disabled'}`, 'info');
-                }}
-                style={{ width: '18px', height: '18px', accentColor: 'var(--primary)' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <strong style={{ fontSize: '13px', display: 'block' }}>Safe-Bunk Attendance Warnings</strong>
-                <small style={{ color: 'var(--text-3)' }}>Alerts when course falls below 75%</small>
-              </div>
-              <input
-                type="checkbox"
-                checked={bunkWarnEnabled}
-                onChange={() => {
-                  setBunkWarnEnabled(!bunkWarnEnabled);
-                  showToast(`Attendance warnings ${!bunkWarnEnabled ? 'enabled' : 'disabled'}`, 'info');
-                }}
-                style={{ width: '18px', height: '18px', accentColor: 'var(--primary)' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <strong style={{ fontSize: '13px', display: 'block' }}>AI Study Digest</strong>
-                <small style={{ color: 'var(--text-3)' }}>Daily morning revision recommendations</small>
-              </div>
-              <input
-                type="checkbox"
-                checked={aiDigestEnabled}
-                onChange={() => {
-                  setAiDigestEnabled(!aiDigestEnabled);
-                  showToast(`AI Study digest ${!aiDigestEnabled ? 'enabled' : 'disabled'}`, 'info');
-                }}
-                style={{ width: '18px', height: '18px', accentColor: 'var(--primary)' }}
-              />
-            </div>
-
-            <div style={{ marginTop: '12px', paddingTop: '16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <strong style={{ fontSize: '13px', display: 'block' }}>Dark Mode Theme</strong>
-                <small style={{ color: 'var(--text-3)' }}>Toggle high-contrast dark theme</small>
+                <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-1)' }}>Appearance Theme</strong>
+                <small style={{ color: 'var(--text-3)', fontSize: '12px' }}>
+                  Current: <b>{darkMode ? 'High-Contrast Dark' : 'Academic Light'}</b>
+                </small>
               </div>
               <button
+                type="button"
                 className="btn btn-sm btn-outline"
                 onClick={onToggleDarkMode}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}
               >
                 {darkMode ? '☀️ Switch to Light' : '🌙 Switch to Dark'}
               </button>
             </div>
+
+            {/* Layout Density */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px', background: 'var(--bg-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+              <div>
+                <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-1)' }}>Compact Table Density</strong>
+                <small style={{ color: 'var(--text-3)', fontSize: '12px' }}>Reduces padding in tables &amp; lists</small>
+              </div>
+              <input
+                type="checkbox"
+                checked={compactDensity}
+                onChange={() => {
+                  setCompactDensity(!compactDensity);
+                  showToast(`Compact density ${!compactDensity ? 'enabled' : 'disabled'}`, 'info');
+                }}
+                style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+              />
+            </div>
+
+            {/* Notification Toggles */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 800, color: 'var(--text-1)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Notification Preferences
+              </h4>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-1)' }}>Coursework &amp; Deadline Alerts</strong>
+                  <small style={{ color: 'var(--text-3)', fontSize: '11px' }}>In-app alerts for pending assignments</small>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={alertsEnabled}
+                  onChange={() => {
+                    setAlertsEnabled(!alertsEnabled);
+                    showToast(`Deadline alerts ${!alertsEnabled ? 'enabled' : 'disabled'}`, 'info');
+                  }}
+                  style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-1)' }}>Attendance Minimum Standing Warnings</strong>
+                  <small style={{ color: 'var(--text-3)', fontSize: '11px' }}>Notify when attendance nears the 75% cutoff</small>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={attendWarnEnabled}
+                  onChange={() => {
+                    setAttendWarnEnabled(!attendWarnEnabled);
+                    showToast(`Attendance alerts ${!attendWarnEnabled ? 'enabled' : 'disabled'}`, 'info');
+                  }}
+                  style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-1)' }}>AI Study Recommendations</strong>
+                  <small style={{ color: 'var(--text-3)', fontSize: '11px' }}>Daily morning revision suggestions</small>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={aiDigestEnabled}
+                  onChange={() => {
+                    setAiDigestEnabled(!aiDigestEnabled);
+                    showToast(`AI study recommendations ${!aiDigestEnabled ? 'enabled' : 'disabled'}`, 'info');
+                  }}
+                  style={{ width: '18px', height: '18px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Account Security & Password Card */}
+        <div className="card" style={{ padding: '28px', display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ margin: '0 0 14px 0', fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-1)' }}>
+            Account Security &amp; Access
+          </h3>
+          <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: 'var(--text-2)', lineHeight: 1.6 }}>
+            University authentication sessions are safeguarded by cryptographic token verification, HttpOnly browser security cookies, and row-level database ownership.
+          </p>
+
+          <div style={{ padding: '16px', background: 'var(--bg-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 700, fontSize: '13px', marginBottom: '4px' }}>
+              <span>🛡️</span> Active Authenticated Session
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-3)' }}>
+              Protected by isolated student session keys and PostgreSQL tenant constraints.
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={onOpenPasswordModal}
+            style={{ padding: '10px 20px', alignSelf: 'flex-start', fontWeight: 700 }}
+          >
+            Change Account Password
+          </button>
+        </div>
+
+        {/* 4. Local Data Portability & Workspace Storage */}
+        <div className="card" style={{ padding: '28px', display: 'flex', flexDirection: 'column' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-1)' }}>
+            Workspace Backup &amp; Data Portability
+          </h3>
+          <p style={{ margin: '0 0 20px 0', fontSize: '13px', color: 'var(--text-2)', lineHeight: 1.6 }}>
+            Export your entire workspace (tasks, attendance history, notes, and study sprints) to a portable JSON backup file, or restore an existing backup on any device.
+          </p>
+
+          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={onExportBackup}
+              style={{ fontWeight: 700 }}
+            >
+              Export Backup (.json)
+            </button>
+            <label className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0, fontWeight: 700 }}>
+              Import Backup (.json)
+              <input type="file" accept=".json" onChange={handleFileImport} style={{ display: 'none' }} />
+            </label>
           </div>
         </div>
       </div>
     </div>
   );
-        {/* Data Portability & Backup */}
-        <div className="card" style={{ padding: '24px', gridColumn: '1 / -1' }}>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '1.1rem', fontWeight: 800 }}>Workspace Backup & Portability</h3>
-          <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: 'var(--text-2)' }}>
-            Integrum stores your curriculum and progress locally. Export your full workspace to a JSON backup file to transfer between devices or restore anytime.
-          </p>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <button className="btn btn-outline" onClick={onExportBackup}>
-              📥 Export Backup (.json)
-            </button>
-            <label className="btn btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
-              📤 Import Backup (.json)
-              <input type="file" accept=".json" onChange={handleFileImport} style={{ display: 'none' }} />
-            </label>
-          </div>
-        </div>
-
-      {/* Official Hall Ticket Modal Preview */}
-      {isTicketModalOpen && (
-        <div className="modal-overlay open" onClick={() => setIsTicketModalOpen(false)}>
-          <div className="modal-box" style={{ maxWidth: '680px' }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 style={{ margin: 0 }}>University Examination Hall Ticket</h3>
-              <button className="modal-close" onClick={() => setIsTicketModalOpen(false)}>✕</button>
-            </div>
-            <div className="modal-body" style={{ padding: '24px', background: '#ffffff', color: '#111827', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ textAlign: 'center', borderBottom: '2px solid #111827', paddingBottom: '12px', marginBottom: '16px' }}>
-                <h4 style={{ margin: 0, fontSize: '1.1rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  Metropolitan University · Faculty of Technology
-                </h4>
-                <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#4b5563' }}>
-                  Semester 5 (Fall 2026) Official Examination Admit Card
-                </p>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px', marginBottom: '16px', background: '#f9fafb', padding: '12px', borderRadius: '6px' }}>
-                <div>Candidate Name: <b>{studentInfo.name}</b></div>
-                <div>Seat Number: <b>{studentInfo.roll}</b></div>
-                <div>PRN / Roll No: <b>{studentInfo.roll}</b></div>
-                <div>Centre Code: <b>042 · Auditorium Hall 4A</b></div>
-                <div style={{ gridColumn: '1 / -1' }}>Examination Venue: <b>Metropolitan Institute Examination Centre (Hall 4A, Row 3)</b></div>
-              </div>
-
-              <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse', textAlign: 'left', marginBottom: '16px' }}>
-                <thead>
-                  <tr style={{ background: '#e5e7eb', borderBottom: '1px solid #9ca3af' }}>
-                    <th style={{ padding: '6px 8px' }}>Date</th>
-                    <th style={{ padding: '6px 8px' }}>Course Code</th>
-                    <th style={{ padding: '6px 8px' }}>Course Title</th>
-                    <th style={{ padding: '6px 8px' }}>Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                    <td style={{ padding: '6px 8px' }}>Oct 19, 2026</td>
-                    <td style={{ padding: '6px 8px' }}>1105111</td>
-                    <td style={{ padding: '6px 8px' }}>Artificial Intelligence</td>
-                    <td style={{ padding: '6px 8px' }}>02:30 PM</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                    <td style={{ padding: '6px 8px' }}>Oct 21, 2026</td>
-                    <td style={{ padding: '6px 8px' }}>1105112</td>
-                    <td style={{ padding: '6px 8px' }}>Cyber & Information Security</td>
-                    <td style={{ padding: '6px 8px' }}>02:30 PM</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                    <td style={{ padding: '6px 8px' }}>Oct 22, 2026</td>
-                    <td style={{ padding: '6px 8px' }}>1105115</td>
-                    <td style={{ padding: '6px 8px' }}>IKS in Computational Systems</td>
-                    <td style={{ padding: '6px 8px' }}>02:30 PM</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                    <td style={{ padding: '6px 8px' }}>Oct 23, 2026</td>
-                    <td style={{ padding: '6px 8px' }}>1105116</td>
-                    <td style={{ padding: '6px 8px' }}>Software Testing & Quality Assurance</td>
-                    <td style={{ padding: '6px 8px' }}>02:30 PM</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '6px 8px' }}>Oct 28, 2026</td>
-                    <td style={{ padding: '6px 8px' }}>1105118</td>
-                    <td style={{ padding: '6px 8px' }}>Regression Analysis in R (Practical)</td>
-                    <td style={{ padding: '6px 8px' }}>09:00 AM</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <div style={{ fontSize: '10px', color: '#6b7280', borderTop: '1px solid #e5e7eb', paddingTop: '8px' }}>
-                * Verified digitally by Controller of Examinations. Carry original College Photo Identity card.
-              </div>
-            </div>
-            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <button className="btn btn-secondary" onClick={() => setIsTicketModalOpen(false)}>Close</button>
-              <button className="btn btn-primary" onClick={() => window.print()}>🖨️ Print / Save as PDF</button>
-            </div>
-          </div>
-        </div>
-      )}
 }

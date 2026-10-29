@@ -35,7 +35,7 @@ export default function DashboardView({
   const totalPres = attendList.reduce((acc, c) => acc + c.present, 0);
   const totalHeld = attendList.reduce((acc, c) => acc + c.total, 0);
   const avgAttend = totalHeld > 0 ? ((totalPres / totalHeld) * 100).toFixed(1) : '85.2';
-  const overallBunks = Math.floor(totalPres / 0.75 - totalHeld);
+  const attendanceBuffer = Math.floor(totalPres / 0.75 - totalHeld);
 
   const pendingAsgns = assignments.filter((a) => a.status === 'Pending');
   const activeRems = reminders.filter((r) => r.status === 'active');
@@ -47,7 +47,7 @@ export default function DashboardView({
       <div className="welcome-banner welcome" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)' }}>
-            Welcome back, {studentInfo.name} 👋
+            Welcome back, {studentInfo.name}
           </h2>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
             {studentInfo.branch} · {studentInfo.sem} · Roll: <strong>{studentInfo.roll}</strong>
@@ -78,7 +78,7 @@ export default function DashboardView({
           <div className="stat-val" style={{ color: 'var(--success)', fontSize: '1.8rem', fontWeight: 800 }}>
             {avgAttend}%
           </div>
-          <small style={{ color: overallBunks >= 0 ? 'var(--text-2)' : 'var(--error)' }}>Safe bunk margin: <strong>{overallBunks >= 0 ? `+${overallBunks} classes` : `${overallBunks} classes (Recovery required)`}</strong></small>
+          <small style={{ color: attendanceBuffer >= 0 ? 'var(--text-2)' : 'var(--error)' }}>Attendance clearance: <strong>{attendanceBuffer >= 0 ? `+${attendanceBuffer} classes buffer` : `${attendanceBuffer} classes (Recovery required)`}</strong></small>
         </div>
 
         <div className="stat-card card">

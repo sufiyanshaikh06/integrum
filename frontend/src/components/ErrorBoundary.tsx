@@ -47,7 +47,9 @@ export default class ErrorBoundary extends Component<Props, State> {
             background: 'var(--card-bg, #ffffff)',
           }}
         >
-          <div style={{ fontSize: '3rem', marginBottom: '16px' }}>🛡️</div>
+          <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+          </div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '0 0 8px 0' }}>
             {this.props.fallbackViewName
               ? `Unable to load ${this.props.fallbackViewName}`

@@ -419,8 +419,12 @@ async function main() {
     const studentBEmail = `ahmed.khan.${randomBytes(4).toString('hex')}@example.com`;
     await pageB.fill('.form-group:has-text("First Name") input', 'Ahmed');
     await pageB.fill('.form-group:has-text("Last Name") input', 'Khan');
-    await pageB.fill('input[placeholder*="ahmed.khan@example.com"]', studentBEmail);
-    await pageB.fill('#phase-login form input[type="password"]', 'Password123!');
+    await pageB.fill('.form-group:has-text("Email") input', studentBEmail);
+    await pageB.fill('input[name="password"]', 'Password123!');
+    const confirmInput = pageB.locator('input[name="confirmPassword"]');
+    if ((await confirmInput.count()) > 0) {
+      await confirmInput.fill('Password123!');
+    }
     await pageB.click('button[type="submit"]:has-text("Complete Registration")');
 
     // Wait for Student B dashboard

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ActiveView, UserRole } from '../types';
+import IntegrumLogo from './IntegrumLogo';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -32,24 +33,13 @@ export default function Sidebar({
       <aside className={`sidebar ${isOpen ? 'open' : ''}`} id="sidebar">
         <div className="sb-brand">
           <div className="sb-logo">
-            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path
-                d="M50 5C25.1 5 5 25.1 5 50s20.1 45 45 45 45-20.1 45-45S74.9 5 50 5z"
-                stroke="#7C3AED"
-                strokeWidth="9"
-                strokeLinecap="round"
-                strokeDasharray="255"
-                strokeDashoffset="45"
-              />
-              <circle cx="54" cy="30" r="5.5" fill="#7C3AED" />
-              <rect x="49" y="40" width="10" height="32" rx="5" fill="#7C3AED" />
-            </svg>
+            <IntegrumLogo size={34} style={{ color: 'var(--primary)' }} />
           </div>
           <div>
-            <h1>Integrum</h1>
-            <small id="sbRoleSubtitle">
-              {userRole === 'admin' ? 'University Administration Portal' : 'Student Success Platform'}
-            </small>
+            <h1 style={{ fontSize: '18px', fontWeight: 700 }}>Integrum</h1>
+            <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>
+              {userRole === 'admin' ? 'Faculty Administration' : 'Student Workspace'}
+            </div>
           </div>
         </div>
 
@@ -58,55 +48,55 @@ export default function Sidebar({
           /* EXCLUSIVE FACULTY & ADMINISTRATION PORTAL NAVIGATION */
           <nav className="sb-nav" id="adminSidebarNav">
             <div className="sb-section">
-              <div className="sb-section-label">Governance</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Governance</div>
               <div
                 className={`sb-item ${activeView === 'admin' ? 'active' : ''}`}
                 onClick={() => onNavigate('admin')}
                 id="sbAdminItem"
               >
-                <span className="sb-icon">🏛️</span>Administration
+                Administration
               </div>
               <div
                 className={`sb-item ${activeView === 'analytics' ? 'active' : ''}`}
                 onClick={() => onNavigate('analytics')}
               >
-                <span className="sb-icon">📈</span>Campus Analytics
+                Campus Analytics
               </div>
             </div>
 
             <div className="sb-section">
-              <div className="sb-section-label">Institutional Records</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Institutional Records</div>
               <div
                 className={`sb-item ${activeView === 'admin' ? 'active' : ''}`}
                 onClick={() => onNavigate('admin')}
               >
-                <span className="sb-icon">📢</span>Official Circulars
+                Official Circulars
               </div>
               <div
                 className={`sb-item ${activeView === 'admin' ? 'active' : ''}`}
                 onClick={() => onNavigate('admin')}
               >
-                <span className="sb-icon">👥</span>Student Directory
+                Student Directory
               </div>
             </div>
 
             <div className="sb-section">
-              <div className="sb-section-label">System</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Settings</div>
               <div
                 className={`sb-item ${activeView === 'profile' ? 'active' : ''}`}
                 onClick={() => onNavigate('profile')}
               >
-                <span className="sb-icon">⚙️</span>Faculty Settings
+                Faculty Settings
               </div>
             </div>
 
             <div style={{ marginTop: 'auto', padding: '16px' }}>
               <button
-                className="btn btn-outline btn-sm logout-btn"
+                className="lp-button secondary"
                 onClick={onLogout}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                style={{ width: '100%', fontSize: '12px', padding: '8px' }}
               >
-                <span>🚪</span> Sign Out (Faculty)
+                Sign Out (Faculty)
               </button>
             </div>
           </nav>
@@ -114,48 +104,48 @@ export default function Sidebar({
           /* EXCLUSIVE STUDENT SUCCESS PLATFORM NAVIGATION */
           <nav className="sb-nav" id="studentSidebarNav">
             <div className="sb-section">
-              <div className="sb-section-label">Main</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Overview</div>
               <div
                 className={`sb-item ${activeView === 'dashboard' ? 'active' : ''}`}
                 onClick={() => onNavigate('dashboard')}
               >
-                <span className="sb-icon">📊</span>Dashboard
+                Dashboard
               </div>
             </div>
 
             <div className="sb-section">
-              <div className="sb-section-label">Learning</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Learning</div>
               <div className="sb-item" onClick={() => setLearningOpen(!learningOpen)}>
-                <span className="sb-icon">📚</span>Academic<span className="sb-arrow">{learningOpen ? '▾' : '›'}</span>
+                Academic Courses <span className="sb-arrow">{learningOpen ? '▾' : '›'}</span>
               </div>
               {learningOpen && (
                 <div className="sb-sub open">
                   <div
-                    className={`sb-sub-item ${activeView === 'study' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'study' ? 'active' : ''}`}
                     onClick={() => onNavigate('study')}
                   >
                     Study Planner
                   </div>
                   <div
-                    className={`sb-sub-item sb-item ${activeView === 'notes' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'notes' ? 'active' : ''}`}
                     onClick={() => onNavigate('notes')}
                   >
                     Study Notes
                   </div>
                   <div
-                    className={`sb-sub-item sb-item ${activeView === 'asgn' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'asgn' ? 'active' : ''}`}
                     onClick={() => onNavigate('asgn')}
                   >
                     Courses & Assignments
                   </div>
                   <div
-                    className={`sb-sub-item ${activeView === 'attend' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'attend' ? 'active' : ''}`}
                     onClick={() => onNavigate('attend')}
                   >
                     Attendance Tracker
                   </div>
                   <div
-                    className={`sb-sub-item sb-item ${activeView === 'cal' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'cal' ? 'active' : ''}`}
                     onClick={() => onNavigate('cal')}
                   >
                     Calendar & Deadlines
@@ -164,18 +154,18 @@ export default function Sidebar({
               )}
 
               <div className="sb-item" onClick={() => setProdOpen(!prodOpen)}>
-                <span className="sb-icon">⚡</span>Productivity<span className="sb-arrow">{prodOpen ? '▾' : '›'}</span>
+                Productivity <span className="sb-arrow">{prodOpen ? '▾' : '›'}</span>
               </div>
               {prodOpen && (
                 <div className="sb-sub open">
                   <div
-                    className={`sb-sub-item sb-item ${activeView === 'tasks' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'tasks' ? 'active' : ''}`}
                     onClick={() => onNavigate('tasks')}
                   >
                     Tasks
                   </div>
                   <div
-                    className={`sb-sub-item ${activeView === 'rems' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'rems' ? 'active' : ''}`}
                     onClick={() => onNavigate('rems')}
                   >
                     Reminders
@@ -185,26 +175,26 @@ export default function Sidebar({
             </div>
 
             <div className="sb-section">
-              <div className="sb-section-label">Growth</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Career</div>
               <div className="sb-item" onClick={() => setCareerOpen(!careerOpen)}>
-                <span className="sb-icon">💼</span>Career<span className="sb-arrow">{careerOpen ? '▾' : '›'}</span>
+                Career Hub <span className="sb-arrow">{careerOpen ? '▾' : '›'}</span>
               </div>
               {careerOpen && (
                 <div className="sb-sub open">
                   <div
-                    className={`sb-sub-item ${activeView === 'resumes' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'resumes' ? 'active' : ''}`}
                     onClick={() => onNavigate('resumes')}
                   >
                     Resumes & ATS
                   </div>
                   <div
-                    className={`sb-sub-item ${activeView === 'skills' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'skills' ? 'active' : ''}`}
                     onClick={() => onNavigate('skills')}
                   >
                     Skills Matrix
                   </div>
                   <div
-                    className={`sb-sub-item ${activeView === 'jobs' ? 'active' : ''}`}
+                    className={`sb-item sb-sub-item ${activeView === 'jobs' ? 'active' : ''}`}
                     onClick={() => onNavigate('jobs')}
                   >
                     Job Tracking
@@ -214,38 +204,38 @@ export default function Sidebar({
             </div>
 
             <div className="sb-section">
-              <div className="sb-section-label">Insights</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Intelligence</div>
               <div
                 className={`sb-item ${activeView === 'analytics' ? 'active' : ''}`}
                 onClick={() => onNavigate('analytics')}
               >
-                <span className="sb-icon">📈</span>Analytics Hub
+                Analytics Hub
               </div>
               <div
                 className={`sb-item ${activeView === 'ai' ? 'active' : ''}`}
                 onClick={() => onNavigate('ai')}
               >
-                <span className="sb-icon">🤖</span>AI Assistant
+                Academic Advisor
               </div>
             </div>
 
             <div className="sb-section">
-              <div className="sb-section-label">System</div>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Settings</div>
               <div
                 className={`sb-item ${activeView === 'profile' ? 'active' : ''}`}
                 onClick={() => onNavigate('profile')}
               >
-                <span className="sb-icon">👤</span>Profile & Settings
+                Profile & Settings
               </div>
             </div>
 
             <div style={{ marginTop: 'auto', padding: '16px' }}>
               <button
-                className="btn btn-outline btn-sm logout-btn"
+                className="lp-button secondary"
                 onClick={onLogout}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                style={{ width: '100%', fontSize: '12px', padding: '8px' }}
               >
-                <span>🚪</span> Sign Out
+                Sign Out
               </button>
             </div>
           </nav>

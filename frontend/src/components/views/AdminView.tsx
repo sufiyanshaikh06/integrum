@@ -62,7 +62,7 @@ export default function AdminView({
               }
             }}
           >
-            💬 Institutional Support & Demo
+            Institutional Support & Demo
           </button>
           <button className="btn btn-primary" onClick={onOpenAnnounceModal}>
             + Post Circular

@@ -51,13 +51,13 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
   if (selectedCourse) {
     if (isAboveThreshold) {
       maxMissable = Math.max(0, Math.floor(presentCount / 0.75 - totalCount));
-      calcResult = `✅ Safe Bunk Buffer (${currentPct.toFixed(1)}%): You can safely miss up to ${maxMissable} more ${maxMissable === 1 ? 'class' : 'classes'} while maintaining ≥ 75% attendance.`;
+      calcResult = `Attendance Clearance Buffer (${currentPct.toFixed(1)}%): You maintain a safe clearance margin of ${maxMissable} ${maxMissable === 1 ? 'class' : 'classes'} while remaining at or above the 75% requirement.`;
     } else {
       neededClasses = Math.max(1, Math.ceil((0.75 * totalCount - presentCount) / 0.25));
       if (totalCount >= MAX_SEMESTER_LECTURES || neededClasses > remainingInSemester) {
-        calcResult = `⛔ Attendance Recovery Impossible This Semester (${currentPct.toFixed(1)}%): Reaching 75% would require attending ${neededClasses} consecutive classes, but only ${remainingInSemester} ${remainingInSemester === 1 ? 'lecture remains' : 'lectures remain'} in the semester (${MAX_SEMESTER_LECTURES} total limit). Please contact your faculty advisor immediately regarding condonation.`;
+        calcResult = `Attendance Recovery Impossible This Semester (${currentPct.toFixed(1)}%): Reaching 75% would require attending ${neededClasses} consecutive classes, but only ${remainingInSemester} ${remainingInSemester === 1 ? 'lecture remains' : 'lectures remain'} in the semester (${MAX_SEMESTER_LECTURES} total limit). Please contact your faculty advisor immediately regarding condonation.`;
       } else {
-        calcResult = `⚠️ Attendance Deficit (${currentPct.toFixed(1)}%): You must attend the next ${neededClasses} consecutive ${neededClasses === 1 ? 'class' : 'classes'} (out of ${remainingInSemester} remaining this semester) without absence to restore 75% standing.`;
+        calcResult = `Attendance Deficit (${currentPct.toFixed(1)}%): You must attend the next ${neededClasses} consecutive ${neededClasses === 1 ? 'class' : 'classes'} (out of ${remainingInSemester} remaining this semester) without absence to restore 75% standing.`;
       }
     }
   }
@@ -68,7 +68,7 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
       <div className="card" style={{ padding: '24px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Attendance Tracker & Safe-Bunk Calculator</h2>
+            <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Attendance Health & Course Standing</h2>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
               Real-time attendance standing across Semester 5 courses against the mandatory 75% university policy.
             </p>
@@ -156,11 +156,11 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
         </table>
       </div>
 
-      {/* Smart Safe-Bunk Recovery Calculator */}
+      {/* Attendance Standing & Recovery Calculator */}
       <div className="card" style={{ padding: '24px' }}>
-        <h3 style={{ margin: '0 0 10px 0', fontSize: '1.2rem', fontWeight: 800 }}>Smart Safe-Bunk & Recovery Calculator</h3>
+        <h3 style={{ margin: '0 0 10px 0', fontSize: '1.2rem', fontWeight: 800 }}>Course Attendance Standing & Recovery Calculator</h3>
         <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: 'var(--text-2)' }}>
-          Select any course to calculate your exact safe bunk buffer or consecutive attendance requirement.
+          Select any course to calculate your exact attendance clearance margin or consecutive recovery requirement.
         </p>
 
         <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>

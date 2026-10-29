@@ -126,7 +126,7 @@ export default function JobsView({ jobs, onOpenCreateModal, onAdvanceStage, onDe
                               onClick={() => onAdvanceStage(j.id, 'Offered')}
                               style={{ fontSize: '10px' }}
                             >
-                              Offer 🎉
+                              Offer
                             </button>
                             <button
                               className="btn btn-xs btn-outline"
@@ -140,7 +140,7 @@ export default function JobsView({ jobs, onOpenCreateModal, onAdvanceStage, onDe
                         {stg === 'Offered' && (
                           <>
                             <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 700, flex: 1 }}>
-                              ✓ Offer Received
+                              Offer Received
                             </span>
                             <button
                               className="btn btn-xs btn-outline"
@@ -167,10 +167,11 @@ export default function JobsView({ jobs, onOpenCreateModal, onAdvanceStage, onDe
                           <button
                             className="btn btn-xs btn-outline"
                             onClick={() => onDeleteJob(j.id)}
-                            style={{ fontSize: '10px', color: 'var(--text-3)', marginLeft: 'auto' }}
+                            style={{ fontSize: '10px', color: 'var(--text-3)', marginLeft: 'auto', display: 'inline-flex', alignItems: 'center' }}
                             title="Delete application"
+                            aria-label="Delete application"
                           >
-                            🗑️
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                           </button>
                         )}
                       </div>
