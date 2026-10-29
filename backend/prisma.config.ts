@@ -21,5 +21,6 @@ export default defineConfig({
   },
   datasource: {
     url: migrationUrl,
+    ...(process.env["SHADOW_DATABASE_URL"] ? { shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"] } : {}),
   },
 });

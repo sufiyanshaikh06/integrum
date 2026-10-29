@@ -82,7 +82,12 @@ export default function SkillsView({ skills, onOpenCreateModal }: SkillsProps) {
 
       {/* Skills Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
-        {filteredSkills.map((s, idx) => {
+        {filteredSkills.length === 0 ? (
+          <div className="card" style={{ padding: '32px', textAlign: 'center', gridColumn: '1 / -1', color: 'var(--text-3)' }}>
+            No technical skills added yet. Click "+ Add Skill" above to build your competencies matrix.
+          </div>
+        ) : (
+          filteredSkills.map((s, idx) => {
           const rating = s.level <= 5 ? s.level : s.level / 20;
           const pct = Math.min(100, Math.round(rating * 20));
 
@@ -108,7 +113,8 @@ export default function SkillsView({ skills, onOpenCreateModal }: SkillsProps) {
               </div>
             </div>
           );
-        })}
+        })
+      )}
       </div>
     </div>
   );

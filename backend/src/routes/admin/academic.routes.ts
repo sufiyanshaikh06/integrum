@@ -14,6 +14,9 @@ import {
   createAcademicTermSchema,
   updateAcademicTermSchema,
   listAcademicTermsQuerySchema,
+  createRegistrationCodeSchema,
+  updateRegistrationCodeSchema,
+  listRegistrationCodesQuerySchema,
 } from '../../schemas/admin/academic.schema.js';
 
 const router = Router();
@@ -45,5 +48,11 @@ router.get('/terms', validateRequest(listAcademicTermsQuerySchema), adminAcademi
 router.get('/terms/:id', adminAcademicController.getAcademicTermById);
 router.patch('/terms/:id', validateRequest(updateAcademicTermSchema), adminAcademicController.updateAcademicTerm);
 router.delete('/terms/:id', adminAcademicController.deleteAcademicTerm);
+
+// ─── REGISTRATION CODES ───────────────────────────────────────────────────
+router.post('/registration-codes', validateRequest(createRegistrationCodeSchema), adminAcademicController.createRegistrationCode);
+router.get('/registration-codes', validateRequest(listRegistrationCodesQuerySchema), adminAcademicController.listRegistrationCodes);
+router.patch('/registration-codes/:id', validateRequest(updateRegistrationCodeSchema), adminAcademicController.updateRegistrationCode);
+router.patch('/registration-codes/:id/toggle', adminAcademicController.toggleRegistrationCode);
 
 export default router;

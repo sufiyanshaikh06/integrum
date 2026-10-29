@@ -6,6 +6,7 @@ interface SidebarProps {
   isOpen: boolean;
   activeView: ActiveView;
   userRole: UserRole;
+  isInstitutional?: boolean;
   onClose: () => void;
   onNavigate: (view: ActiveView) => void;
   onLogout: () => void;
@@ -15,6 +16,7 @@ export default function Sidebar({
   isOpen,
   activeView,
   userRole,
+  isInstitutional = true,
   onClose,
   onNavigate,
   onLogout,
@@ -138,12 +140,14 @@ export default function Sidebar({
                   >
                     Courses & Assignments
                   </div>
-                  <div
-                    className={`sb-item sb-sub-item ${activeView === 'attend' ? 'active' : ''}`}
-                    onClick={() => onNavigate('attend')}
-                  >
-                    Attendance Tracker
-                  </div>
+                  {isInstitutional && (
+                    <div
+                      className={`sb-item sb-sub-item ${activeView === 'attend' ? 'active' : ''}`}
+                      onClick={() => onNavigate('attend')}
+                    >
+                      Attendance Tracker
+                    </div>
+                  )}
                   <div
                     className={`sb-item sb-sub-item ${activeView === 'cal' ? 'active' : ''}`}
                     onClick={() => onNavigate('cal')}
@@ -177,7 +181,7 @@ export default function Sidebar({
             <div className="sb-section">
               <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-3)', padding: '8px 12px 4px' }}>Career</div>
               <div className="sb-item" onClick={() => setCareerOpen(!careerOpen)}>
-                Career Hub <span className="sb-arrow">{careerOpen ? '▾' : '›'}</span>
+                Career & Placements <span className="sb-arrow">{careerOpen ? '▾' : '›'}</span>
               </div>
               {careerOpen && (
                 <div className="sb-sub open">
@@ -197,7 +201,7 @@ export default function Sidebar({
                     className={`sb-item sb-sub-item ${activeView === 'jobs' ? 'active' : ''}`}
                     onClick={() => onNavigate('jobs')}
                   >
-                    Job Tracking
+                    Job & Internship Tracking
                   </div>
                 </div>
               )}
@@ -209,13 +213,13 @@ export default function Sidebar({
                 className={`sb-item ${activeView === 'analytics' ? 'active' : ''}`}
                 onClick={() => onNavigate('analytics')}
               >
-                Analytics Hub
+                Performance Analytics
               </div>
               <div
                 className={`sb-item ${activeView === 'ai' ? 'active' : ''}`}
                 onClick={() => onNavigate('ai')}
               >
-                Academic Advisor
+                AI Assistant
               </div>
             </div>
 

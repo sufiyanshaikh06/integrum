@@ -178,6 +178,45 @@ export const listAcademicTermsQuerySchema = z.object({
   }),
 });
 
+// ─── REGISTRATION CODE SCHEMAS ───────────────────────────────────────────
+
+export const createRegistrationCodeSchema = z.object({
+  body: z.object({
+    code: z
+      .string()
+      .trim()
+      .min(1, 'Registration code is required')
+      .transform((v) => v.toUpperCase()),
+    departmentId: z.string().uuid('Invalid department ID format').optional(),
+    departmentCode: z.string().trim().optional(),
+    departmentName: z.string().trim().optional(),
+    semesterNumber: z.coerce.number().int().min(1).max(12).default(1),
+    academicYear: z.coerce.number().int().min(2000).max(2100).default(2026),
+    maxUses: z.coerce.number().int().min(1).optional().nullable(),
+    isActive: z.boolean().default(true),
+  }),
+});
+
+export const updateRegistrationCodeSchema = z.object({
+  body: z.object({
+    isActive: z.boolean().optional(),
+    maxUses: z.coerce.number().int().min(1).optional().nullable(),
+    semesterNumber: z.coerce.number().int().min(1).max(12).optional(),
+    academicYear: z.coerce.number().int().min(2000).max(2100).optional(),
+  }),
+});
+
+export const listRegistrationCodesQuerySchema = z.object({
+  query: z.object({
+    departmentId: z.string().uuid().optional(),
+    semesterNumber: z.coerce.number().int().optional(),
+    isActive: z
+      .enum(['true', 'false'])
+      .transform((v) => v === 'true')
+      .optional(),
+  }),
+});
+
 // ─── TYPE EXPORTS ─────────────────────────────────────────────────────────
 
 export type CreateDepartmentInput = z.infer<typeof createDepartmentSchema>['body'];
@@ -195,3 +234,7 @@ export type ListMasterSubjectsQuery = z.infer<typeof listMasterSubjectsQuerySche
 export type CreateAcademicTermInput = z.infer<typeof createAcademicTermSchema>['body'];
 export type UpdateAcademicTermInput = z.infer<typeof updateAcademicTermSchema>['body'];
 export type ListAcademicTermsQuery = z.infer<typeof listAcademicTermsQuerySchema>['query'];
+
+export type CreateRegistrationCodeInput = z.infer<typeof createRegistrationCodeSchema>['body'];
+export type UpdateRegistrationCodeInput = z.infer<typeof updateRegistrationCodeSchema>['body'];
+export type ListRegistrationCodesQuery = z.infer<typeof listRegistrationCodesQuerySchema>['query'];

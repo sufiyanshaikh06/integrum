@@ -34,7 +34,7 @@ function verify(token: string, secret: string): JwtPayload {
   if (typeof payload === 'string' || typeof payload.sub !== 'string' ||
       typeof payload.sid !== 'string' || !Number.isInteger(payload.version) ||
       typeof payload.exp !== 'number' || typeof payload.email !== 'string' ||
-      !['STUDENT', 'ADMIN'].includes(payload.role)) throw new Error('Invalid session claims');
+      !['STUDENT', 'ADMIN', 'SUPER_ADMIN', 'INSTITUTION_ADMIN', 'FACULTY'].includes(payload.role)) throw new Error('Invalid session claims');
   return payload as JwtPayload;
 }
 export const verifyAccessToken = (token: string): JwtPayload => verify(token, env.JWT_ACCESS_SECRET);

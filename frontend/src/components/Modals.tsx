@@ -110,32 +110,32 @@ export default function Modals(props: ModalsProps) {
   // Task state
   const [taskTitle, setTaskTitle] = useState('');
   const [taskPriority, setTaskPriority] = useState<'HIGH' | 'MEDIUM' | 'LOW'>('MEDIUM');
-  const [taskSubject, setTaskSubject] = useState('Artificial Intelligence');
+  const [taskSubject, setTaskSubject] = useState('');
 
   // Note state
   const [noteTitle, setNoteTitle] = useState('');
-  const [noteTags, setNoteTags] = useState('exam, algorithms');
+  const [noteTags, setNoteTags] = useState('');
   const [noteContent, setNoteContent] = useState('');
-  const [noteSubject, setNoteSubject] = useState('1105111');
+  const [noteSubject, setNoteSubject] = useState(props.subjects[0]?.code || '');
 
   // Subject state
   const [subjectName, setSubjectName] = useState('');
-  const [subjectCode, setSubjectCode] = useState('CS502');
+  const [subjectCode, setSubjectCode] = useState('');
 
   // Asgn state
   const [asgnTitle, setAsgnTitle] = useState('');
   const [asgnSubjectId, setAsgnSubjectId] = useState(props.subjects[0]?.id || '');
-  const [asgnDueDate, setAsgnDueDate] = useState('2026-10-31');
+  const [asgnDueDate, setAsgnDueDate] = useState('');
   const [asgnPriority, setAsgnPriority] = useState<'HIGH' | 'MEDIUM' | 'LOW'>('HIGH');
 
   // Rem state
   const [remTitle, setRemTitle] = useState('');
-  const [remTime, setRemTime] = useState('Tomorrow 10:00 AM');
+  const [remTime, setRemTime] = useState('');
   const [remDesc, setRemDesc] = useState('');
 
   // Event state
   const [eventTitle, setEventTitle] = useState('');
-  const [eventDate, setEventDate] = useState('2026-10-28T10:00');
+  const [eventDate, setEventDate] = useState('');
   const [eventDesc, setEventDesc] = useState('');
 
   // Resume create state
@@ -170,13 +170,13 @@ export default function Modals(props: ModalsProps) {
     { label: 'Academic Notes Manager', view: 'notes', keywords: ['notes', 'study notes', 'cheatsheet', 'lecture', 'revision'] },
     { label: 'Courses & Assignments', view: 'asgn', keywords: ['courses', 'assignments', 'homework', 'curriculum', 'subjects', 'syllabus'] },
     { label: 'Attendance Health & Course Standing', view: 'attend', keywords: ['attendance', 'eligibility', 'standing', 'calculator', '75%', 'present', 'absent'] },
-    { label: 'October 2026 Examination Calendar', view: 'cal', keywords: ['calendar', 'exam', 'dates', 'deadlines', 'agenda', 'october'] },
-    { label: 'Productivity Tasks', view: 'tasks', keywords: ['tasks', 'todo', 'checklist', 'atomic', 'w07'] },
+    { label: 'Academic & Examination Calendar', view: 'cal', keywords: ['calendar', 'exam', 'dates', 'deadlines', 'agenda'] },
+    { label: 'Productivity Tasks', view: 'tasks', keywords: ['tasks', 'todo', 'checklist', 'atomic'] },
     { label: 'Reminders & Examination Alerts', view: 'rems', keywords: ['reminders', 'alerts', 'notifications', 'alarm'] },
     { label: 'Resume Versions & ATS Audit', view: 'resumes', keywords: ['resumes', 'ats', 'cv', 'audit', 'score', 'keywords'] },
     { label: 'Technical Skills Matrix', view: 'skills', keywords: ['skills', 'matrix', 'competencies', 'gap analysis', 'ratings'] },
     { label: 'Placement & Job Tracking', view: 'jobs', keywords: ['jobs', 'placement', 'internship', 'kanban', 'applications', 'interview'] },
-    { label: 'Analytics & Success Index', view: 'analytics', keywords: ['analytics', 'success index', 'gpa', 'sgpa', 'simulator', 'metrics'] },
+    { label: 'Analytics & Success Index', view: 'analytics', keywords: ['analytics', 'success index', 'metrics', 'completion'] },
     { label: 'Integrum AI Assistant', view: 'ai', keywords: ['ai', 'assistant', 'advisor', 'bot', 'chat', 'help'] },
     { label: 'University Administration Portal', view: 'admin', keywords: ['admin', 'faculty', 'portal', 'circulars', 'directory', 'students'] },
     { label: 'Student Profile & Settings', view: 'profile', keywords: ['profile', 'settings', 'hall ticket', 'backup', 'export', 'import', 'json'] },
@@ -216,6 +216,7 @@ const filteredCmds = cmdList.filter((c) => {
                 <label className="form-label">Associated Subject</label>
                 <input
                   className="form-input"
+                  placeholder="e.g. Algorithms or General"
                   value={taskSubject}
                   onChange={(e) => setTaskSubject(e.target.value)}
                 />

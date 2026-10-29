@@ -20,9 +20,9 @@ export default function JobsView({ jobs, onOpenCreateModal, onAdvanceStage, onDe
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Placement & Job Tracking</h2>
+          <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Job &amp; Internship Tracking</h2>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
-            Visual kanban board for campus placements, software internships, and off-campus pipelines.
+            Unified pipeline tracking for summer internships, campus placement drives, and off-campus career applications.
           </p>
         </div>
         <button className="btn btn-primary" onClick={onOpenCreateModal}>

@@ -2,6 +2,8 @@ export type Phase = 'landing' | 'login' | 'app';
 
 export type UserRole = 'student' | 'admin';
 
+export type ThemeMode = 'system' | 'light' | 'dark';
+
 export type ActiveView =
   | 'dashboard'
   | 'study'
@@ -33,6 +35,8 @@ export interface StudentInfo {
   sem: string;
   email: string;
   avatar: string;
+  institution?: string;
+  isInstitutional?: boolean;
 }
 
 export interface AdminInfo {
@@ -40,6 +44,58 @@ export interface AdminInfo {
   title: string;
   email: string;
   avatar: string;
+}
+
+export type StaffRole = 'super_admin' | 'institution_admin' | 'department_head' | 'faculty';
+
+export interface InstitutionAdminInfo {
+  name: string;
+  email: string;
+  title: string;
+  institutionName: string;
+  institutionCode: string;
+  website?: string;
+  accreditation?: string;
+  contactPhone?: string;
+  avatar: string;
+  managedDepartmentsCount: number;
+}
+
+export interface DepartmentHeadInfo {
+  name: string;
+  email: string;
+  title: string;
+  departmentName: string;
+  departmentCode: string;
+  institutionName: string;
+  facultyCount: number;
+  studentCount: number;
+  avatar: string;
+}
+
+export interface FacultyInfo {
+  name: string;
+  email: string;
+  title: string;
+  facultyId: string;
+  departmentName: string;
+  specialization: string;
+  officeHours: string;
+  assignedSubjects: string[];
+  avatar: string;
+}
+
+export interface RegistrationCodeItem {
+  id: string;
+  code: string;
+  departmentName: string;
+  departmentCode: string;
+  semesterNumber: number;
+  academicYear: number;
+  maxUses: number | null;
+  usedCount: number;
+  isActive: boolean;
+  createdAt: string;
 }
 
 export interface AttendanceRecord {

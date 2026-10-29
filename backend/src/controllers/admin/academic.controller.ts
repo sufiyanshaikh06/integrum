@@ -16,6 +16,9 @@ import {
   CreateAcademicTermInput,
   UpdateAcademicTermInput,
   ListAcademicTermsQuery,
+  CreateRegistrationCodeInput,
+  UpdateRegistrationCodeInput,
+  ListRegistrationCodesQuery,
 } from '../../schemas/admin/academic.schema.js';
 
 export const adminAcademicController = {
@@ -173,5 +176,40 @@ export const adminAcademicController = {
 
     const deleted = await adminAcademicService.deleteAcademicTerm(actorUserId, req.params.id as string, ipAddress);
     ApiResponse.success(res, 'Academic term deleted successfully', deleted, HTTP_STATUS.OK);
+  }),
+
+  // ─── REGISTRATION CODE CONTROLLERS ───────────────────────────────────────
+
+  createRegistrationCode: asyncHandler(async (req: Request, res: Response) => {
+    const actorUserId = req.user!.id;
+    const data = req.body as CreateRegistrationCodeInput;
+    const ipAddress = req.ip || req.socket.remoteAddress;
+
+    const code = await adminAcademicService.createRegistrationCode(actorUserId, data, ipAddress);
+    ApiResponse.success(res, 'Registration code created successfully', code, HTTP_STATUS.CREATED);
+  }),
+
+  listRegistrationCodes: asyncHandler(async (req: Request, res: Response) => {
+    const query = req.query as unknown as ListRegistrationCodesQuery;
+    const codes = await adminAcademicService.listRegistrationCodes(query);
+    ApiResponse.success(res, 'Registration codes retrieved successfully', codes, HTTP_STATUS.OK);
+  }),
+
+  updateRegistrationCode: asyncHandler(async (req: Request, res: Response) => {
+    const actorUserId = req.user!.id;
+    const data = req.body as UpdateRegistrationCodeInput;
+    const ipAddress = req.ip || req.socket.remoteAddress;
+
+    const updated = await adminAcademicService.updateRegistrationCode(actorUserId, req.params.id as string, data, ipAddress);
+    ApiResponse.success(res, 'Registration code updated successfully', updated, HTTP_STATUS.OK);
+  }),
+
+  toggleRegistrationCode: asyncHandler(async (req: Request, res: Response) => {
+    const actorUserId = req.user!.id;
+    const ipAddress = req.ip || req.socket.remoteAddress;
+    const isActive = typeof req.body?.isActive === 'boolean' ? req.body.isActive : undefined;
+
+    const updated = await adminAcademicService.toggleRegistrationCode(actorUserId, req.params.id as string, isActive, ipAddress);
+    ApiResponse.success(res, 'Registration code status updated successfully', updated, HTTP_STATUS.OK);
   }),
 };

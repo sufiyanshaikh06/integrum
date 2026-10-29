@@ -6,10 +6,24 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import pg from 'pg';
+import dotenv from 'dotenv';
 
 const require = createRequire(import.meta.url);
 const backend = fileURLToPath(new URL('../', import.meta.url));
-const raw = process.env.NATIVE_TEST_ADMIN_URL;
+dotenv.config({ path: path.join(backend, '.env') });
+let defaultAdminUrl;
+if (process.env.DATABASE_URL) {
+  try {
+    const u = new URL(process.env.DATABASE_URL);
+    u.pathname = '/postgres';
+    u.search = '';
+    u.hash = '';
+    defaultAdminUrl = u.toString();
+  } catch (err) {
+    console.warn('Could not derive default maintenance URL from DATABASE_URL:', err);
+  }
+}
+const raw = process.env.NATIVE_TEST_ADMIN_URL || defaultAdminUrl;
 if (!raw) throw new Error('Set NATIVE_TEST_ADMIN_URL to a local PostgreSQL maintenance database URL. Do not paste credentials into chat.');
 let adminUrl;
 try { adminUrl = new URL(raw); } catch { throw new Error('NATIVE_TEST_ADMIN_URL must be a valid PostgreSQL URL.'); }

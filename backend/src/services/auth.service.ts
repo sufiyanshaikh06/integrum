@@ -48,7 +48,35 @@ export const authService = {
     const [rawVerificationToken, hashedVerificationToken] = generateSecureToken();
     const verificationExpires = new Date(Date.now() + TOKEN_TTL_MS);
 
+    if (data.isInstitutional && !data.institutionCode) {
+      throw ApiError.badRequest('An institution registration code is required for institutional student accounts');
+    }
+
     const registered = await prisma.$transaction(async (tx) => {
+      let regCodeRecord: any = null;
+      if (data.institutionCode) {
+        const cleanCode = String(data.institutionCode).trim().toUpperCase();
+        // Row-level lock on the registration code to serialize concurrent claims and prevent over-subscription
+        await tx.$executeRaw`SELECT "id" FROM "DepartmentRegistrationCode" WHERE "code" = ${cleanCode} FOR UPDATE`;
+
+        regCodeRecord = await tx.departmentRegistrationCode.findUnique({
+          where: { code: cleanCode },
+          include: { department: { select: { id: true, name: true, institutionId: true } } },
+        });
+
+        if (!regCodeRecord || !regCodeRecord.isActive) {
+          throw ApiError.badRequest('Invalid or inactive institution registration code');
+        }
+        if (regCodeRecord.maxUses !== null && regCodeRecord.usedCount >= regCodeRecord.maxUses) {
+          throw ApiError.badRequest('This registration code has reached maximum student capacity');
+        }
+
+        await tx.departmentRegistrationCode.update({
+          where: { id: regCodeRecord.id },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
+
       // 1. Create User
       const user = await tx.user.create({
         data: {
@@ -64,6 +92,13 @@ export const authService = {
       await ensureStudentBaseline(tx, user, {
         firstName: data.firstName,
         lastName: data.lastName,
+        isIndependent: !regCodeRecord,
+        rollNumber: data.rollNumber || (regCodeRecord ? '2625001' : undefined),
+        institutionId: regCodeRecord?.department?.institutionId || null,
+        departmentId: regCodeRecord?.departmentId || null,
+        semesterNumber: regCodeRecord?.semesterNumber || 1,
+        academicYear: regCodeRecord?.academicYear || 2026,
+        departmentCode: regCodeRecord?.code,
       });
 
       return {
@@ -87,6 +122,26 @@ export const authService = {
   async login(data: any) {
     const user = await prisma.user.findUnique({
       where: { email: data.email },
+      include: {
+        studentProfile: {
+          include: {
+            department: {
+              include: {
+                institution: true,
+              },
+            },
+          },
+        },
+        adminProfile: {
+          include: {
+            departmentRef: {
+              include: {
+                institution: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!user) {
@@ -124,6 +179,8 @@ export const authService = {
         email: user.email,
         role: user.role,
         isVerified: user.isVerified,
+        studentProfile: user.studentProfile,
+        adminProfile: user.adminProfile,
       },
       accessToken,
       refreshToken,

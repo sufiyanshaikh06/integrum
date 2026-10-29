@@ -4,24 +4,20 @@ import { useState, useEffect } from 'react';
 interface StudyProps {
   logged: number;
   target: number;
+  subjects?: any[];
   onLogHours: (hours: number) => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export default function StudyView({ logged, target, onLogHours, showToast }: StudyProps) {
+export default function StudyView({ logged, target, subjects = [], onLogHours, showToast }: StudyProps) {
   const [pomoMode, setPomoMode] = useState<25 | 50 | 5>(25);
   const [pomoSeconds, setPomoSeconds] = useState(1500);
   const [pomoRunning, setPomoRunning] = useState(false);
-  const [selectedSubject, setSelectedSubject] = useState('1105111');
+  const [selectedSubject, setSelectedSubject] = useState('General Study');
 
   const [isAddingGoal, setIsAddingGoal] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
-  const [goals, setGoals] = useState([
-    { id: 1, text: 'Complete Artificial Intelligence Revision Modules 1-4', done: true },
-    { id: 2, text: 'Write and test STQA Selenium test cases for Login suite', done: false },
-    { id: 3, text: 'Read Chapter 4 on Public Key Infrastructure in Cyber Security', done: false },
-    { id: 4, text: 'Execute R Programming ANOVA & regression practical scripts', done: false },
-  ]);
+  const [goals, setGoals] = useState<{ id: number; text: string; done: boolean }[]>([]);
 
   useEffect(() => {
     let interval: any = null;
@@ -35,7 +31,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
       showToast(`Pomodoro completed! ${pomoMode} minutes logged to your study sprint.`, 'success');
     }
     return () => clearInterval(interval);
-  }, [pomoRunning, pomoSeconds, pomoMode]);
+  }, [pomoRunning, pomoSeconds, pomoMode, onLogHours, showToast]);
 
   const switchMode = (mode: 25 | 50 | 5) => {
     setPomoRunning(false);
@@ -68,12 +64,7 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const timetableSlots = [
-    { time: '09:00 - 10:00', mon: '1105111 AI', tue: '1105112 Sec', wed: '1105115 IKS', thu: '1105116 STQA', fri: '1105118 R Prog' },
-    { time: '10:15 - 11:15', mon: '1105112 Sec', tue: '1105111 AI', wed: '1105116 STQA', thu: '1105115 IKS', fri: 'Lab Practical' },
-    { time: '11:30 - 12:30', mon: '1105115 IKS', tue: '1105116 STQA', wed: '1105111 AI', thu: '1105112 Sec', fri: 'Tutorial' },
-    { time: '01:30 - 02:30', mon: 'STQA Lab', tue: 'AI Lab', wed: 'Security Lab', thu: 'R Prog Lab', fri: 'Seminar' },
-  ];
+  const timetableSlots: Array<{ time: string; mon: string; tue: string; wed: string; thu: string; fri: string }> = [];
 
   return (
     <div className="view active" id="v-study">
@@ -134,11 +125,12 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
               onChange={(e) => setSelectedSubject(e.target.value)}
               style={{ maxWidth: '280px', margin: '0 auto', fontSize: '12px' }}
             >
-              <option value="1105111">1105111 · Artificial Intelligence</option>
-              <option value="1105112">1105112 · Cyber & Info Security</option>
-              <option value="1105115">1105115 · IKS in Computational Systems</option>
-              <option value="1105116">1105116 · Software Testing & QA</option>
-              <option value="1105118">1105118 · R Programming</option>
+              <option value="General Study">General Study Session</option>
+              {subjects.map((s) => (
+                <option key={s.id || s.code} value={s.code || s.name}>
+                  {s.code ? `${s.code} · ${s.name}` : s.name}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -206,104 +198,116 @@ export default function StudyView({ logged, target, onLogHours, showToast }: Stu
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {goals.map((g) => (
-              <label
-                key={g.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '10px 12px',
-                  background: 'var(--bg-3)',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={g.done}
-                  onChange={() => toggleGoal(g.id)}
-                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
-                />
-                <span style={{ textDecoration: g.done ? 'line-through' : 'none', opacity: g.done ? 0.6 : 1 }}>
-                  {g.text}
-                </span>
-              </label>
-            ))}
-          </div>
+          {goals.length === 0 && !isAddingGoal ? (
+            <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>
+              No focus goals added for this sprint. Click "+ Add Focus Goal" to set revision objectives.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {goals.map((g) => (
+                <label
+                  key={g.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    background: 'var(--bg-3)',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={g.done}
+                    onChange={() => toggleGoal(g.id)}
+                    style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                  />
+                  <span style={{ textDecoration: g.done ? 'line-through' : 'none', opacity: g.done ? 0.6 : 1 }}>
+                    {g.text}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Weekly Timetable Grid */}
       <div className="card" style={{ padding: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Semester 5 Weekly Timetable Grid</h3>
-          <span className="badge badge-primary">Classroom 302 · CSE Dept</span>
+          <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Weekly Academic Timetable</h3>
+          <span className="badge badge-primary">Lecture Schedule</span>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table className="tbl" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-3)' }}>
-                <th style={{ padding: '10px' }}>Time Slot</th>
-                <th style={{ padding: '10px' }}>Monday</th>
-                <th style={{ padding: '10px' }}>Tuesday</th>
-                <th style={{ padding: '10px' }}>Wednesday</th>
-                <th style={{ padding: '10px' }}>Thursday</th>
-                <th style={{ padding: '10px' }}>Friday</th>
-              </tr>
-            </thead>
-            <tbody>
-              {timetableSlots.map((row, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '10px', fontWeight: 700, color: 'var(--text-2)' }}>{row.time}</td>
-                  <td style={{ padding: '10px' }}>
-                    <span
-                      className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`Mon ${row.time}: ${row.mon}`, 'info')}
-                    >
-                      {row.mon}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px' }}>
-                    <span
-                      className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`Tue ${row.time}: ${row.tue}`, 'info')}
-                    >
-                      {row.tue}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px' }}>
-                    <span
-                      className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`Wed ${row.time}: ${row.wed}`, 'info')}
-                    >
-                      {row.wed}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px' }}>
-                    <span
-                      className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`Thu ${row.time}: ${row.thu}`, 'info')}
-                    >
-                      {row.thu}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px' }}>
-                    <span
-                      className="timetable-chip" style={{ cursor: 'pointer' }}
-                      onClick={() => showToast(`Fri ${row.time}: ${row.fri}`, 'info')}
-                    >
-                      {row.fri}
-                    </span>
-                  </td>
+        {timetableSlots.length === 0 ? (
+          <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>
+            No institutional timetable published yet. Enrolled semester lectures and classroom schedules will appear here automatically.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="tbl" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-3)' }}>
+                  <th style={{ padding: '10px' }}>Time Slot</th>
+                  <th style={{ padding: '10px' }}>Monday</th>
+                  <th style={{ padding: '10px' }}>Tuesday</th>
+                  <th style={{ padding: '10px' }}>Wednesday</th>
+                  <th style={{ padding: '10px' }}>Thursday</th>
+                  <th style={{ padding: '10px' }}>Friday</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {timetableSlots.map((row, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '10px', fontWeight: 700, color: 'var(--text-2)' }}>{row.time}</td>
+                    <td style={{ padding: '10px' }}>
+                      <span
+                        className="timetable-chip" style={{ cursor: 'pointer' }}
+                        onClick={() => showToast(`Mon ${row.time}: ${row.mon}`, 'info')}
+                      >
+                        {row.mon}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px' }}>
+                      <span
+                        className="timetable-chip" style={{ cursor: 'pointer' }}
+                        onClick={() => showToast(`Tue ${row.time}: ${row.tue}`, 'info')}
+                      >
+                        {row.tue}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px' }}>
+                      <span
+                        className="timetable-chip" style={{ cursor: 'pointer' }}
+                        onClick={() => showToast(`Wed ${row.time}: ${row.wed}`, 'info')}
+                      >
+                        {row.wed}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px' }}>
+                      <span
+                        className="timetable-chip" style={{ cursor: 'pointer' }}
+                        onClick={() => showToast(`Thu ${row.time}: ${row.thu}`, 'info')}
+                      >
+                        {row.thu}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px' }}>
+                      <span
+                        className="timetable-chip" style={{ cursor: 'pointer' }}
+                        onClick={() => showToast(`Fri ${row.time}: ${row.fri}`, 'info')}
+                      >
+                        {row.fri}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

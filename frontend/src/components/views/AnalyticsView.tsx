@@ -1,41 +1,49 @@
-import { useState } from 'react';
+import type { TaskItem, AssignmentItem, NoteItem, AttendanceRecord } from '../../types';
 
-export default function AnalyticsView() {
-  // Simulator Grade Points
-  const [grades, setGrades] = useState({
-    '1105111': 9, // AI (Grade A+)
-    '1105112': 9, // Security (Grade A+)
-    '1105115': 10, // IKS (Grade O)
-    '1105116': 8, // STQA (Grade A)
-    '1105118': 9, // R Prog (Grade A+)
-  });
+interface AnalyticsProps {
+  tasks?: TaskItem[];
+  studyLogged?: number;
+  assignments?: AssignmentItem[];
+  notes?: NoteItem[];
+  attendance?: Record<string, AttendanceRecord>;
+}
 
-  const courses = [
-    { code: '1105111', name: 'Artificial Intelligence', credits: 4 },
-    { code: '1105112', name: 'Cyber & Information Security', credits: 4 },
-    { code: '1105115', name: 'IKS in Computational Systems', credits: 3 },
-    { code: '1105116', name: 'Software Testing & Quality Assurance', credits: 4 },
-    { code: '1105118', name: 'R Programming Practical', credits: 3 },
-  ];
+export default function AnalyticsView({
+  tasks = [],
+  studyLogged = 0,
+  assignments = [],
+  notes = [],
+  attendance = {},
+}: AnalyticsProps) {
+  const safeTasks = Array.isArray(tasks) ? tasks : [];
+  const safeAssignments = Array.isArray(assignments) ? assignments : [];
+  const safeNotes = Array.isArray(notes) ? notes : [];
+  const attendList = Object.values(attendance || {});
 
-  // SGPA Calculation
-  const totalCredits = courses.reduce((acc, c) => acc + c.credits, 0);
-  const totalPoints = courses.reduce((acc, c) => acc + (grades[c.code as keyof typeof grades] || 8) * c.credits, 0);
-  const simSGPA = (totalPoints / totalCredits).toFixed(2);
-  const simCGPA = (((8.64 * 4) + parseFloat(simSGPA)) / 5).toFixed(2);
+  const totalTasks = safeTasks.length;
+  const completedTasks = safeTasks.filter((t) => t.status === 'DONE').length;
+  const inProgressTasks = safeTasks.filter((t) => t.status === 'IN_PROGRESS').length;
+  const todoTasks = safeTasks.filter((t) => t.status === 'TODO').length;
+  const taskCompletionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  const handleGradeChange = (code: string, val: number) => {
-    setGrades((prev) => ({ ...prev, [code]: val }));
-  };
+  const totalAssignments = safeAssignments.length;
+  const pendingAssignments = safeAssignments.filter((a) => a.status === 'Pending').length;
+  const submittedAssignments = safeAssignments.filter((a) => a.status === 'Submitted' || a.status === 'Graded').length;
+
+  const totalNotes = safeNotes.length;
+
+  const totalPres = attendList.reduce((acc, c) => acc + (c.present || 0), 0);
+  const totalHeld = attendList.reduce((acc, c) => acc + (c.total || 0), 0);
+  const attendanceRate = totalHeld > 0 ? ((totalPres / totalHeld) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="view active" id="v-analytics">
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Analytics & Success Index</h2>
+          <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Performance &amp; Progress Analytics</h2>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
-            Comprehensive telemetry on academic progression, study consistency, and projected grade points.
+            Live performance telemetry calculated directly from your database tasks, logged study sprints, and coursework submissions.
           </p>
         </div>
       </div>
@@ -43,169 +51,128 @@ export default function AnalyticsView() {
       {/* Top Vital Metric Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         <div className="card" style={{ padding: '20px' }}>
-          <small style={{ color: 'var(--text-3)', fontWeight: 700 }}>STUDENT SUCCESS INDEX</small>
-          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--primary)', margin: '4px 0' }}>86 / 100</div>
-          <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 700 }}>Exemplary Academic Health</span>
+          <small style={{ color: 'var(--text-3)', fontWeight: 700, fontSize: '10px' }}>TASK COMPLETION RATE</small>
+          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--primary)', margin: '4px 0' }}>
+            {taskCompletionRate}%
+          </div>
+          <span style={{ fontSize: '11px', color: completedTasks > 0 ? 'var(--success)' : 'var(--text-2)', fontWeight: 700 }}>
+            {completedTasks} of {totalTasks} tasks finished
+          </span>
         </div>
 
         <div className="card" style={{ padding: '20px' }}>
-          <small style={{ color: 'var(--text-3)', fontWeight: 700 }}>PROJECTED SGPA (SEM 5)</small>
-          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--success)', margin: '4px 0' }}>{simSGPA}</div>
-          <span style={{ fontSize: '11px', color: 'var(--text-2)' }}>Across 18 Semester Credits</span>
+          <small style={{ color: 'var(--text-3)', fontWeight: 700, fontSize: '10px' }}>FOCUS STUDY LOGGED</small>
+          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--success)', margin: '4px 0' }}>
+            {studyLogged.toFixed(1)}h
+          </div>
+          <span style={{ fontSize: '11px', color: 'var(--text-2)' }}>Logged via Pomodoro sprints</span>
         </div>
 
         <div className="card" style={{ padding: '20px' }}>
-          <small style={{ color: 'var(--text-3)', fontWeight: 700 }}>CUMULATIVE CGPA</small>
-          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--info)', margin: '4px 0' }}>{simCGPA}</div>
-          <span style={{ fontSize: '11px', color: 'var(--text-2)' }}>Semesters 1 through 5</span>
+          <small style={{ color: 'var(--text-3)', fontWeight: 700, fontSize: '10px' }}>COURSEWORK SUBMISSIONS</small>
+          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--info)', margin: '4px 0' }}>
+            {submittedAssignments} / {totalAssignments}
+          </div>
+          <span style={{ fontSize: '11px', color: pendingAssignments > 0 ? 'var(--warning)' : 'var(--text-2)' }}>
+            {pendingAssignments} pending deadlines
+          </span>
         </div>
 
         <div className="card" style={{ padding: '20px' }}>
-          <small style={{ color: 'var(--text-3)', fontWeight: 700 }}>ATTENDANCE CONSISTENCY</small>
-          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--accent)', margin: '4px 0' }}>94%</div>
-          <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 700 }}>Zero Defaulter Risk</span>
+          <small style={{ color: 'var(--text-3)', fontWeight: 700, fontSize: '10px' }}>OVERALL ATTENDANCE</small>
+          <div style={{ fontSize: '2rem', fontWeight: 900, color: Number(attendanceRate) >= 75 ? 'var(--accent)' : 'var(--error)', margin: '4px 0' }}>
+            {attendanceRate}%
+          </div>
+          <span style={{ fontSize: '11px', color: 'var(--text-2)' }}>
+            {attendList.length > 0 ? `${attendList.length} enrolled courses` : 'No courses enrolled'}
+          </span>
         </div>
       </div>
 
+      {/* Task & Productivity Breakdown */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-        {/* Attendance Progression Chart (SVG) */}
+        {/* Task Pipeline Health */}
         <div className="card" style={{ padding: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Weekly Attendance Progression</h3>
-              <small style={{ color: 'var(--text-3)' }}>Weeks 1 to 8 (Fall 2026)</small>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Task Lifecycle Breakdown</h3>
+            <span className="badge badge-primary">{totalTasks} Total Tasks</span>
+          </div>
+
+          {totalTasks === 0 ? (
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>
+              No tasks recorded in your workspace yet. Create a task in the Task Manager to see live breakdown analytics.
             </div>
-            <span className="badge badge-success">Above 75% Cutoff</span>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                  <span>Completed Tasks ({completedTasks})</span>
+                  <b>{totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0}%</b>
+                </div>
+                <div style={{ height: '8px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0}%`, background: 'var(--success)' }} />
+                </div>
+              </div>
 
-          <div style={{ height: '180px', position: 'relative' }}>
-            <svg viewBox="0 0 400 160" style={{ width: '100%', height: '100%' }}>
-              {/* Reference Grid */}
-              <line x1="40" y1="20" x2="380" y2="20" stroke="var(--border)" strokeDasharray="3 3" />
-              <line x1="40" y1="60" x2="380" y2="60" stroke="var(--border)" strokeDasharray="3 3" />
-              <line x1="40" y1="100" x2="380" y2="100" stroke="var(--border)" strokeDasharray="3 3" />
-              <line x1="40" y1="140" x2="380" y2="140" stroke="var(--border)" />
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                  <span>In Progress ({inProgressTasks})</span>
+                  <b>{totalTasks > 0 ? Math.round((inProgressTasks / totalTasks) * 100) : 0}%</b>
+                </div>
+                <div style={{ height: '8px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${totalTasks > 0 ? (inProgressTasks / totalTasks) * 100 : 0}%`, background: 'var(--warning)' }} />
+                </div>
+              </div>
 
-              {/* 75% Cutoff Line in Red */}
-              <line x1="40" y1="75" x2="380" y2="75" stroke="var(--error)" strokeWidth="1.5" strokeDasharray="4 4" />
-              <text x="382" y="79" fill="var(--error)" fontSize="9" fontWeight="bold">75% Cutoff</text>
-
-              {/* Attendance Trend Line */}
-              <polyline
-                fill="none"
-                stroke="var(--primary)"
-                strokeWidth="3"
-                points="40,55 85,50 135,40 185,45 235,35 285,38 335,32 380,30"
-              />
-
-              {/* Data points */}
-              {[[40,55], [85,50], [135,40], [185,45], [235,35], [285,38], [335,32], [380,30]].map(([x, y], i) => (
-                <circle key={i} cx={x} cy={y} r="4" fill="var(--primary)" stroke="#fff" strokeWidth="2" />
-              ))}
-            </svg>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-3)', marginTop: '4px' }}>
-            <span>W1</span><span>W2</span><span>W3</span><span>W4</span><span>W5</span><span>W6</span><span>W7</span><span>W8</span>
-          </div>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                  <span>To Do / Pending ({todoTasks})</span>
+                  <b>{totalTasks > 0 ? Math.round((todoTasks / totalTasks) * 100) : 0}%</b>
+                </div>
+                <div style={{ height: '8px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${totalTasks > 0 ? (todoTasks / totalTasks) * 100 : 0}%`, background: 'var(--primary)' }} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Study Hours Allocation Bar Chart */}
+        {/* Study Notes & Knowledge Bank Summary */}
         <div className="card" style={{ padding: '20px' }}>
-          <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', fontWeight: 800 }}>Study Hours Course Distribution</h3>
-          <small style={{ color: 'var(--text-3)' }}>18.5 Total Hours Logged this Week</small>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px' }}>
-                <span>Artificial Intelligence (6.5h)</span>
-                <b>35%</b>
-              </div>
-              <div style={{ height: '8px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: '35%', background: 'var(--primary)' }} />
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px' }}>
-                <span>Cyber & Information Security (4.5h)</span>
-                <b>25%</b>
-              </div>
-              <div style={{ height: '8px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: '25%', background: 'var(--secondary)' }} />
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px' }}>
-                <span>Software Testing & QA (3.0h)</span>
-                <b>16%</b>
-              </div>
-              <div style={{ height: '8px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: '16%', background: 'var(--info)' }} />
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px' }}>
-                <span>IKS in Computational Systems (2.5h)</span>
-                <b>14%</b>
-              </div>
-              <div style={{ height: '8px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: '14%', background: 'var(--accent)' }} />
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '2px' }}>
-                <span>R Programming (2.0h)</span>
-                <b>10%</b>
-              </div>
-              <div style={{ height: '8px', background: 'var(--bg-3)', borderRadius: '999px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: '10%', background: 'var(--warning)' }} />
-              </div>
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Knowledge &amp; Study Notes Repository</h3>
+            <span className="badge badge-secondary">{totalNotes} Saved</span>
           </div>
-        </div>
-      </div>
 
-      {/* Interactive SGPA & CGPA Grade Simulator */}
-      <div className="card" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>SGPA & CGPA Grade Simulator</h3>
-            <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.85rem' }}>
-              Adjust projected grade point sliders for each course to calculate real-time impact on Semester 5 SGPA and overall CGPA.
-            </p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <span className="badge badge-primary" style={{ fontSize: '13px' }}>Simulated SGPA: {simSGPA}</span>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {courses.map((c) => {
-            const currentGrade = grades[c.code as keyof typeof grades] || 8;
-            return (
-              <div key={c.code} style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--bg-3)', padding: '12px 16px', borderRadius: 'var(--radius-sm)' }}>
-                <div style={{ width: '240px' }}>
-                  <strong style={{ fontSize: '13px', display: 'block' }}>{c.code} · {c.name}</strong>
-                  <small style={{ color: 'var(--text-3)' }}>{c.credits} Credits</small>
+          {totalNotes === 0 ? (
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-3)', fontSize: '13px' }}>
+              No notes written yet. Use the Notes Manager to author subject-wise study summaries and extract AI flashcards.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {safeNotes.slice(0, 4).map((n) => (
+                <div
+                  key={n.id}
+                  style={{
+                    padding: '10px 12px',
+                    background: 'var(--bg-3)',
+                    borderRadius: 'var(--radius-sm)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div>
+                    <strong style={{ fontSize: '12.5px', color: 'var(--text-1)' }}>{n.title}</strong>
+                    <small style={{ display: 'block', color: 'var(--text-3)', fontSize: '11px' }}>{n.subject || 'General Notes'}</small>
+                  </div>
+                  <span className="badge badge-primary" style={{ fontSize: '10px' }}>
+                    {n.code || 'DOC'}
+                  </span>
                 </div>
-                <input
-                  type="range"
-                  min="6"
-                  max="10"
-                  step="1"
-                  value={currentGrade}
-                  onChange={(e) => handleGradeChange(c.code, parseInt(e.target.value))}
-                  style={{ flex: 1, accentColor: 'var(--primary)' }}
-                />
-                <div style={{ width: '80px', textAlign: 'right', fontWeight: 800, fontSize: '14px', color: 'var(--primary)' }}>
-                  {currentGrade === 10 ? 'Grade O (10)' : currentGrade === 9 ? 'Grade A+ (9)' : currentGrade === 8 ? 'Grade A (8)' : currentGrade === 7 ? 'Grade B+ (7)' : 'Grade B (6)'}
-                </div>
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

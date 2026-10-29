@@ -14,6 +14,9 @@ import {
   CreateAcademicTermInput,
   UpdateAcademicTermInput,
   ListAcademicTermsQuery,
+  CreateRegistrationCodeInput,
+  UpdateRegistrationCodeInput,
+  ListRegistrationCodesQuery,
 } from '../../schemas/admin/academic.schema.js';
 
 // ─── AUDIT ACTION CONSTANTS ───────────────────────────────────────────────────
@@ -34,6 +37,9 @@ export const ACADEMIC_AUDIT_ACTIONS = {
   ACADEMIC_TERM_CREATED: 'ACADEMIC_TERM_CREATED',
   ACADEMIC_TERM_UPDATED: 'ACADEMIC_TERM_UPDATED',
   ACADEMIC_TERM_DELETED: 'ACADEMIC_TERM_DELETED',
+
+  REGISTRATION_CODE_CREATED: 'REGISTRATION_CODE_CREATED',
+  REGISTRATION_CODE_UPDATED: 'REGISTRATION_CODE_UPDATED',
 } as const;
 
 export const adminAcademicService = {
@@ -864,5 +870,158 @@ export const adminAcademicService = {
 
       return deleted;
     }, { isolationLevel: 'ReadCommitted' });
+  },
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 5. REGISTRATION CODE MANAGEMENT
+  // ───────────────────────────────────────────────────────────────────────────
+
+  async createRegistrationCode(actorUserId: string, data: CreateRegistrationCodeInput, ipAddress?: string) {
+    let departmentId = data.departmentId;
+
+    if (!departmentId) {
+      const codePrefix = data.code.includes('-') ? (data.code.split('-')[0] || 'CSE') : 'CSE';
+      const deptCode: string = (data.departmentCode && data.departmentCode.trim()) ? data.departmentCode.trim().toUpperCase() : codePrefix;
+      let dept = await prisma.department.findUnique({
+        where: { code: deptCode },
+      });
+      if (!dept && data.departmentName) {
+        dept = await prisma.department.findFirst({
+          where: { name: { equals: data.departmentName, mode: 'insensitive' } },
+        });
+      }
+      if (!dept) {
+        dept = await prisma.department.findFirst();
+        if (!dept) {
+          dept = await prisma.department.create({
+            data: {
+              name: data.departmentName || 'Computer Science & Engineering',
+              code: deptCode,
+            },
+          });
+        }
+      }
+      departmentId = dept.id;
+    } else {
+      const dept = await prisma.department.findUnique({ where: { id: departmentId } });
+      if (!dept) {
+        throw ApiError.notFound('Referenced department does not exist');
+      }
+    }
+
+    const cleanCode = data.code.trim().toUpperCase();
+    const existing = await prisma.departmentRegistrationCode.findUnique({
+      where: { code: cleanCode },
+    });
+    if (existing) {
+      throw ApiError.conflict(`Registration code "${cleanCode}" already exists`);
+    }
+
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const codeRecord = await tx.departmentRegistrationCode.create({
+          data: {
+            code: cleanCode,
+            departmentId: departmentId!,
+            semesterNumber: data.semesterNumber ?? 1,
+            academicYear: data.academicYear ?? 2026,
+            maxUses: data.maxUses ?? null,
+            isActive: data.isActive ?? true,
+          },
+          include: {
+            department: {
+              select: { id: true, name: true, code: true },
+            },
+          },
+        });
+
+        await tx.adminAuditLog.create({
+          data: {
+            actorUserId,
+            action: ACADEMIC_AUDIT_ACTIONS.REGISTRATION_CODE_CREATED,
+            targetType: 'DepartmentRegistrationCode',
+            targetId: codeRecord.id,
+            details: {
+              code: codeRecord.code,
+              departmentId: codeRecord.departmentId,
+              semesterNumber: codeRecord.semesterNumber,
+              academicYear: codeRecord.academicYear,
+              maxUses: codeRecord.maxUses,
+            },
+            ipAddress: ipAddress ?? null,
+          },
+        });
+
+        return codeRecord;
+      });
+    } catch (err: any) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw ApiError.conflict(`Registration code "${cleanCode}" already exists`);
+      }
+      throw err;
+    }
+  },
+
+  async listRegistrationCodes(query?: ListRegistrationCodesQuery) {
+    const where: Prisma.DepartmentRegistrationCodeWhereInput = {};
+    if (query?.departmentId) where.departmentId = query.departmentId;
+    if (query?.semesterNumber) where.semesterNumber = query.semesterNumber;
+    if (typeof query?.isActive === 'boolean') where.isActive = query.isActive;
+
+    return prisma.departmentRegistrationCode.findMany({
+      where,
+      include: {
+        department: {
+          select: { id: true, name: true, code: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  },
+
+  async updateRegistrationCode(actorUserId: string, id: string, data: UpdateRegistrationCodeInput, ipAddress?: string) {
+    const existing = await prisma.departmentRegistrationCode.findUnique({ where: { id } });
+    if (!existing) {
+      throw ApiError.notFound('Registration code not found');
+    }
+
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.departmentRegistrationCode.update({
+        where: { id },
+        data: {
+          ...(typeof data.isActive === 'boolean' ? { isActive: data.isActive } : {}),
+          ...(data.maxUses !== undefined ? { maxUses: data.maxUses } : {}),
+          ...(data.semesterNumber !== undefined ? { semesterNumber: data.semesterNumber } : {}),
+          ...(data.academicYear !== undefined ? { academicYear: data.academicYear } : {}),
+        },
+        include: {
+          department: {
+            select: { id: true, name: true, code: true },
+          },
+        },
+      });
+
+      await tx.adminAuditLog.create({
+        data: {
+          actorUserId,
+          action: ACADEMIC_AUDIT_ACTIONS.REGISTRATION_CODE_UPDATED,
+          targetType: 'DepartmentRegistrationCode',
+          targetId: id,
+          details: { code: existing.code, changes: data },
+          ipAddress: ipAddress ?? null,
+        },
+      });
+
+      return updated;
+    });
+  },
+
+  async toggleRegistrationCode(actorUserId: string, id: string, isActive?: boolean, ipAddress?: string) {
+    const existing = await prisma.departmentRegistrationCode.findUnique({ where: { id } });
+    if (!existing) {
+      throw ApiError.notFound('Registration code not found');
+    }
+    const newActiveState = isActive !== undefined ? isActive : !existing.isActive;
+    return this.updateRegistrationCode(actorUserId, id, { isActive: newActiveState }, ipAddress);
   },
 };

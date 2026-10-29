@@ -29,6 +29,18 @@ export const userService = {
             id: true,
             firstName: true,
             lastName: true,
+            rollNumber: true,
+            isIndependent: true,
+            institutionId: true,
+            departmentId: true,
+            department: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                institution: { select: { id: true, name: true, code: true } },
+              },
+            },
             university: true,
             courseId: true,
             course: { select: { id: true, name: true, code: true, department: { select: { id: true, name: true, code: true } } } },

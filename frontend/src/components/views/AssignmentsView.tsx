@@ -10,7 +10,6 @@ interface AssignmentsProps {
   onUpdateAsgnStatus?: (id: string, newStatus: 'Pending' | 'Submitted' | 'Graded') => void;
   onDeleteAsgn?: (id: string) => void;
   onDeleteSubject?: (id: string) => void;
-  onLoadTycsTemplate?: () => void;
   onClearBlankWorkspace?: () => void;
 }
 
@@ -23,7 +22,6 @@ export default function AssignmentsView({
   onUpdateAsgnStatus,
   onDeleteAsgn,
   onDeleteSubject,
-  onLoadTycsTemplate,
   onClearBlankWorkspace,
 }: AssignmentsProps) {
   const [filterTab, setFilterTab] = useState<'All' | 'Pending' | 'Submitted' | 'Graded'>('All');
@@ -40,33 +38,20 @@ export default function AssignmentsView({
         <div>
           <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Courses & Assignments</h2>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
-            Semester 5 enrolled curriculum, submission deadlines, and grading status.
+            Enrolled curriculum courses, coursework submission deadlines, and grading records.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {subjects.length > 0 && onClearBlankWorkspace && (
+            <button className="btn btn-ghost" onClick={onClearBlankWorkspace} style={{ fontSize: '12px' }}>
+              Reset Curriculum
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={onOpenSubjectModal}>
             + Add Subject
           </button>
           <button className="btn btn-primary" onClick={onOpenAsgnModal}>
             + Add Assignment
-          </button>
-        </div>
-      </div>
-
-      {/* Curriculum Template Quick Actions */}
-      <div className="card" style={{ padding: '14px 18px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-        <div>
-          <strong style={{ fontSize: '13px' }}>Curriculum Template Packs</strong>
-          <p style={{ margin: 0, fontSize: '11px', color: 'var(--text-3)' }}>
-            Switch between Mumbai University TYCS Sem 5 preloaded modules or a clean blank slate.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-xs btn-outline" onClick={onLoadTycsTemplate}>
-            Load Mumbai University TYCS Sem 5 Pack
-          </button>
-          <button className="btn btn-xs btn-outline" onClick={onClearBlankWorkspace} style={{ color: 'var(--error)' }}>
-            Clear to Blank Workspace
           </button>
         </div>
       </div>
@@ -86,7 +71,7 @@ export default function AssignmentsView({
             subjects.map((s) => (
             <div key={s.id || s.code} className="card" style={{ padding: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="badge badge-primary">{s.code || 'CS502'}</span>
+                <span className="badge badge-primary">{s.code || 'COURSE'}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <small style={{ color: 'var(--text-3)' }}>{s.credits ? `${s.credits} Credits` : '4 Credits'}</small>
                   {onDeleteSubject && (

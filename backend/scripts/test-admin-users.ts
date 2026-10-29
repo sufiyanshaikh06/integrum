@@ -384,6 +384,24 @@ async function main() {
     console.error('\n❌ Phase A2 tests failed:', e.message);
     process.exit(1);
   } finally {
+    try {
+      if (studentUserId) {
+        await prisma.adminAuditLog.deleteMany({ where: { targetId: studentUserId } });
+        await prisma.studentProfile.deleteMany({ where: { userId: studentUserId } });
+        await prisma.adminProfile.deleteMany({ where: { userId: studentUserId } });
+        await prisma.authSession.deleteMany({ where: { userId: studentUserId } });
+        await prisma.user.deleteMany({ where: { id: studentUserId } });
+      }
+      if (newAdminUserId) {
+        await prisma.adminAuditLog.deleteMany({ where: { targetId: newAdminUserId } });
+        await prisma.adminProfile.deleteMany({ where: { userId: newAdminUserId } });
+        await prisma.studentProfile.deleteMany({ where: { userId: newAdminUserId } });
+        await prisma.authSession.deleteMany({ where: { userId: newAdminUserId } });
+        await prisma.user.deleteMany({ where: { id: newAdminUserId } });
+      }
+    } catch (cleanupErr) {
+      console.warn('Test cleanup warning:', cleanupErr);
+    }
     await prisma.$disconnect();
   }
 }

@@ -5,6 +5,14 @@ import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
 
 async function main() {
+if (!process.env.NODE_ENV || process.env.NODE_ENV === 'development') {
+  process.env.NODE_ENV = 'test';
+}
+if (process.env.DATABASE_URL && !new URL(process.env.DATABASE_URL).pathname.endsWith('_test')) {
+  const u = new URL(process.env.DATABASE_URL);
+  u.pathname = `${u.pathname}_test`;
+  process.env.DATABASE_URL = u.toString();
+}
 assert.equal(process.env.NODE_ENV, 'test');
 assert(new URL(process.env.DATABASE_URL!).pathname.endsWith('_test'));
 const rejected = spawnSync(process.execPath, ['-e', "require('./dist/config/env.js')"], {

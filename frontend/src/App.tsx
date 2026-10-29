@@ -5,6 +5,7 @@ import type {
   Phase,
   UserRole,
   ActiveView,
+  ThemeMode,
   ToastMessage,
   StudentInfo,
   AdminInfo,
@@ -19,6 +20,11 @@ import type {
   AnnouncementItem,
   StudentDirectoryItem,
   CalendarEventItem,
+  InstitutionAdminInfo,
+  DepartmentHeadInfo,
+  FacultyInfo,
+  RegistrationCodeItem,
+  StaffRole,
 } from './types';
 import { initialPlatformState } from './data/mockData';
 import {
@@ -29,11 +35,12 @@ import {
   noteApi,
   calendarApi,
   notificationApi,
+  adminApi,
 } from './services/api';
 
 // Components
 import LandingPhase from './components/LandingPhase';
-import LoginPhase from './components/LoginPhase';
+import LoginPhase, { type RegisterData } from './components/LoginPhase';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Modals from './components/Modals';
@@ -69,10 +76,43 @@ export default function App() {
   const [user, setUser] = useLocalStorageState<any>('integrum_user', null);
   const [studentInfo, setStudentInfo] = useLocalStorageState<StudentInfo>('integrum_student_info', initialPlatformState.studentInfo);
   const [adminInfo] = useState<AdminInfo>(initialPlatformState.adminInfo);
+  const [institutionAdminInfo, setInstitutionAdminInfo] = useLocalStorageState<InstitutionAdminInfo>(
+    'integrum_institution_admin_info',
+    initialPlatformState.institutionAdminInfo
+  );
+  const [departmentHeadInfo, setDepartmentHeadInfo] = useLocalStorageState<DepartmentHeadInfo>(
+    'integrum_department_head_info',
+    initialPlatformState.departmentHeadInfo
+  );
+  const [facultyInfo, setFacultyInfo] = useLocalStorageState<FacultyInfo>(
+    'integrum_faculty_info',
+    initialPlatformState.facultyInfo
+  );
+  const [registrationCodes, setRegistrationCodes] = useState<RegistrationCodeItem[]>([]);
 
   // Theme & Toasts
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem('integrum-theme-mode');
+    if (saved === 'light' || saved === 'dark' || saved === 'system') {
+      return saved as ThemeMode;
+    }
+    const legacy = localStorage.getItem('integrum-dark');
+    if (legacy === 'true') return 'dark';
+    if (legacy === 'false') return 'light';
+    return 'system';
+  });
+
   const [darkMode, setDarkMode] = useState<boolean>(() => {
-    return localStorage.getItem('integrum-dark') === 'true';
+    const savedMode = localStorage.getItem('integrum-theme-mode');
+    if (savedMode === 'dark') return true;
+    if (savedMode === 'light') return false;
+    const legacy = localStorage.getItem('integrum-dark');
+    if (legacy === 'true') return true;
+    if (legacy === 'false') return false;
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
   });
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -107,18 +147,12 @@ export default function App() {
   );
 
   // Focus & Study Hours
-  const [studyLogged, setStudyLogged] = useLocalStorageState<number>('integrum_study_logged', 18.5);
+  const [studyLogged, setStudyLogged] = useLocalStorageState<number>('integrum_study_logged', 0.0);
   const [studyTarget] = useState(25.0);
 
   // Backend Synchronized Entities
   const [semesters, setSemesters] = useState<any[]>([]);
-  const [subjects, setSubjects] = useState<any[]>([
-    { id: 'subj-1', code: '1105111', name: 'Artificial Intelligence', credits: 4 },
-    { id: 'subj-2', code: '1105112', name: 'Cyber & Information Security', credits: 4 },
-    { id: 'subj-3', code: '1105115', name: 'IKS in Computational Systems', credits: 3 },
-    { id: 'subj-4', code: '1105116', name: 'Software Testing & Quality Assurance', credits: 4 },
-    { id: 'subj-5', code: '1105118', name: 'R Programming Practical', credits: 3 },
-  ]);
+  const [subjects, setSubjects] = useState<any[]>([]);
 
   // Modals Visibility
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -145,16 +179,76 @@ export default function App() {
     }, 4500);
   }, []);
 
-  // ── Dark Mode Effect ───────────────────────────────────────────
+  // ── Theme Management & Automatic System Sync ─────────────────
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const syncTheme = () => {
+      if (themeMode === 'system') {
+        setDarkMode(mediaQuery.matches);
+      } else if (themeMode === 'dark') {
+        setDarkMode(true);
+      } else {
+        setDarkMode(false);
+      }
+    };
+
+    syncTheme();
+
+    const listener = (e: MediaQueryListEvent) => {
+      if (themeMode === 'system') {
+        setDarkMode(e.matches);
+      }
+    };
+
+    mediaQuery.addEventListener('change', listener);
+    return () => mediaQuery.removeEventListener('change', listener);
+  }, [themeMode]);
+
   useEffect(() => {
     if (darkMode) {
       document.body.classList.add('dark');
-      localStorage.setItem('integrum-dark', 'true');
     } else {
       document.body.classList.remove('dark');
-      localStorage.setItem('integrum-dark', 'false');
     }
-  }, [darkMode]);
+    localStorage.setItem('integrum-dark', darkMode ? 'true' : 'false');
+    localStorage.setItem('integrum-theme-mode', themeMode);
+  }, [darkMode, themeMode]);
+
+  const handleToggleDarkMode = () => {
+    const nextMode: ThemeMode = darkMode ? 'light' : 'dark';
+    setThemeMode(nextMode);
+    setDarkMode(!darkMode);
+  };
+
+  const handleSetThemeMode = (mode: ThemeMode) => {
+    setThemeMode(mode);
+    if (mode === 'system') {
+      const isDark = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)').matches : false;
+      setDarkMode(isDark);
+      showToast('Theme synchronized with browser system preference', 'info');
+    } else {
+      setDarkMode(mode === 'dark');
+      showToast(`Switched to ${mode === 'dark' ? 'High-Contrast Dark' : 'Academic Light'} theme`, 'info');
+    }
+  };
+
+  const handleToggleInstitutional = () => {
+    const currentIsInst = studentInfo.isInstitutional !== false;
+    const nextIsInst = !currentIsInst;
+    setStudentInfo((prev) => ({
+      ...prev,
+      isInstitutional: nextIsInst,
+      institution: nextIsInst ? 'University Department of Computer Science' : undefined,
+    }));
+    showToast(
+      nextIsInst
+        ? 'Connected to University Department of Computer Science. Attendance and Academic Calendar activated.'
+        : 'Disconnected from institution. Switched to Independent Learner mode (attendance & exam schedules hidden).',
+      'info'
+    );
+  };
 
   // ── Role Class Synchronization ──────────────────────────────
   useEffect(() => {
@@ -182,10 +276,46 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // ── One-Time Cache Purge for Stale Mock Data ───────────────────
+  useEffect(() => {
+    const PURGE_KEY = 'integrum_mock_purged_v4';
+    if (typeof window !== 'undefined' && localStorage.getItem(PURGE_KEY) !== 'true') {
+      const keysToPurge = [
+        'integrum_tasks',
+        'integrum_notes',
+        'integrum_assignments',
+        'integrum_subjects',
+        'integrum_attendance',
+        'integrum_calendar_events',
+        'integrum_reminders',
+        'integrum_skills',
+        'integrum_jobs',
+        'integrum_study_logged',
+        'integrum_announcements',
+        'integrum_notifications',
+      ];
+      keysToPurge.forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem(PURGE_KEY, 'true');
+      setTasks([]);
+      setNotes([]);
+      setAssignments([]);
+      setSubjects([]);
+      setAttendance({});
+      setCalendarEvents({});
+      setReminders([]);
+      setSkills([]);
+      setJobs([]);
+      setStudyLogged(0.0);
+    }
+  }, [setTasks, setNotes, setSkills, setJobs, setStudyLogged]);
+
   // ── Backend Data Synchronizer ──────────────────────────────────
-  const fetchBackendData = useCallback(async () => {
+  const fetchBackendData = useCallback(async (targetRole?: UserRole) => {
     try {
-      const [sems, subjs, asgns, tsks, nts, notifs, calEvents] = await Promise.allSettled([
+      const activeRole = targetRole || userRole;
+      const isStaff = activeRole === 'admin';
+
+      const calls: Promise<any>[] = [
         academicApi.getSemesters(),
         academicApi.getSubjects(),
         academicApi.getAssignments(),
@@ -193,128 +323,107 @@ export default function App() {
         noteApi.getNotes(),
         notificationApi.getNotifications(),
         calendarApi.getCalendarEvents(),
-      ]);
+      ];
+      if (isStaff) {
+        calls.push(adminApi.getRegistrationCodes());
+      }
+
+      const results = await Promise.allSettled(calls);
+      const [sems, subjs, asgns, tsks, nts, notifs, calEvents] = results;
+      const regCodes = isStaff ? results[7] : null;
 
       if (sems.status === 'fulfilled' && Array.isArray(sems.value)) {
         setSemesters(sems.value);
       }
-      if (subjs.status === 'fulfilled' && Array.isArray(subjs.value) && subjs.value.length > 0) {
-        setSubjects((prev) => {
-          const combined = [...prev];
-          subjs.value.forEach((s: any) => {
-            if (!combined.some((c) => c.id === s.id || (s.code && c.code === s.code))) {
-              combined.push(s);
-            }
-          });
-          return combined;
-        });
+      if (subjs.status === 'fulfilled' && Array.isArray(subjs.value)) {
+        setSubjects(subjs.value);
       }
       if (asgns.status === 'fulfilled' && Array.isArray(asgns.value)) {
-        setAssignments((prev) => {
-          const combined = [...prev];
-          asgns.value.forEach((a: any) => {
-            if (!combined.some((c) => c.id === a.id || c.title === a.title)) {
-              combined.unshift({
-                id: a.id,
-                title: a.title,
-                code: a.subject?.code || 'CS502',
-                subject: a.subject?.name || 'Academic Course',
-                dueDate: a.dueDate ? new Date(a.dueDate).toLocaleDateString() : 'Oct 28, 2026',
-                priority: a.priority || 'HIGH',
-                status: a.status || 'Pending',
-                desc: a.description,
-              });
-            }
-          });
-          return combined;
-        });
+        setAssignments(
+          asgns.value.map((a: any) => ({
+            id: a.id,
+            title: a.title,
+            code: a.subject?.code || 'COURSE',
+            subject: a.subject?.name || 'Academic Course',
+            dueDate: a.dueDate ? new Date(a.dueDate).toLocaleDateString() : 'Pending',
+            priority: a.priority || 'MEDIUM',
+            status: a.status || 'Pending',
+            desc: a.description,
+          }))
+        );
       }
       if (tsks.status === 'fulfilled' && Array.isArray(tsks.value)) {
-        setTasks((prev) => {
-          const combined = [...prev];
-          tsks.value.forEach((t: any) => {
-            const existingIdx = combined.findIndex((c) => c.id === t.id || c.title === t.title);
-            if (existingIdx !== -1) {
-              combined[existingIdx] = {
-                ...combined[existingIdx],
-                id: t.id,
-                status: t.status,
-                completedAt: t.completedAt,
-              };
-            } else {
-              combined.unshift({
-                id: t.id,
-                title: t.title,
-                subject: t.subject || 'General',
-                priority: t.priority || 'MEDIUM',
-                dueDate: 'Today',
-                status: t.status || 'TODO',
-                completedAt: t.completedAt,
-              });
-            }
-          });
-          return combined;
-        });
+        setTasks(
+          tsks.value.map((t: any) => ({
+            id: t.id,
+            title: t.title,
+            subject: t.subject || 'General',
+            priority: t.priority || 'MEDIUM',
+            dueDate: 'Today',
+            status: t.status || 'TODO',
+            completedAt: t.completedAt,
+          }))
+        );
       }
       if (nts.status === 'fulfilled' && Array.isArray(nts.value)) {
-        setNotes((prev) => {
-          const combined = [...prev];
-          nts.value.forEach((n: any) => {
-            if (!combined.some((c) => c.id === n.id || c.title === n.title)) {
-              combined.unshift({
-                id: n.id,
-                title: n.title,
-                code: n.subject?.code || 'CS502',
-                subject: n.subject?.name || 'Study Notes',
-                date: new Date(n.createdAt || Date.now()).toLocaleDateString(),
-                tags: n.tags || ['os', 'memory'],
-                excerpt: n.content ? n.content.slice(0, 100) + '...' : '',
-                content: n.content || '',
-              });
-            }
-          });
-          return combined;
-        });
+        setNotes(
+          nts.value.map((n: any) => ({
+            id: n.id,
+            title: n.title,
+            code: n.subject?.code || 'COURSE',
+            subject: n.subject?.name || 'Study Notes',
+            date: new Date(n.createdAt || Date.now()).toLocaleDateString(),
+            tags: n.tags || ['notes'],
+            excerpt: n.content ? n.content.slice(0, 100) + '...' : '',
+            content: n.content || '',
+          }))
+        );
       }
       if (notifs.status === 'fulfilled' && Array.isArray(notifs.value)) {
-        setNotifications((prev) => {
-          const combined = [...prev];
-          notifs.value.forEach((n: any) => {
-            if (!combined.some((c) => c.id === n.id || c.title === n.title)) {
-              combined.unshift({
-                id: n.id,
-                title: n.title,
-                time: new Date(n.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                msg: n.message || n.description,
-                unread: !n.isRead,
-              });
-            }
-          });
-          return combined;
-        });
+        setNotifications(
+          notifs.value.map((n: any) => ({
+            id: n.id,
+            title: n.title,
+            time: new Date(n.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            msg: n.message || n.description,
+            unread: !n.isRead,
+          }))
+        );
       }
       if (calEvents.status === 'fulfilled' && Array.isArray(calEvents.value)) {
-        setCalendarEvents((prev) => {
-          const updated = { ...prev };
-          calEvents.value.forEach((ev: any) => {
-            const day = new Date(ev.date || ev.eventDate || Date.now()).getDate().toString();
-            if (!updated[day]) updated[day] = [];
-            if (!updated[day].some((e) => e.title === ev.title)) {
-              updated[day].unshift({
-                title: ev.title,
-                time: new Date(ev.date || ev.eventDate || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                venue: ev.description || 'Auditorium Hall B',
-                type: ev.eventType || 'EXAM',
-              });
-            }
+        const updated: Record<string, any[]> = {};
+        calEvents.value.forEach((ev: any) => {
+          const day = new Date(ev.date || ev.eventDate || Date.now()).getDate().toString();
+          if (!updated[day]) updated[day] = [];
+          updated[day].push({
+            title: ev.title,
+            time: new Date(ev.date || ev.eventDate || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            venue: ev.description || 'Campus',
+            type: ev.eventType || 'EVENT',
           });
-          return updated;
         });
+        setCalendarEvents(updated);
       }
-    } catch {
-      // Backend gracefully fallback to initialPlatformState
+      if (regCodes && regCodes.status === 'fulfilled' && Array.isArray(regCodes.value)) {
+        setRegistrationCodes(
+          regCodes.value.map((c: any) => ({
+            id: c.id,
+            code: c.code,
+            departmentName: c.department?.name || 'Computer Science & Engineering',
+            departmentCode: c.department?.code || 'CSE',
+            semesterNumber: c.semesterNumber || 1,
+            academicYear: c.academicYear || 2026,
+            maxUses: c.maxUses ?? null,
+            usedCount: c.usedCount || 0,
+            isActive: c.isActive ?? true,
+            createdAt: typeof c.createdAt === 'string' ? c.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+          }))
+        );
+      }
+    } catch (syncErr: unknown) {
+      console.warn('Backend data sync fallback to local cache:', syncErr);
     }
-  }, []);
+  }, [userRole, setAssignments, setTasks, setNotes, setNotifications, setCalendarEvents, setSemesters, setSubjects, setRegistrationCodes]);
 
   // ── Session Check on Initial Mount ─────────────────────────────
   useEffect(() => {
@@ -332,102 +441,105 @@ export default function App() {
             fullName = clean.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
           }
           if (fullName) {
+            const isInst = profile.isIndependent === false || Boolean(profile.departmentId);
             setStudentInfo((prev) => ({
               ...prev,
               name: fullName,
               email: session.user.email,
               avatar: fullName.slice(0, 2).toUpperCase(),
+              roll: profile.rollNumber || (isInst ? '2625001' : 'INDEPENDENT'),
+              branch: profile.department?.name || (isInst ? 'Computer Science & Engineering' : 'Self-Directed Learning'),
+              institution: profile.department?.institution?.name || (isInst ? 'University Department of Computer Science' : undefined),
+              isInstitutional: isInst,
             }));
           }
-          if (session.user.role === 'ADMIN') {
-            setUserRole('admin');
-            setActiveView('admin');
-          } else {
-            setUserRole('student');
-            setActiveView('dashboard');
-          }
+          const role: UserRole = (session.user.role === 'ADMIN' || session.user.role === 'SUPER_ADMIN' || session.user.role === 'INSTITUTION_ADMIN' || session.user.role === 'FACULTY') ? 'admin' : 'student';
+          setUserRole(role);
+          setActiveView(role === 'admin' ? 'admin' : 'dashboard');
           setPhase('app');
-          fetchBackendData();
+          fetchBackendData(role);
+        } else {
+          setUser(null);
+          setPhase('landing');
         }
-      } catch {
-        // Retain local state or demo phase if previously authenticated
+      } catch (authErr: unknown) {
+        console.warn('Silent session restore failed, presenting guest landing view:', authErr);
+        setUser(null);
+        setPhase('landing');
       }
     }
     checkAuth();
-  }, [fetchBackendData, setPhase, setStudentInfo, setUser, setUserRole]);
+  }, [fetchBackendData, setActiveView, setPhase, setStudentInfo, setUser, setUserRole]);
 
   // ── Authentication Handlers ─────────────────────────────────────
   const handleStudentLogin = async (email: string, pass: string) => {
-    try {
-      const res = await authApi.login({ email, password: pass });
-      setUser(res.user);
-      const profile = res.user?.studentProfile || res.user || {};
-      const firstName = profile.firstName || res.user?.firstName || '';
-      const lastName = profile.lastName || res.user?.lastName || '';
-      let fullName = `${firstName} ${lastName}`.trim();
-      if (!fullName && email) {
-        const clean = email.split('@')[0].replace(/[._]/g, ' ');
-        fullName = clean.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      }
-      if (!fullName) fullName = 'Student';
-
-      setStudentInfo((prev) => ({
-        ...prev,
-        name: fullName,
-        email: res.user?.email || email,
-        avatar: fullName.slice(0, 2).toUpperCase(),
-      }));
-      setUserRole('student');
-      setPhase('app');
-      setActiveView('dashboard');
-      showToast(`Welcome back, ${fullName}! Signed in successfully.`, 'success');
-      fetchBackendData();
-    } catch {
-      // Resilient local-first fallback for offline demo/testing
-      const cleanName = email.split('@')[0].replace(/[._]/g, ' ') || 'Student';
-      const formattedName = cleanName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      setUser({ name: formattedName, email, role: 'STUDENT' });
-      setStudentInfo((prev) => ({
-        ...prev,
-        name: formattedName,
-        email,
-        avatar: formattedName.slice(0, 2).toUpperCase(),
-      }));
-      setUserRole('student');
-      setPhase('app');
-      setActiveView('dashboard');
-      showToast(`Signed in to Student Workspace as ${formattedName}`, 'success');
+    const res = await authApi.login({ email, password: pass });
+    setUser(res.user);
+    const profile = res.user?.studentProfile || res.user || {};
+    const firstName = profile.firstName || res.user?.firstName || '';
+    const lastName = profile.lastName || res.user?.lastName || '';
+    let fullName = `${firstName} ${lastName}`.trim();
+    if (!fullName && email) {
+      const clean = email.split('@')[0].replace(/[._]/g, ' ');
+      fullName = clean.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     }
+    if (!fullName) fullName = 'Student';
+
+    const isInst = profile.isIndependent === false || Boolean(profile.departmentId);
+    setStudentInfo((prev) => ({
+      ...prev,
+      name: fullName,
+      email: res.user?.email || email,
+      avatar: fullName.slice(0, 2).toUpperCase(),
+      roll: profile.rollNumber || (isInst ? '2625001' : 'INDEPENDENT'),
+      branch: profile.department?.name || (isInst ? 'Computer Science & Engineering' : 'Self-Directed Learning'),
+      institution: profile.department?.institution?.name || (isInst ? 'University Department of Computer Science' : undefined),
+      isInstitutional: isInst,
+    }));
+    setUserRole('student');
+    setPhase('app');
+    setActiveView('dashboard');
+    showToast(`Welcome back, ${fullName}! Signed in successfully.`, 'success');
+    fetchBackendData('student');
   };
 
   const handleAdminLogin = async (email: string, pass: string) => {
-    try {
-      const res = await authApi.login({ email, password: pass });
-      setUser(res.user);
-      setUserRole('admin');
-      setPhase('app');
-      setActiveView('admin');
-      showToast('Signed in to University Administration Portal', 'success');
-      fetchBackendData();
-    } catch {
-      // Demo admin login fallback
-      setUser({ name: 'Dr. K. Sharma', email: email || 'admin@integrum.ac.in', role: 'ADMIN' });
-      setUserRole('admin');
-      setPhase('app');
-      setActiveView('admin');
-      showToast('Signed in to University Administration Portal', 'success');
+    const res = await authApi.login({ email, password: pass });
+    const staffRoles = ['ADMIN', 'SUPER_ADMIN', 'INSTITUTION_ADMIN', 'FACULTY'];
+    if (!staffRoles.includes(res.user?.role)) {
+      throw new Error('Access denied. This administrative portal requires staff or faculty credentials.');
     }
+    setUser(res.user);
+    setUserRole('admin');
+    setPhase('app');
+    setActiveView('admin');
+    showToast('Signed in to University Administration Portal', 'success');
+    fetchBackendData('admin');
   };
 
-  const handleRegister = async (firstName: string, lastName: string, email: string, pass: string) => {
+  const handleRegister = async (data: RegisterData) => {
+    const { isInstitutional, firstName, lastName, email, pass, rollNo, institutionCode } = data;
     const fullName = `${firstName} ${lastName}`.trim() || 'Student';
-    // Clear mock/stale data so the new profile starts completely clean:
+
+    // Real backend registration
+    await authApi.register({
+      firstName,
+      lastName,
+      email,
+      password: pass,
+      isInstitutional,
+      rollNumber: rollNo,
+      institutionCode,
+    });
+
+    // Auto-login upon successful registration
+    const loginRes = await authApi.login({ email, password: pass });
+    setUser(loginRes.user);
+
+    // Clear previous/stale data so the new profile starts completely clean:
     setTasks([]);
     setAssignments([]);
     setNotes([]);
-    setSubjects([]);
-    setCalendarEvents({});
-    setAttendance({});
     try {
       localStorage.removeItem('integrum_tasks');
       localStorage.removeItem('integrum_notes');
@@ -438,28 +550,49 @@ export default function App() {
       // ignore
     }
 
-    try {
-      await authApi.register({ firstName, lastName, email, password: pass });
-      const loginRes = await authApi.login({ email, password: pass });
-      setUser(loginRes.user);
-    } catch {
-      // Resilient local-first fallback
-      setUser({ name: fullName, email, role: 'STUDENT' });
+    if (!isInstitutional) {
+      // Independent Learner: Purge all mock institutional subjects, attendance, and calendar events
+      setSubjects([]);
+      setCalendarEvents({});
+      setAttendance({});
+      setStudentInfo({
+        name: fullName,
+        roll: 'INDEPENDENT',
+        branch: 'Self-Directed Learning',
+        year: 'Independent',
+        sem: 'Personal Workspace',
+        email,
+        avatar: `${firstName[0] || 'I'}${lastName[0] || 'L'}`.toUpperCase(),
+        institution: undefined,
+        isInstitutional: false,
+      });
+    } else {
+      // Institutional Student: Link official department code and assigned roll number (e.g. 2625001)
+      setStudentInfo({
+        name: fullName,
+        roll: rollNo || '2625001',
+        branch: institutionCode ? `Department [${institutionCode}]` : 'Computer Science & Engineering',
+        year: 'Academic Year 2026',
+        sem: 'Semester 5 (Active)',
+        email,
+        avatar: `${firstName[0] || 'A'}${lastName[0] || 'K'}`.toUpperCase(),
+        institution: institutionCode ? `Institution [${institutionCode}]` : 'University Department of Computer Science',
+        isInstitutional: true,
+      });
     }
-    setStudentInfo({
-      name: fullName,
-      roll: 'INT2026' + Math.floor(100 + Math.random() * 900),
-      branch: 'Computer Science & Engineering',
-      year: '3rd Year',
-      sem: 'Semester 5 (Fall 2026)',
-      email,
-      avatar: `${firstName[0] || 'A'}${lastName[0] || 'K'}`.toUpperCase(),
-    });
+
     setUserRole('student');
     setPhase('app');
     setActiveView('dashboard');
-    showToast(`Registration complete! Welcome, ${firstName}.`, 'success');
-    fetchBackendData();
+    showToast(
+      isInstitutional
+        ? `Registration complete! Enrolled as ${rollNo || 'student'} via code ${institutionCode || ''}.`
+        : `Registration complete! Welcome to your independent workspace, ${firstName}.`,
+      'success'
+    );
+    if (isInstitutional) {
+      fetchBackendData();
+    }
   };
 
   const handleLogout = async () => {
@@ -471,6 +604,17 @@ export default function App() {
       setUser(null);
       setPhase('landing');
       setActiveView('dashboard');
+      setTasks([]);
+      setAssignments([]);
+      setNotes([]);
+      setReminders([]);
+      setAttendance({});
+      setCalendarEvents({});
+      setSubjects([]);
+      setSkills([]);
+      setJobs([]);
+      setNotifications([]);
+      setStudentInfo(initialPlatformState.studentInfo);
       showToast('Signed out successfully.', 'info');
     }
   };
@@ -819,19 +963,6 @@ export default function App() {
     showToast(`+ Keyword "${keyword}" integrated into ${key.toUpperCase()} resume! Score boosted.`, 'success');
   };
 
-  // ── Mumbai University TYCS Template & Blank Curriculum Handlers ─
-  const handleLoadTycsTemplate = () => {
-    setSubjects([
-      { id: 'subj-1', code: '1105111', name: 'Artificial Intelligence', credits: 4 },
-      { id: 'subj-2', code: '1105112', name: 'Cyber & Information Security', credits: 4 },
-      { id: 'subj-3', code: '1105115', name: 'IKS in Computational Systems', credits: 3 },
-      { id: 'subj-4', code: '1105116', name: 'Software Testing & Quality Assurance', credits: 4 },
-      { id: 'subj-5', code: '1105118', name: 'R Programming Practical', credits: 3 },
-    ]);
-    setAssignments(initialPlatformState.assignments as any);
-    showToast('Loaded Mumbai University TYCS Sem 5 Subject Pack & Coursework!', 'success');
-  };
-
   const handleClearToBlankWorkspace = () => {
     setSubjects([]);
     setAssignments([]);
@@ -882,50 +1013,151 @@ export default function App() {
     }
   };
 
+  // ── Multi-Tenant Hierarchy & Staff Profile Handlers ──────────────
+  const handleSaveInstitutionAdmin = (info: Partial<InstitutionAdminInfo>) => {
+    setInstitutionAdminInfo((prev) => ({ ...prev, ...info }));
+    showToast('Institution Admin details saved successfully!', 'success');
+  };
+
+  const handleSaveDepartmentHead = (info: Partial<DepartmentHeadInfo>) => {
+    setDepartmentHeadInfo((prev) => ({ ...prev, ...info }));
+    showToast('Department Head details saved successfully!', 'success');
+  };
+
+  const handleSaveFaculty = (info: Partial<FacultyInfo>) => {
+    setFacultyInfo((prev) => ({ ...prev, ...info }));
+    showToast('Faculty details saved successfully!', 'success');
+  };
+
+  const handleAddRegistrationCode = async (newCode: RegistrationCodeItem) => {
+    try {
+      const created = await adminApi.createRegistrationCode({
+        code: newCode.code,
+        departmentName: newCode.departmentName,
+        departmentCode: newCode.departmentCode,
+        semesterNumber: newCode.semesterNumber,
+        academicYear: newCode.academicYear,
+        maxUses: newCode.maxUses,
+        isActive: newCode.isActive,
+      });
+      const formatted: RegistrationCodeItem = {
+        id: created?.id || newCode.id,
+        code: created?.code || newCode.code,
+        departmentName: created?.department?.name || newCode.departmentName,
+        departmentCode: created?.department?.code || newCode.departmentCode,
+        semesterNumber: created?.semesterNumber || newCode.semesterNumber,
+        academicYear: created?.academicYear || newCode.academicYear,
+        maxUses: created?.maxUses ?? newCode.maxUses,
+        usedCount: created?.usedCount || 0,
+        isActive: created?.isActive ?? newCode.isActive,
+        createdAt: typeof created?.createdAt === 'string' ? created.createdAt.split('T')[0] : (newCode.createdAt || new Date().toISOString().split('T')[0]),
+      };
+      setRegistrationCodes((prev) => [formatted, ...prev]);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to persist registration code', 'error');
+      throw err;
+    }
+  };
+
+  const handleToggleRegistrationCode = async (id: string) => {
+    const existing = registrationCodes.find((c) => c.id === id);
+    const targetState = existing ? !existing.isActive : true;
+    try {
+      await adminApi.toggleRegistrationCode(id, targetState);
+      setRegistrationCodes((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, isActive: targetState } : c))
+      );
+      showToast('Registration code status updated', 'info');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update registration code', 'error');
+    }
+  };
+
+  const handleAddStaffMember = (role: StaffRole, data: any) => {
+    if (role === 'institution_admin') {
+      setInstitutionAdminInfo((prev) => ({
+        ...prev,
+        name: data.name,
+        email: data.email,
+        title: data.title,
+        institutionCode: data.specificField1 || prev.institutionCode,
+        accreditation: data.specificField2 || prev.accreditation,
+      }));
+    } else if (role === 'department_head') {
+      setDepartmentHeadInfo((prev) => ({
+        ...prev,
+        name: data.name,
+        email: data.email,
+        title: data.title,
+        departmentCode: data.specificField1 || prev.departmentCode,
+      }));
+    } else if (role === 'faculty') {
+      setFacultyInfo((prev) => ({
+        ...prev,
+        name: data.name,
+        email: data.email,
+        title: data.title,
+        facultyId: data.specificField1 || prev.facultyId,
+        specialization: data.specificField2 || prev.specialization,
+      }));
+    }
+  };
+
   return (
     <div className={`app-container ${darkMode ? 'dark' : ''}`}>
       {/* Toast Notification Container */}
-      <div id="toastContainer" style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div id="toastContainer" style={{ position: 'fixed', top: '24px', right: '24px', zIndex: 99999, display: 'flex', flexDirection: 'column', gap: '10px', pointerEvents: 'none', maxWidth: '420px', width: 'calc(100vw - 48px)' }}>
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`toast toast-${t.type}`}
+            className={`toast show toast-${t.type}`}
             style={{
-              padding: '12px 18px',
-              borderRadius: 'var(--radius-sm)',
+              padding: '14px 20px',
+              borderRadius: '8px',
               color: '#ffffff',
-              background: t.type === 'error' ? 'var(--error)' : t.type === 'success' ? 'var(--success)' : 'var(--primary)',
+              background: t.type === 'error' ? '#991b1b' : t.type === 'success' ? '#15803d' : '#0f4c42',
+              borderLeft: `5px solid ${t.type === 'error' ? '#fca5a5' : t.type === 'success' ? '#86efac' : '#5eead4'}`,
               fontWeight: 600,
-              fontSize: '13px',
-              boxShadow: 'var(--shadow-lg)',
+              fontSize: '13.5px',
+              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '10px',
+              opacity: 1,
+              transform: 'none',
+              pointerEvents: 'auto',
+              animation: 'fadeIn 0.2s ease',
             }}
           >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff', display: 'inline-block' }} />
-            <span>{t.message}</span>
+            <span style={{ fontSize: '15px' }}>
+              {t.type === 'error' ? '❌' : t.type === 'success' ? '✅' : 'ℹ️'}
+            </span>
+            <span style={{ lineHeight: 1.4 }}>{t.message}</span>
           </div>
         ))}
       </div>
 
       {/* PHASE 1: LANDING */}
-      {phase === 'landing' && (
+      {((phase === 'app' && !user) ? 'landing' : phase) === 'landing' && (
         <LandingPhase
           onGoLogin={(mode) => {
             setLoginMode(mode || 'student');
             setPhase('login');
           }}
           onGoApp={() => {
-            setUserRole('student');
-            setPhase('app');
-            setActiveView('dashboard');
+            if (user) {
+              setPhase('app');
+              setActiveView('dashboard');
+            } else {
+              setLoginMode('student');
+              setPhase('login');
+            }
           }}
         />
       )}
 
       {/* PHASE 2: LOGIN & DUAL PORTAL */}
-      {phase === 'login' && (
+      {((phase === 'app' && !user) ? 'landing' : phase) === 'login' && (
         <LoginPhase
           initialMode={loginMode}
           onStudentLogin={handleStudentLogin}
@@ -937,48 +1169,69 @@ export default function App() {
       )}
 
       {/* PHASE 3: APP WORKSPACE */}
-      {phase === 'app' && (
-        <div className="phase active" id="phase-app" style={{ display: 'flex', minHeight: '100vh' }}>
-          {/* Sidebar */}
-          <Sidebar
-            isOpen={sidebarOpen}
-            activeView={activeView}
-            userRole={userRole}
-            onClose={() => setSidebarOpen(false)}
-            onNavigate={(v) => {
-              setActiveView(v);
-              setSidebarOpen(false);
-            }}
-            onLogout={handleLogout}
-          />
+      {phase === 'app' && user && (
+        (() => {
+          const isInst = studentInfo.isInstitutional !== false;
+          const visibleNotifications = (notifications || []).filter((n) => {
+            if (!isInst) {
+              const text = `${n.title || ''} ${n.msg || ''} ${n.description || ''}`.toLowerCase();
+              if (
+                text.includes('attendance') ||
+                text.includes('stqa') ||
+                text.includes('lecture') ||
+                text.includes('exam calendar') ||
+                text.includes('hall ticket') ||
+                text.includes('circular')
+              ) {
+                return false;
+              }
+            }
+            return true;
+          });
 
-          {/* Main App Content Area */}
-          <div className="main-wrap">
-            {/* Header */}
-            <Header
-              activeView={activeView}
-              userRole={userRole}
-              studentInfo={studentInfo}
-              adminInfo={adminInfo}
-              user={user}
-              darkMode={darkMode}
-              notifOpen={notifOpen}
-              notifications={notifications}
-              onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-              onOpenCmdPalette={() => setCmdOpen(true)}
-              onToggleRole={() => {
-                const nextRole = userRole === 'admin' ? 'student' : 'admin';
-                setUserRole(nextRole);
-                if (nextRole === 'admin') setActiveView('admin');
-                else setActiveView('dashboard');
-                showToast(`Switched to ${nextRole === 'admin' ? 'Faculty Admin' : 'Student'} mode`, 'info');
-              }}
-              onToggleDarkMode={() => setDarkMode(!darkMode)}
-              onToggleNotif={() => setNotifOpen(!notifOpen)}
-              onMarkNotifRead={handleMarkNotifRead}
-              onMarkAllNotifsRead={handleMarkAllNotifsRead}
-              onLogout={handleLogout}
-            />
+          return (
+            <div className="phase active" id="phase-app" style={{ display: 'flex', minHeight: '100vh' }}>
+              {/* Sidebar */}
+              <Sidebar
+                isOpen={sidebarOpen}
+                activeView={activeView}
+                userRole={userRole}
+                isInstitutional={isInst}
+                onClose={() => setSidebarOpen(false)}
+                onNavigate={(v) => {
+                  setActiveView(v);
+                  setSidebarOpen(false);
+                }}
+                onLogout={handleLogout}
+              />
+
+              {/* Main App Content Area */}
+              <div className="main-wrap">
+                {/* Header */}
+                <Header
+                  activeView={activeView}
+                  userRole={userRole}
+                  studentInfo={studentInfo}
+                  adminInfo={adminInfo}
+                  user={user}
+                  darkMode={darkMode}
+                  notifOpen={notifOpen}
+                  notifications={visibleNotifications}
+                  onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                  onOpenCmdPalette={() => setCmdOpen(true)}
+                  onToggleRole={() => {
+                    const nextRole = userRole === 'admin' ? 'student' : 'admin';
+                    setUserRole(nextRole);
+                    if (nextRole === 'admin') setActiveView('admin');
+                    else setActiveView('dashboard');
+                    showToast(`Switched to ${nextRole === 'admin' ? 'Faculty Admin' : 'Student'} mode`, 'info');
+                  }}
+                  onToggleDarkMode={handleToggleDarkMode}
+                  onToggleNotif={() => setNotifOpen(!notifOpen)}
+                  onMarkNotifRead={handleMarkNotifRead}
+                  onMarkAllNotifsRead={handleMarkAllNotifsRead}
+                  onLogout={handleLogout}
+                />
 
             {/* View Render Area */}
             <main className="main-content">
@@ -992,6 +1245,7 @@ export default function App() {
                   tasks={tasks}
                   reminders={reminders}
                   notes={notes}
+                  calendarEvents={calendarEvents}
                   studyLogged={studyLogged}
                   studyTarget={studyTarget}
                   onNavigate={setActiveView}
@@ -1017,6 +1271,7 @@ export default function App() {
                 <StudyView
                   logged={studyLogged}
                   target={studyTarget}
+                  subjects={subjects}
                   onLogHours={(h) => setStudyLogged((prev) => prev + h)}
                   showToast={showToast}
                 />
@@ -1040,18 +1295,36 @@ export default function App() {
                   onOpenAsgnModal={() => setIsAsgnModalOpen(true)}
                   onOpenSubjectModal={() => setIsSubjectModalOpen(true)}
                   onViewAsgn={(a) => setSelectedAsgn(a)}
-                  onLoadTycsTemplate={handleLoadTycsTemplate}
                   onClearBlankWorkspace={handleClearToBlankWorkspace}
                 />
               )}
 
-              {/* 5. Attendance */}
+              {/* 5. Attendance (Institution-Gated) */}
               {activeView === 'attend' && (
-                <AttendanceView
-                  attendance={attendance}
-                  onLogToday={handleLogAttendanceToday}
-                  showToast={showToast}
-                />
+                isInst ? (
+                  <AttendanceView
+                    attendance={attendance}
+                    onLogToday={handleLogAttendanceToday}
+                    showToast={showToast}
+                  />
+                ) : (
+                  <div className="view active" id="v-attend">
+                    <div className="card" style={{ padding: '36px 24px', textAlign: 'center', maxWidth: '620px', margin: '40px auto' }}>
+                      <div style={{ fontSize: '3rem', marginBottom: '16px' }}>🏛️</div>
+                      <h2 style={{ fontSize: '1.4rem', fontWeight: 800, margin: '0 0 10px 0' }}>Institutional Feature Required</h2>
+                      <p style={{ color: 'var(--text-2)', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '22px' }}>
+                        Attendance tracking is managed directly by authorized universities and colleges. Independent student accounts do not have institutional lecture rosters or required attendance reports.
+                      </p>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleToggleInstitutional}
+                        style={{ padding: '10px 24px', fontWeight: 700 }}
+                      >
+                        Connect Institutional Account
+                      </button>
+                    </div>
+                  </div>
+                )
               )}
 
               {/* 6. Calendar */}
@@ -1137,7 +1410,15 @@ export default function App() {
               )}
 
               {/* 12. Analytics Hub */}
-              {activeView === 'analytics' && <AnalyticsView />}
+              {activeView === 'analytics' && (
+                <AnalyticsView
+                  tasks={tasks}
+                  studyLogged={studyLogged}
+                  assignments={assignments}
+                  notes={notes}
+                  attendance={attendance}
+                />
+              )}
 
               {/* 13. AI Assistant */}
               {activeView === 'ai' && <AIAssistantView studentInfo={studentInfo} subjects={subjects} attendance={attendance} tasks={tasks} />}
@@ -1147,12 +1428,20 @@ export default function App() {
                 <AdminView
                   students={students}
                   announcements={announcements}
+                  registrationCodes={registrationCodes}
+                  institutionAdminInfo={institutionAdminInfo}
+                  departmentHeadInfo={departmentHeadInfo}
+                  facultyInfo={facultyInfo}
                   onOpenAnnounceModal={() => setIsAnnounceModalOpen(true)}
                   onSwitchToStudentView={() => {
                     setUserRole('student');
                     setActiveView('dashboard');
                     showToast('Switched to Student View', 'info');
                   }}
+                  onAddRegistrationCode={handleAddRegistrationCode}
+                  onToggleRegistrationCode={handleToggleRegistrationCode}
+                  onAddStaffMember={handleAddStaffMember}
+                  showToast={showToast}
                 />
               )}
 
@@ -1160,12 +1449,23 @@ export default function App() {
               {activeView === 'profile' && (
                 <ProfileView
                   studentInfo={studentInfo}
+                  userRole={userRole}
+                  staffRole="faculty"
+                  institutionAdminInfo={institutionAdminInfo}
+                  departmentHeadInfo={departmentHeadInfo}
+                  facultyInfo={facultyInfo}
                   darkMode={darkMode}
-                  onToggleDarkMode={() => setDarkMode(!darkMode)}
+                  themeMode={themeMode}
+                  onSetThemeMode={handleSetThemeMode}
+                  onToggleDarkMode={handleToggleDarkMode}
+                  onToggleInstitutional={handleToggleInstitutional}
                   onOpenPasswordModal={() => setIsPasswordModalOpen(true)}
                   onSaveProfile={(name, email) => {
                     setStudentInfo((prev) => ({ ...prev, name, email }));
                   }}
+                  onSaveInstitutionAdmin={handleSaveInstitutionAdmin}
+                  onSaveDepartmentHead={handleSaveDepartmentHead}
+                  onSaveFaculty={handleSaveFaculty}
                   showToast={showToast}
                   onExportBackup={handleExportWorkspace}
                   onImportBackup={handleImportWorkspace}
@@ -1307,6 +1607,8 @@ export default function App() {
             }}
           />
         </div>
+          );
+        })()
       )}
     </div>
   );

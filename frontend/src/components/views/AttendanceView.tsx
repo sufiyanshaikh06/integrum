@@ -21,14 +21,12 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
 
   const attendList = Array.from(attendMap.values());
   const [selectedCalcCode, setSelectedCalcCode] = useState<string>(() => {
-    // Default to Software Testing if present, or first course
-    const stqa = attendList.find((c) => String(c.code).includes('1105116') || c.name.toLowerCase().includes('software testing'));
-    return stqa ? String(stqa.code) : attendList[0]?.code ? String(attendList[0].code) : '1105116';
+    return attendList[0]?.code ? String(attendList[0].code) : '';
   });
 
   const totalPres = attendList.reduce((acc, c) => acc + (c.present || 0), 0);
   const totalHeld = attendList.reduce((acc, c) => acc + (c.total || 0), 0);
-  const overallAvg = totalHeld > 0 ? ((totalPres / totalHeld) * 100).toFixed(1) : '85.2';
+  const overallAvg = totalHeld > 0 ? ((totalPres / totalHeld) * 100).toFixed(1) : '0.0';
 
   // Strict Threshold Math against 75% cutoff requirement
   const selectedCourse =
@@ -37,11 +35,11 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
     attendList[0];
 
   const presentCount = selectedCourse?.present ?? 0;
-  const totalCount = selectedCourse?.total ?? 1;
+  const totalCount = selectedCourse?.total ?? 0;
   const currentPct = totalCount > 0 ? (presentCount / totalCount) * 100 : 0;
   const isAboveThreshold = currentPct >= 75.0;
 
-  let calcResult = '';
+  let calcResult = 'No active courses enrolled. Enroll in courses to calculate your attendance buffer against the 75% cutoff.';
   let maxMissable = 0;
   let neededClasses = 0;
 
@@ -70,7 +68,7 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
           <div>
             <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800 }}>Attendance Health & Course Standing</h2>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
-              Real-time attendance standing across Semester 5 courses against the mandatory 75% university policy.
+              Real-time attendance standing across enrolled courses against the mandatory 75% university policy.
             </p>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -96,7 +94,14 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
             </tr>
           </thead>
           <tbody>
-            {attendList.map((c) => {
+            {attendList.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-3)' }}>
+                  No courses enrolled yet. Enrolled institutional subjects will appear here automatically with lecture attendance.
+                </td>
+              </tr>
+            ) : (
+              attendList.map((c) => {
               const pct = c.total > 0 ? Math.round((c.present / c.total) * 100) : 0;
               const isSafe = pct >= 75;
               return (
@@ -151,7 +156,8 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
                   </td>
                 </tr>
               );
-            })}
+            })
+          )}
           </tbody>
         </table>
       </div>
@@ -171,14 +177,18 @@ export default function AttendanceView({ attendance, onLogToday, showToast }: At
             onChange={(e) => setSelectedCalcCode(e.target.value)}
             style={{ maxWidth: '380px', fontSize: '13px', fontWeight: 600 }}
           >
-            {attendList.map((c) => {
-              const p = c.total > 0 ? Math.round((c.present / c.total) * 100) : 0;
-              return (
-                <option key={c.code} value={c.code}>
-                  {c.code} · {c.name} ({p}%) — {c.present}/{c.total} classes
-                </option>
-              );
-            })}
+            {attendList.length === 0 ? (
+              <option value="">No courses available</option>
+            ) : (
+              attendList.map((c) => {
+                const p = c.total > 0 ? Math.round((c.present / c.total) * 100) : 0;
+                return (
+                  <option key={c.code} value={c.code}>
+                    {c.code} · {c.name} ({p}%) — {c.present}/{c.total} classes
+                  </option>
+                );
+              })
+            )}
           </select>
         </div>
 

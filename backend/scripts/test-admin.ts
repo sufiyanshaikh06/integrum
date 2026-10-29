@@ -27,7 +27,9 @@ async function run() {
     });
     const adminLoginData = await adminLoginRes.json();
     adminToken = adminLoginData.data?.accessToken;
-  } catch(e) {}
+  } catch (e) {
+    console.warn('Initial admin authentication handshake error:', e);
+  }
   
   if (!adminToken) {
      console.error('Could not authenticate admin. Make sure server is running and seeded.');

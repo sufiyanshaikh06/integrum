@@ -34,6 +34,14 @@ import { AIService } from '../src/services/ai.service.js';
 import { jobApplicationService } from '../src/services/jobapplication.service.js';
 
 // Fail closed before creating fixtures on a working database.
+if (!process.env.NODE_ENV || process.env.NODE_ENV === 'development') {
+  process.env.NODE_ENV = 'test';
+}
+if (process.env.DATABASE_URL && !new URL(process.env.DATABASE_URL).pathname.endsWith('_test')) {
+  const u = new URL(process.env.DATABASE_URL);
+  u.pathname = `${u.pathname}_test`;
+  process.env.DATABASE_URL = u.toString();
+}
 assert(new URL(process.env.DATABASE_URL!).pathname.endsWith('_test'));
 assert.equal(process.env.NODE_ENV, 'test');
 
@@ -337,8 +345,15 @@ test('day-one HTTP and persistence regressions', async t => {
       const token2 = (await login2.json() as any).data.accessToken;
 
       const seedAdmin = await prisma.user.findUniqueOrThrow({ where: { email: process.env.SEED_ADMIN_EMAIL! } });
+      const extraAdmins = await prisma.user.findMany({
+        where: { role: 'ADMIN', isActive: true, NOT: { id: { in: [admin1.id, admin2.id] } } },
+        select: { id: true },
+      });
+      const deactivatedAdminIds = extraAdmins.map((u) => u.id);
       try {
-        await prisma.user.update({ where: { id: seedAdmin.id }, data: { isActive: false } });
+        if (deactivatedAdminIds.length > 0) {
+          await prisma.user.updateMany({ where: { id: { in: deactivatedAdminIds } }, data: { isActive: false } });
+        }
 
         const [res1, res2] = await Promise.all([
           req('PATCH', `/admin/users/${admin2.id}/status`, token1, { isActive: false }),
@@ -398,6 +413,9 @@ test('day-one HTTP and persistence regressions', async t => {
         });
         assert.equal(remainingAfterMixed, 1, 'Exactly one admin must remain active after mixed race');
       } finally {
+        if (deactivatedAdminIds.length > 0) {
+          await prisma.user.updateMany({ where: { id: { in: deactivatedAdminIds } }, data: { isActive: true } }).catch(() => {});
+        }
         await prisma.user.update({ where: { id: seedAdmin.id }, data: { isActive: true } }).catch(() => {});
         await prisma.adminAuditLog.deleteMany({ where: { targetId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
         await prisma.adminProfile.deleteMany({ where: { userId: { in: [admin1.id, admin2.id] } } }).catch(() => {});
@@ -781,6 +799,103 @@ test('day-one HTTP and persistence regressions', async t => {
       } finally {
         await prisma.department.delete({ where: { id: department.id } });
         await prisma.adminAuditLog.deleteMany({ where: { targetId: department.id } });
+      }
+    });
+    await t.test('department registration codes: admin management, student role-gating, toggle, and concurrency race-condition prevention', async () => {
+      const login = await req('POST', '/auth/login', '', {
+        email: process.env.SEED_ADMIN_EMAIL, password: process.env.SEED_ADMIN_PASSWORD,
+      });
+      assert.equal(login.status, 200);
+      const adminToken = (await login.json() as any).data.accessToken;
+
+      // 1. Role-gating: student cannot access registration code endpoints
+      const studentGetRes = await req('GET', '/admin/academics/registration-codes', a.token);
+      assert.equal(studentGetRes.status, 403, 'Students must be forbidden from listing registration codes');
+      const studentPostRes = await req('POST', '/admin/academics/registration-codes', a.token, { code: 'HACK-CODE' });
+      assert.equal(studentPostRes.status, 403, 'Students must be forbidden from creating registration codes');
+
+      // 2. Admin creates registration code
+      const codeStr = `CSE-TEST-${randomUUID().slice(0, 8).toUpperCase()}`;
+      const createRes = await req('POST', '/admin/academics/registration-codes', adminToken, {
+        code: codeStr,
+        semesterNumber: 2,
+        academicYear: 2026,
+        maxUses: 1,
+      });
+      assert.equal(createRes.status, 201);
+      const createdCode = (await createRes.json() as any).data;
+      assert.equal(createdCode.code, codeStr);
+      assert.equal(createdCode.isActive, true);
+      assert.equal(createdCode.usedCount, 0);
+      assert.equal(createdCode.maxUses, 1);
+
+      const studentEmail1 = `race1_${randomUUID().slice(0, 6)}@test.com`;
+      const studentEmail2 = `race2_${randomUUID().slice(0, 6)}@test.com`;
+
+      try {
+        // 3. Admin lists registration codes
+        const listRes = await req('GET', '/admin/academics/registration-codes', adminToken);
+        assert.equal(listRes.status, 200);
+        const listData = (await listRes.json() as any).data;
+        assert(listData.some((c: any) => c.id === createdCode.id), 'Created code must be present in list');
+
+        // 4. Toggle code off
+        const toggleOffRes = await req('PATCH', `/admin/academics/registration-codes/${createdCode.id}/toggle`, adminToken, { isActive: false });
+        assert.equal(toggleOffRes.status, 200);
+        const toggledCode = (await toggleOffRes.json() as any).data;
+        assert.equal(toggledCode.isActive, false);
+
+        // 5. Inactive code rejected on registration
+        const inactiveRegRes = await req('POST', '/auth/register', '', {
+          email: `inact_${randomUUID().slice(0, 6)}@test.com`,
+          password: 'Password123!',
+          firstName: 'Inactive',
+          lastName: 'Student',
+          institutionCode: codeStr,
+          isInstitutional: true,
+        });
+        assert.equal(inactiveRegRes.status, 400);
+
+        // 6. Toggle code back on
+        const toggleOnRes = await req('PATCH', `/admin/academics/registration-codes/${createdCode.id}/toggle`, adminToken, { isActive: true });
+        assert.equal(toggleOnRes.status, 200);
+
+        // 7. Concurrent multi-student claim contention (maxUses = 1)
+        const [reg1, reg2] = await Promise.all([
+          req('POST', '/auth/register', '', {
+            email: studentEmail1,
+            password: 'Password123!',
+            firstName: 'RaceOne',
+            lastName: 'Student',
+            institutionCode: codeStr,
+            isInstitutional: true,
+          }),
+          req('POST', '/auth/register', '', {
+            email: studentEmail2,
+            password: 'Password123!',
+            firstName: 'RaceTwo',
+            lastName: 'Student',
+            institutionCode: codeStr,
+            isInstitutional: true,
+          }),
+        ]);
+
+        const statuses = [reg1.status, reg2.status].sort();
+        assert.deepEqual(statuses, [201, 400], 'Exactly one concurrent registration must succeed (201) and the second must be rejected (400) on capacity limit');
+
+        const codeAfterRace = await prisma.departmentRegistrationCode.findUniqueOrThrow({ where: { id: createdCode.id } });
+        assert.equal(codeAfterRace.usedCount, 1, 'usedCount must not exceed maxUses (1)');
+      } finally {
+        const winningUsers = await prisma.user.findMany({
+          where: { email: { in: [studentEmail1, studentEmail2] } },
+          select: { id: true },
+        });
+        for (const u of winningUsers) {
+          await prisma.studentProfile.deleteMany({ where: { userId: u.id } });
+          await prisma.user.deleteMany({ where: { id: u.id } });
+        }
+        await prisma.departmentRegistrationCode.delete({ where: { id: createdCode.id } }).catch(() => {});
+        await prisma.adminAuditLog.deleteMany({ where: { targetId: createdCode.id } }).catch(() => {});
       }
     });
     await t.test('foreign study-plan links rejected on create/update with no mutation', async () => {

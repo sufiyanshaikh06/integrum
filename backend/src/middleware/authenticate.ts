@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { verifyAccessToken, JwtPayload } from '../utils/jwt.js';
 import { prisma } from '../config/prisma.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -14,7 +14,7 @@ declare global {
         sessionId: string;
         id: string;
         email: string;
-        role: 'STUDENT' | 'ADMIN';
+        role: Role;
         isActive: boolean;
         studentProfile?: { id: string; courseId?: string | null } | null;
         adminProfile?: { id: string; permissionsLevel: number; departmentId?: string | null } | null;
@@ -99,7 +99,7 @@ export const authenticate = asyncHandler(async (req: Request, res: Response, nex
   let user: {
     id: string;
     email: string;
-    role: 'STUDENT' | 'ADMIN';
+    role: Role;
     isActive: boolean;
     authVersion: number;
     studentProfile: { id: string; courseId: string | null } | null;

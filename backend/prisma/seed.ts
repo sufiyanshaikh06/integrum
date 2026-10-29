@@ -115,7 +115,119 @@ async function main() {
 
   console.log('  ✅ Baseline SystemSettings verified.');
 
-  // 4. Seed Verified Demo Student Account (Sufiyan Shaikh - R.K. Talreja College)
+  // 4. Seed Multi-Tenant Baseline: Institution, Department, Course & Curriculum
+  console.log('  🏛️  Ensuring baseline Institution and Department structure...');
+  const institution = await prisma.institution.upsert({
+    where: { code: 'MU-ENG' },
+    create: {
+      name: 'Mumbai University - Faculty of Technology',
+      code: 'MU-ENG',
+      website: 'https://mu.ac.in',
+      contactEmail: 'engineering@mu.ac.in',
+      adminUserId: adminUser.id,
+    },
+    update: {
+      name: 'Mumbai University - Faculty of Technology',
+    },
+  });
+
+  const department = await prisma.department.upsert({
+    where: { code: 'CSE' },
+    create: {
+      name: 'Computer Science & Engineering',
+      code: 'CSE',
+      description: 'Department of Computer Science & Engineering',
+      institutionId: institution.id,
+      headOfDepartment: 'Dr. K. Sharma',
+    },
+    update: {
+      institutionId: institution.id,
+    },
+  });
+
+  const course = await prisma.course.upsert({
+    where: { code: 'BTECH_CSE' },
+    create: {
+      name: 'B.Tech in Computer Science & Engineering',
+      code: 'BTECH_CSE',
+      departmentId: department.id,
+      durationYears: 4,
+      totalSemesters: 8,
+    },
+    update: {
+      departmentId: department.id,
+    },
+  });
+
+  // Seed Semester 5 Master Curriculum
+  const semester5Subjects = [
+    { code: '1105111', name: 'Artificial Intelligence', credits: 4, semesterNumber: 5 },
+    { code: '1105112', name: 'Cyber & Information Security', credits: 4, semesterNumber: 5 },
+    { code: '1105115', name: 'IKS in Computational Systems', credits: 3, semesterNumber: 5 },
+    { code: '1105116', name: 'Software Testing & Quality Assurance', credits: 4, semesterNumber: 5 },
+    { code: '1105118', name: 'R Programming Practical', credits: 3, semesterNumber: 5 },
+  ];
+
+  for (const s of semester5Subjects) {
+    await prisma.masterSubject.upsert({
+      where: {
+        courseId_code: {
+          courseId: course.id,
+          code: s.code,
+        },
+      },
+      create: {
+        courseId: course.id,
+        code: s.code,
+        name: s.name,
+        credits: s.credits,
+        semesterNumber: s.semesterNumber,
+      },
+      update: {
+        name: s.name,
+        credits: s.credits,
+        semesterNumber: s.semesterNumber,
+      },
+    });
+  }
+
+  // Seed the Registration Code locked to Semester 5 (2026)
+  const regCode = await prisma.departmentRegistrationCode.upsert({
+    where: { code: 'CSE-2026-S5' },
+    create: {
+      code: 'CSE-2026-S5',
+      departmentId: department.id,
+      semesterNumber: 5,
+      academicYear: 2026,
+      isActive: true,
+    },
+    update: {
+      semesterNumber: 5,
+      academicYear: 2026,
+      isActive: true,
+    },
+  });
+  console.log(`  🔑 Active registration code configured: "${regCode.code}" (Semester ${regCode.semesterNumber}, ${regCode.academicYear})`);
+
+  // Seed alias code CSE-2026-F
+  const regCodeFall = await prisma.departmentRegistrationCode.upsert({
+    where: { code: 'CSE-2026-F' },
+    create: {
+      code: 'CSE-2026-F',
+      departmentId: department.id,
+      semesterNumber: 5,
+      academicYear: 2026,
+      isActive: true,
+    },
+    update: {
+      semesterNumber: 5,
+      academicYear: 2026,
+      isActive: true,
+    },
+  });
+  console.log(`  🔑 Active registration code configured: "${regCodeFall.code}" (Semester ${regCodeFall.semesterNumber}, ${regCodeFall.academicYear})`);
+
+  // 5. Seed Verified Demo Student Account (Sufiyan Shaikh - R.K. Talreja College)
   const studentEmail = 'sufiyan.shaikh@example.com';
   console.log(`  👤 Ensuring demo student account "${studentEmail}"...`);
   const studentPassHash = await bcrypt.hash('password123', saltRounds);

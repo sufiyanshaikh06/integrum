@@ -11,6 +11,18 @@ import {
   UpdateStudentEnrollmentInput,
 } from '../../schemas/admin/user.schema.js';
 
+export interface StudentBaselineOptions {
+  firstName?: string | undefined;
+  lastName?: string | undefined;
+  isIndependent?: boolean;
+  rollNumber?: string;
+  institutionId?: string | null;
+  departmentId?: string | null;
+  semesterNumber?: number;
+  academicYear?: number;
+  departmentCode?: string;
+}
+
 /**
  * Shared helper that provisions mandatory student baseline records identically
  * for normal registration and for ADMIN -> STUDENT role demotions.
@@ -18,7 +30,7 @@ import {
 export async function ensureStudentBaseline(
   tx: Prisma.TransactionClient,
   user: { id: string; email: string },
-  nameData?: { firstName?: string | undefined; lastName?: string | undefined }
+  nameData?: StudentBaselineOptions
 ) {
   let profile = await tx.studentProfile.findUnique({ where: { userId: user.id } });
   if (!profile) {
@@ -27,24 +39,59 @@ export async function ensureStudentBaseline(
         userId: user.id,
         firstName: nameData?.firstName || 'Student',
         lastName: nameData?.lastName || 'User',
+        rollNumber: nameData?.rollNumber || null,
+        isIndependent: nameData?.isIndependent ?? false,
+        institutionId: nameData?.institutionId || null,
+        departmentId: nameData?.departmentId || null,
       },
     });
   }
 
-  // 1. Ensure default semester exists
+  // 1. Ensure appropriate semester exists
   let semester = await tx.semester.findFirst({ where: { studentProfileId: profile.id } });
   if (!semester) {
     const now = new Date();
     const semesterEnd = new Date();
     semesterEnd.setMonth(now.getMonth() + 4);
+    const semesterName = nameData?.semesterNumber
+      ? `Semester ${nameData.semesterNumber} (${nameData.academicYear || now.getFullYear()})`
+      : 'Semester 1';
+
     semester = await tx.semester.create({
       data: {
         studentProfileId: profile.id,
-        name: 'Semester 1',
+        name: semesterName,
         startDate: now,
         endDate: semesterEnd,
       },
     });
+
+    // If Institutional: automatically link curriculum subjects from Department catalog
+    if (nameData?.departmentId && nameData?.semesterNumber) {
+      const masterSubjects = await tx.masterSubject.findMany({
+        where: {
+          course: { departmentId: nameData.departmentId },
+          semesterNumber: nameData.semesterNumber,
+        },
+      });
+
+      if (masterSubjects.length > 0) {
+        for (const ms of masterSubjects) {
+          await tx.subject.create({
+            data: {
+              semesterId: semester.id,
+              name: ms.name,
+              code: ms.code,
+              credits: ms.credits,
+              totalClasses: 40,
+              attendedClasses: 0,
+              attendanceGoal: 75.0,
+              masterSubjectId: ms.id,
+            },
+          });
+        }
+      }
+    }
   }
 
   // 2. Ensure StudentSettings exists
@@ -61,6 +108,37 @@ export async function ensureStudentBaseline(
   });
   if (!analytics) {
     await tx.studentAnalytics.create({ data: { studentProfileId: profile.id } });
+  }
+
+  // 4. If Institutional: Notify department faculty and admins
+  if (nameData?.departmentId) {
+    try {
+      const staffUsers = await tx.user.findMany({
+        where: {
+          OR: [
+            { role: 'ADMIN' },
+            { role: 'SUPER_ADMIN' },
+            { role: 'INSTITUTION_ADMIN' },
+            { facultyProfile: { departmentId: nameData.departmentId } },
+            { adminProfile: { departmentId: nameData.departmentId } },
+          ],
+        },
+        select: { id: true },
+      });
+
+      if (staffUsers.length > 0) {
+        await tx.notification.createMany({
+          data: staffUsers.map((staff) => ({
+            userId: staff.id,
+            title: 'New Student Enrolled',
+            message: `${nameData?.firstName || 'Student'} ${nameData?.lastName || ''} (Roll: ${nameData?.rollNumber || 'Assigned'}) enrolled in Semester ${nameData?.semesterNumber || 1}.`,
+            type: 'GENERAL_REMINDER',
+          })),
+        });
+      }
+    } catch (error: any) {
+      console.warn('Non-blocking staff notification delivery failed:', error?.message || error);
+    }
   }
 
   return profile;

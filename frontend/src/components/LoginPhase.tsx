@@ -2,11 +2,21 @@ import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import IntegrumLogo from './IntegrumLogo';
 
+export interface RegisterData {
+  isInstitutional: boolean;
+  firstName: string;
+  lastName: string;
+  email: string;
+  pass: string;
+  rollNo?: string;
+  institutionCode?: string;
+}
+
 interface LoginPhaseProps {
   initialMode?: 'student' | 'admin' | 'register';
   onStudentLogin: (email: string, pass: string) => Promise<void>;
   onAdminLogin: (email: string, pass: string) => Promise<void>;
-  onRegister: (firstName: string, lastName: string, email: string, pass: string) => Promise<void>;
+  onRegister: (data: RegisterData) => Promise<void>;
   onGoLanding: () => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -20,6 +30,7 @@ export default function LoginPhase({
   showToast,
 }: LoginPhaseProps) {
   const [portal, setPortal] = useState<'student' | 'admin' | 'register'>(initialMode);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Student credentials
   const [studentEmail, setStudentEmail] = useState('');
@@ -31,10 +42,13 @@ export default function LoginPhase({
   const [adminPass, setAdminPass] = useState('');
   const [showAdminPass, setShowAdminPass] = useState(false);
 
-  // Register credentials (clean, empty defaults)
+  // Register credentials & affiliation type
+  const [regType, setRegType] = useState<'institutional' | 'independent'>('independent');
   const [regFirstName, setRegFirstName] = useState('');
   const [regLastName, setRegLastName] = useState('');
   const [regEmail, setRegEmail] = useState('');
+  const [regRollNo, setRegRollNo] = useState('');
+  const [regInstCode, setRegInstCode] = useState('');
   const [regPass, setRegPass] = useState('');
   const [regConfirmPass, setRegConfirmPass] = useState('');
   const [showRegPass, setShowRegPass] = useState(false);
@@ -44,19 +58,25 @@ export default function LoginPhase({
 
   useEffect(() => {
     setPortal(initialMode);
+    setFormError(null);
   }, [initialMode]);
 
   const handleStudentSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!studentEmail.trim() || !studentPass.trim()) {
-      showToast('Please provide your university email and password', 'error');
+      const msg = 'Please provide your university email and password';
+      setFormError(msg);
+      showToast(msg, 'error');
       return;
     }
     setLoading(true);
     try {
       await onStudentLogin(studentEmail, studentPass);
     } catch (err: any) {
-      showToast(err.message || 'Login failed', 'error');
+      const msg = err.message || 'Login failed. Please check your credentials.';
+      setFormError(msg);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -64,15 +84,20 @@ export default function LoginPhase({
 
   const handleAdminSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!adminEmail.trim() || !adminPass.trim()) {
-      showToast('Please provide administrative email and credentials', 'error');
+      const msg = 'Please provide administrative email and credentials';
+      setFormError(msg);
+      showToast(msg, 'error');
       return;
     }
     setLoading(true);
     try {
       await onAdminLogin(adminEmail, adminPass);
     } catch (err: any) {
-      showToast(err.message || 'Admin login failed', 'error');
+      const msg = err.message || 'Admin login failed. Please check your credentials.';
+      setFormError(msg);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -80,27 +105,60 @@ export default function LoginPhase({
 
   const handleRegisterSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!regFirstName.trim() || !regLastName.trim()) {
-      showToast('Please enter your full name', 'error');
+      const msg = 'Please enter your full name';
+      setFormError(msg);
+      showToast(msg, 'error');
       return;
     }
     if (!regEmail.trim()) {
-      showToast('Please enter a valid university email', 'error');
+      const msg = 'Please enter a valid email address';
+      setFormError(msg);
+      showToast(msg, 'error');
       return;
     }
+    if (regType === 'institutional') {
+      if (!regRollNo.trim()) {
+        const msg = 'Please enter your university-assigned roll number (e.g. 2625001)';
+        setFormError(msg);
+        showToast(msg, 'error');
+        return;
+      }
+      if (!regInstCode.trim()) {
+        const msg = 'Please enter the institutional department code (e.g. CSE-2026-S5 or CSE-2026-F)';
+        setFormError(msg);
+        showToast(msg, 'error');
+        return;
+      }
+    }
     if (!regPass || regPass.length < 8) {
-      showToast('Password must be at least 8 characters long', 'error');
+      const msg = 'Password must be at least 8 characters long';
+      setFormError(msg);
+      showToast(msg, 'error');
       return;
     }
     if (regConfirmPass && regPass !== regConfirmPass) {
-      showToast('Passwords do not match. Please re-enter identical passwords.', 'error');
+      const msg = 'Passwords do not match. Please re-enter identical passwords.';
+      setFormError(msg);
+      showToast(msg, 'error');
       return;
     }
     setLoading(true);
     try {
-      await onRegister(regFirstName, regLastName, regEmail, regPass);
+      await onRegister({
+        isInstitutional: regType === 'institutional',
+        firstName: regFirstName.trim(),
+        lastName: regLastName.trim(),
+        email: regEmail.trim(),
+        pass: regPass,
+        rollNo: regType === 'institutional' ? regRollNo.trim() : undefined,
+        institutionCode: regType === 'institutional' ? regInstCode.trim() : undefined,
+      });
     } catch (err: any) {
-      showToast(err.message || 'Registration failed', 'error');
+      const msg = err.message || 'Registration failed';
+      setFormError(msg);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -170,20 +228,20 @@ export default function LoginPhase({
             <div
               className={`portal-tab ${portal === 'student' ? 'active' : ''}`}
               id="tabPortalStudent"
-              onClick={() => setPortal('student')}
+              onClick={() => { setPortal('student'); setFormError(null); }}
             >
               Student Sign In
             </div>
             <div
               className={`portal-tab ${portal === 'register' ? 'active' : ''}`}
-              onClick={() => setPortal('register')}
+              onClick={() => { setPortal('register'); setFormError(null); }}
             >
               Student Registration
             </div>
             <div
               className={`portal-tab ${portal === 'admin' ? 'active' : ''}`}
               id="tabPortalAdmin"
-              onClick={() => setPortal('admin')}
+              onClick={() => { setPortal('admin'); setFormError(null); }}
             >
               Faculty &amp; Admin
             </div>
@@ -198,6 +256,28 @@ export default function LoginPhase({
               <p className="login-sub" style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginBottom: '24px' }}>
                 Access your academic dashboard, course attendance ledger, and deliverables hub.
               </p>
+
+              {formError && (
+                <div
+                  className="login-error-banner"
+                  style={{
+                    padding: '12px 16px',
+                    background: '#fef2f2',
+                    border: '1.5px solid #ef4444',
+                    borderRadius: '8px',
+                    color: '#991b1b',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    marginBottom: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <span style={{ fontSize: '16px', flexShrink: 0 }}>⚠️</span>
+                  <span>{formError}</span>
+                </div>
+              )}
 
               <form onSubmit={handleStudentSubmit}>
                 <div className="form-group" style={{ marginBottom: '20px' }}>
@@ -307,7 +387,7 @@ export default function LoginPhase({
                 New student?{' '}
                 <button
                   type="button"
-                  onClick={() => setPortal('register')}
+                  onClick={() => { setPortal('register'); setFormError(null); }}
                   style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, cursor: 'pointer', padding: 0 }}
                 >
                   Create your profile →
@@ -322,9 +402,85 @@ export default function LoginPhase({
               <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginBottom: '6px', color: 'var(--text-1)' }}>
                 Student Registration
               </h2>
-              <p className="login-sub" style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginBottom: '24px' }}>
-                Create a fresh, private student profile. All data will be saved securely to the database.
+              <p className="login-sub" style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginBottom: '18px' }}>
+                Create a student profile to manage your academic, productivity, and career journey.
               </p>
+
+              {formError && (
+                <div
+                  className="login-error-banner"
+                  style={{
+                    padding: '12px 16px',
+                    background: '#fef2f2',
+                    border: '1.5px solid #ef4444',
+                    borderRadius: '8px',
+                    color: '#991b1b',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    marginBottom: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <span style={{ fontSize: '16px', flexShrink: 0 }}>⚠️</span>
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Affiliation Toggle: Institution Student vs Independent Learner */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', padding: '4px', background: 'var(--bg-2)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', marginBottom: '20px' }}>
+                <button
+                  type="button"
+                  onClick={() => setRegType('institutional')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: 'none',
+                    background: regType === 'institutional' ? 'var(--card-bg, #ffffff)' : 'transparent',
+                    color: regType === 'institutional' ? 'var(--primary)' : 'var(--text-3)',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    boxShadow: regType === 'institutional' ? 'var(--shadow-sm)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  🏛️ Institution Student
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRegType('independent')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: 'none',
+                    background: regType === 'independent' ? 'var(--card-bg, #ffffff)' : 'transparent',
+                    color: regType === 'independent' ? 'var(--primary)' : 'var(--text-3)',
+                    fontWeight: 700,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    boxShadow: regType === 'independent' ? 'var(--shadow-sm)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  👤 Independent Learner
+                </button>
+              </div>
+
+              {regType === 'independent' && (
+                <div style={{ padding: '10px 14px', background: 'var(--bg-2)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', marginBottom: '18px', fontSize: '11px', color: 'var(--text-2)', lineHeight: 1.5 }}>
+                  💡 <b>Independent Mode:</b> No institutional attendance or exam monitoring. You will get a clean, personal workspace for study planning, personal notes, task tracking, and resume building.
+                </div>
+              )}
 
               <form onSubmit={handleRegisterSubmit}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '18px' }}>
@@ -336,7 +492,7 @@ export default function LoginPhase({
                       className="form-input form-input-underline"
                       type="text"
                       name="firstName"
-                      placeholder="First Name"
+                      placeholder="e.g. Sufiyan"
                       value={regFirstName}
                       onChange={(e) => setRegFirstName(e.target.value)}
                       required
@@ -350,7 +506,7 @@ export default function LoginPhase({
                       className="form-input form-input-underline"
                       type="text"
                       name="lastName"
-                      placeholder="Last Name"
+                      placeholder="e.g. Shaikh"
                       value={regLastName}
                       onChange={(e) => setRegLastName(e.target.value)}
                       required
@@ -360,18 +516,54 @@ export default function LoginPhase({
 
                 <div className="form-group" style={{ marginBottom: '18px' }}>
                   <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '4px' }}>
-                    Student University Email
+                    {regType === 'institutional' ? 'University / College Email' : 'Email Address'}
                   </label>
                   <input
                     className="form-input form-input-underline"
                     type="email"
                     name="email"
-                    placeholder="student@institution.edu"
+                    placeholder={regType === 'institutional' ? 'student@university.edu' : 'name@example.com'}
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
                     required
                   />
                 </div>
+
+                {regType === 'institutional' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '18px' }}>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '4px' }}>
+                        Roll Number <span style={{ color: 'var(--primary)', fontWeight: 600 }}>(e.g. 2625001)</span>
+                      </label>
+                      <input
+                        className="form-input form-input-underline"
+                        type="text"
+                        name="rollNo"
+                        placeholder="2625001"
+                        value={regRollNo}
+                        onChange={(e) => setRegRollNo(e.target.value)}
+                        required={regType === 'institutional'}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '4px' }}>
+                        Institution / Dept Code
+                      </label>
+                      <input
+                        className="form-input form-input-underline"
+                        type="text"
+                        name="institutionCode"
+                        placeholder="e.g. CSE-2026-S5 or CSE-2026-F"
+                        value={regInstCode}
+                        onChange={(e) => setRegInstCode(e.target.value.toUpperCase())}
+                        required={regType === 'institutional'}
+                      />
+                      <div style={{ fontSize: '11px', color: 'var(--text-3)', marginTop: '4px' }}>
+                        Active Department Codes: <strong style={{ color: 'var(--primary)' }}>CSE-2026-S5</strong>, <strong style={{ color: 'var(--primary)' }}>CSE-2026-F</strong>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="form-group" style={{ marginBottom: '18px' }}>
                   <label className="form-label" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)', display: 'block', marginBottom: '4px' }}>
@@ -488,7 +680,7 @@ export default function LoginPhase({
                 Already registered?{' '}
                 <button
                   type="button"
-                  onClick={() => setPortal('student')}
+                  onClick={() => { setPortal('student'); setFormError(null); }}
                   style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, cursor: 'pointer', padding: 0 }}
                 >
                   Sign in to existing account →
@@ -511,6 +703,28 @@ export default function LoginPhase({
               <p className="login-sub" style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginBottom: '24px' }}>
                 Authorized university access for examination controllers, department chairs, and academic deans.
               </p>
+
+              {formError && (
+                <div
+                  className="login-error-banner"
+                  style={{
+                    padding: '12px 16px',
+                    background: '#fef2f2',
+                    border: '1.5px solid #ef4444',
+                    borderRadius: '8px',
+                    color: '#991b1b',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    marginBottom: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <span style={{ fontSize: '16px', flexShrink: 0 }}>⚠️</span>
+                  <span>{formError}</span>
+                </div>
+              )}
 
               <form onSubmit={handleAdminSubmit}>
                 <div className="form-group" style={{ marginBottom: '20px' }}>
@@ -589,6 +803,20 @@ export default function LoginPhase({
                 >
                   {loading ? 'Authenticating...' : 'Sign In as Administrator →'}
                 </button>
+
+                <div style={{ textAlign: 'center', marginTop: '14px', marginBottom: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminEmail('admin@integrum.dev');
+                      setAdminPass('AdminMasterPass2026!');
+                      showToast('Pre-filled administrative credentials', 'info');
+                    }}
+                    style={{ fontSize: '12px', color: 'var(--text-3)', textDecoration: 'underline', cursor: 'pointer', background: 'none', border: 'none' }}
+                  >
+                    Fill admin demo credentials
+                  </button>
+                </div>
               </form>
 
               <div

@@ -36,17 +36,11 @@ export default function CalendarView({ assignments, events, onOpenEventModal }: 
     setSelectedDay(15);
   };
 
-  // Pre-scheduled university theory examination papers (October 2026)
-  const examDays: Record<number, { code: string; title: string; time: string; venue: string }> =
-    currentMonth === 9 && currentYear === 2026
-      ? {
-          15: { code: '1105111', title: 'Artificial Intelligence', time: '10:30 AM - 01:30 PM', venue: 'Hall 4A · Row 3' },
-          17: { code: '1105112', title: 'Cyber & Information Security', time: '10:30 AM - 01:30 PM', venue: 'Hall 3B · Row 5' },
-          20: { code: '1105115', title: 'IKS in Computational Systems', time: '10:30 AM - 01:30 PM', venue: 'Hall 4A · Row 2' },
-          22: { code: '1105116', title: 'Software Testing & Quality Assurance', time: '10:30 AM - 01:30 PM', venue: 'Hall 2C · Row 4' },
-          26: { code: '1105118', title: 'R Programming Practical Examination', time: '09:00 AM - 12:00 PM', venue: 'Computer Lab 1' },
-        }
-      : {};
+  // Check if a day has an examination or deadline event
+  const getDayExams = (day: number) => {
+    const dayEvs = events[day.toString()] || [];
+    return dayEvs.filter((e) => e.type === 'EXAM' || e.title.toLowerCase().includes('exam'));
+  };
 
   const leadingBlanks = Array.from({ length: firstDayOfWeek }, (_, i) => i);
   const monthDays = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1);
@@ -106,7 +100,8 @@ export default function CalendarView({ assignments, events, onOpenEventModal }: 
             ))}
 
             {monthDays.map((day) => {
-              const isExam = examDays[day];
+              const dayExams = getDayExams(day);
+              const isExam = dayExams.length > 0;
               const isSelected = day === selectedDay;
               const hasEvents = (events[day.toString()] || []).length > 0;
 
@@ -152,19 +147,19 @@ export default function CalendarView({ assignments, events, onOpenEventModal }: 
             <span className="badge badge-primary">Day Agenda</span>
           </div>
 
-          {examDays[selectedDay] ? (
-            <div style={{ padding: '16px', background: 'var(--bg-3)', borderRadius: 'var(--radius-sm)', borderLeft: '4px solid var(--error)', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <strong style={{ fontSize: '14px' }}>{examDays[selectedDay].code} · {examDays[selectedDay].title}</strong>
-                <span className="badge badge-error">Theory Exam</span>
+          {getDayExams(selectedDay).length > 0 ? (
+            getDayExams(selectedDay).map((ex, i) => (
+              <div key={i} style={{ padding: '16px', background: 'var(--bg-3)', borderRadius: 'var(--radius-sm)', borderLeft: '4px solid var(--error)', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ fontSize: '14px' }}>{ex.title}</strong>
+                  <span className="badge badge-error">Theory Exam</span>
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-2)' }}>
+                  <div><b>Time:</b> {ex.time || '10:30 AM'}</div>
+                  <div><b>Venue &amp; Seating:</b> {ex.venue || 'Campus Examination Hall'}</div>
+                </div>
               </div>
-              <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-2)' }}>
-                <div><b>Time:</b> {examDays[selectedDay].time}</div>
-                <div><b>Venue & Seating:</b> {examDays[selectedDay].venue}</div>
-                <div><b>Centre:</b> Examination Hall B - Centre Code 042 (Main Campus)</div>
-                <div><b>Reporting:</b> Closed book theory paper. Hall ticket mandatory.</div>
-              </div>
-            </div>
+            ))
           ) : (
             <div style={{ padding: '16px', background: 'var(--bg-3)', borderRadius: 'var(--radius-sm)', marginBottom: '16px', fontSize: '12px', color: 'var(--text-2)' }}>
               No official university examinations scheduled for this day. Standard tutorial and coursework study day.
@@ -205,6 +200,13 @@ export default function CalendarView({ assignments, events, onOpenEventModal }: 
             </tr>
           </thead>
           <tbody>
+            {Object.keys(events).length === 0 && assignments.length === 0 && (
+              <tr>
+                <td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-3)' }}>
+                  No scheduled events or assignments in this period. Click "+ Add Event" above to add to your calendar.
+                </td>
+              </tr>
+            )}
             {/* Calendar Events in Unified Schedule */}
             {Object.entries(events).flatMap(([day, evList]) =>
               evList.map((ev, idx) => (

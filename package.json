@@ -13,7 +13,10 @@
     "build:backend": "npm run build --workspace backend",
     "build:frontend": "npm run build --workspace frontend",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:closure": "npm run test:closure --workspace backend",
+    "test:hardening": "npm run test:hardening --workspace backend",
+    "test:native": "npm run test:native --workspace backend"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",

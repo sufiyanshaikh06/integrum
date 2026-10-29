@@ -11,7 +11,7 @@ interface HeaderProps {
   notifOpen: boolean;
   notifications: any[];
   onToggleSidebar: () => void;
-  onOpenCmdPalette: () => void;
+  onOpenCmdPalette?: () => void;
   onToggleRole: () => void;
   onToggleDarkMode: () => void;
   onToggleNotif: () => void;
@@ -24,20 +24,20 @@ interface HeaderProps {
 
 const titles: Record<ActiveView, string> = {
   dashboard: 'Dashboard',
-  study: 'Study Planner & Pomodoro',
-  notes: 'Academic Notes Manager',
-  asgn: 'Courses & Assignments',
-  attend: 'Attendance Health & Course Standing',
-  cal: 'October 2026 Examination Calendar',
-  tasks: 'Productivity Tasks',
-  rems: 'Reminders & Examination Alerts',
-  resumes: 'Resume Versions & ATS Audit',
-  skills: 'Technical Skills Matrix & Gap Analysis',
-  jobs: 'Placement & Job Tracking',
-  analytics: 'Analytics & Success Index',
-  ai: 'Integrum AI Assistant',
-  admin: 'University Administration Portal',
-  profile: 'Student Profile & Settings',
+  study: 'Study Planner & Focus Goals',
+  notes: 'Study Notes & Materials',
+  asgn: 'Assignments & Coursework',
+  attend: 'Attendance Standing',
+  cal: 'Academic Calendar & Events',
+  tasks: 'Tasks & Priorities',
+  rems: 'Reminders & Alerts',
+  resumes: 'Resume Builder & ATS Review',
+  skills: 'Skills Matrix & Growth',
+  jobs: 'Job & Internship Tracking',
+  analytics: 'Performance & Progress Analytics',
+  ai: 'AI Academic Assistant',
+  admin: 'Faculty & Administration Portal',
+  profile: 'Profile & Settings',
 };
 
 export default function Header({
@@ -50,7 +50,7 @@ export default function Header({
   notifOpen,
   notifications,
   onToggleSidebar,
-  onOpenCmdPalette,
+  onOpenCmdPalette: _onOpenCmdPalette,
   onToggleRole: _onToggleRole,
   onToggleDarkMode,
   onToggleNotif,
@@ -100,18 +100,6 @@ export default function Header({
             Administrator Mode
           </span>
         )}
-      </div>
-
-      <div className="hdr-center">
-        <div
-          className="search-box"
-          onClick={onOpenCmdPalette}
-          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
-          title="Click or press Ctrl+K"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-          <span style={{ color: 'var(--text-3)', fontSize: '13px' }}>Jump anywhere... (Ctrl+K)</span>
-        </div>
       </div>
 
       <div className="hdr-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

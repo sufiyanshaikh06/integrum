@@ -26,6 +26,8 @@ export default function NotesView({
     filteredNotes.sort((a, b) => a.title.localeCompare(b.title));
   }
 
+  const availableCodes = ['ALL', ...Array.from(new Set(notes.map((n) => n.code).filter(Boolean)))];
+
   return (
     <div className="view active" id="v-notes">
       {/* Header */}
@@ -44,7 +46,7 @@ export default function NotesView({
       {/* Filter and Sort Bar */}
       <div className="card" style={{ padding: '14px 18px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {['ALL', '1105111', '1105112', '1105115', '1105116', '1105118'].map((code) => (
+          {availableCodes.map((code) => (
             <button
               key={code}
               className={`btn btn-xs ${filterCode === code ? 'btn-primary' : 'btn-outline'}`}
@@ -79,7 +81,7 @@ export default function NotesView({
           filteredNotes.map((note) => (
             <div key={note.id} className="card" style={{ padding: '18px', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span className="badge badge-secondary" style={{ fontSize: '11px' }}>{note.code || 'CS502'}</span>
+                <span className="badge badge-secondary" style={{ fontSize: '11px' }}>{note.code || 'GENERAL'}</span>
                 <span style={{ fontSize: '11px', color: 'var(--text-3)' }}>{note.date || 'Recent'}</span>
               </div>
 

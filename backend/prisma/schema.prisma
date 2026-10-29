@@ -11,6 +11,9 @@ datasource db {
 // ---------------------------------------------------------
 
 enum Role {
+  SUPER_ADMIN
+  INSTITUTION_ADMIN
+  FACULTY
   STUDENT
   ADMIN
 }
@@ -182,6 +185,8 @@ model User {
 
   studentProfile StudentProfile?
   adminProfile   AdminProfile?
+  facultyProfile FacultyProfile?
+  managedInstitutions Institution[] @relation("InstitutionMasterAdmin")
   settings       StudentSettings?
   notifications  Notification[]
 
@@ -213,6 +218,12 @@ model StudentProfile {
 
   // Resume document upload (G2)
   uploadedResumeFileId String?
+  rollNumber     String?
+  isIndependent  Boolean  @default(false)
+  institutionId  String?
+  institution    Institution? @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+  departmentId   String?
+  department     Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -283,8 +294,13 @@ model Department {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
+  institutionId    String?
+  institution      Institution?        @relation(fields: [institutionId], references: [id], onDelete: Cascade)
   courses          Course[]
   adminProfiles    AdminProfile[]
+  facultyProfiles  FacultyProfile[]
+  studentProfiles  StudentProfile[]
+  registrationCodes DepartmentRegistrationCode[]
   announcements    Announcement[]
   resources        AcademicResource[]
   events           InstitutionalEvent[]
@@ -748,4 +764,50 @@ model StorageCleanup {
   provider String
   createdAt DateTime @default(now())
   attempts Int @default(0)
+}
+
+// ---------------------------------------------------------
+// MULTI-TENANT INSTITUTION & FACULTY STRUCTURE
+// ---------------------------------------------------------
+
+model Institution {
+  id               String              @id @default(uuid())
+  name             String              @unique
+  code             String              @unique
+  address          String?             @db.Text
+  website          String?
+  contactEmail     String?
+  adminUserId      String?
+  masterAdmin      User?               @relation("InstitutionMasterAdmin", fields: [adminUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  departments      Department[]
+  studentProfiles  StudentProfile[]
+}
+
+model DepartmentRegistrationCode {
+  id             String      @id @default(uuid())
+  code           String      @unique
+  departmentId   String
+  department     Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  semesterNumber Int         @default(1)
+  academicYear   Int         @default(2026)
+  maxUses        Int?
+  usedCount      Int         @default(0)
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model FacultyProfile {
+  id             String      @id @default(uuid())
+  userId         String      @unique
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId   String
+  department     Department  @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  designation    String      @default("Faculty Member")
+  specialization String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 }

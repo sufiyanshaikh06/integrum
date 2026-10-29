@@ -57,7 +57,12 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
     credentials: 'include', // Ensure HttpOnly refreshToken cookie is always sent and received
   };
 
-  let res = await fetch(url, fetchOptions);
+  let res: Response;
+  try {
+    res = await fetch(url, fetchOptions);
+  } catch {
+    throw new ApiError('Unable to connect to server. Please ensure the backend is running.', 0);
+  }
 
   // If 401 Unauthorized and not already refreshing, attempt silent refresh
   if (res.status === 401 && !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login')) {
@@ -128,7 +133,8 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
   }
 
   if (!res.ok) {
-    const errorMsg = data?.message || (Array.isArray(data?.errors) && data.errors[0]?.message) || `HTTP Error ${res.status}`;
+    const errorDetail = Array.isArray(data?.errors) && data.errors.length > 0 && data.errors[0]?.message;
+    const errorMsg = errorDetail || data?.message || `HTTP Error ${res.status}`;
     throw new ApiError(errorMsg, res.status, data?.errors || []);
   }
 
@@ -140,7 +146,15 @@ export async function apiRequest<T = any>(endpoint: string, options: RequestInit
 // ─────────────────────────────────────────────────────────────
 
 export const authApi = {
-  async register(data: { email: string; password: string; firstName: string; lastName: string }) {
+  async register(data: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    isInstitutional?: boolean;
+    rollNumber?: string;
+    institutionCode?: string;
+  }) {
     return apiRequest('/auth/register', { method: 'POST', body: data as any });
   },
 
@@ -333,5 +347,34 @@ export const notificationApi = {
 
   async markAllAsRead() {
     return apiRequest('/notifications/read-all', { method: 'PATCH' });
+  },
+};
+
+export const adminApi = {
+  async getRegistrationCodes(): Promise<any[]> {
+    return apiRequest<any[]>('/admin/academics/registration-codes');
+  },
+
+  async createRegistrationCode(data: {
+    code: string;
+    departmentId?: string;
+    departmentCode?: string;
+    departmentName?: string;
+    semesterNumber?: number;
+    academicYear?: number;
+    maxUses?: number | null;
+    isActive?: boolean;
+  }): Promise<any> {
+    return apiRequest('/admin/academics/registration-codes', {
+      method: 'POST',
+      body: data as any,
+    });
+  },
+
+  async toggleRegistrationCode(id: string, isActive?: boolean): Promise<any> {
+    return apiRequest(`/admin/academics/registration-codes/${id}/toggle`, {
+      method: 'PATCH',
+      body: isActive !== undefined ? ({ isActive } as any) : undefined,
+    });
   },
 };
