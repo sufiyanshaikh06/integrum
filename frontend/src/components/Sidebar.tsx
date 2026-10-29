@@ -38,8 +38,22 @@ export default function Sidebar({
             <IntegrumLogo size={34} style={{ color: 'var(--primary)' }} />
           </div>
           <div>
-            <h1 style={{ fontSize: '18px', fontWeight: 700 }}>Integrum</h1>
-            <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <h1 className="display" style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-1)' }}>
+                Integrum
+              </h1>
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: 'var(--apricot)',
+                  display: 'inline-block',
+                  boxShadow: '0 0 6px var(--apricot)',
+                }}
+              />
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-3)', fontWeight: 600 }}>
               {userRole === 'admin' ? 'Faculty Administration' : 'Student Workspace'}
             </div>
           </div>

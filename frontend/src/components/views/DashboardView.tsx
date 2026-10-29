@@ -63,17 +63,24 @@ export default function DashboardView({
   return (
     <div className="view active" id="v-dashboard">
       {/* Welcome Banner */}
-      <div className="welcome-banner welcome" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+      <div className="welcome-banner welcome card glass" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', padding: '24px 28px', marginBottom: '24px' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)' }}>
-            Welcome back, {studentInfo.name || 'Student'}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <span className="chip chip-apricot" style={{ fontSize: '11px', fontWeight: 800 }}>
+              ✦ ACADEMIC COHORT v2
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 600 }}>
+              {studentInfo.branch ? `${studentInfo.branch} · ` : ''}{studentInfo.sem ? `${studentInfo.sem}` : ''}
+            </span>
+          </div>
+          <h2 className="display" style={{ margin: '0 0 6px 0', fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-1)' }}>
+            Welcome back, <em>{studentInfo.name || 'Student'}</em>
           </h2>
-          <p style={{ margin: '4px 0 0 0', color: 'var(--text-2)', fontSize: '0.9rem' }}>
-            {studentInfo.branch ? `${studentInfo.branch} · ` : ''}{studentInfo.sem ? `${studentInfo.sem} · ` : ''}
-            Roll: <strong>{studentInfo.roll || 'Not Assigned'}</strong>
+          <p style={{ margin: 0, color: 'var(--text-2)', fontSize: '0.9rem' }}>
+            Roll No: <strong style={{ color: 'var(--text-1)' }}>{studentInfo.roll || 'Not Assigned'}</strong> · Regulation 6086 Verified Standing
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button className="btn btn-sm btn-primary" onClick={() => onNavigate('study')}>
             + Start 25m Focus Sprint
           </button>
@@ -83,59 +90,93 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* 4 Vital Metric Cards */}
-      <div className="dash-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', margin: '20px 0' }}>
+      {/* 4 Vital Metric Cards — Bento Layout */}
+      <div className="dash-stats-grid bento-grid" style={{ marginBottom: '24px' }}>
         {/* Metric 1: Task Completion Standing */}
-        <div className="stat-card card">
-          <div className="stat-lbl">Task Completion Rate</div>
-          <div className="stat-val" style={{ color: 'var(--primary)', fontSize: '1.8rem', fontWeight: 800 }}>
+        <div className="stat-card card glass col-span-3">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <div className="stat-lbl" style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+              Task Completion
+            </div>
+            <span className="chip chip-primary" style={{ fontSize: '10px' }}>Active Sprint</span>
+          </div>
+          <div className="stat-val display" style={{ color: 'var(--action)', fontSize: '2.2rem', fontWeight: 700, lineHeight: 1.1 }}>
             {taskCompletionPct}%
           </div>
-          <small style={{ color: completedTasks.length > 0 ? 'var(--success)' : 'var(--text-2)', fontWeight: 700 }}>
-            {completedTasks.length} of {safeTasks.length} goals achieved
-          </small>
+          <div style={{ marginTop: '8px' }}>
+            <span className={completedTasks.length > 0 ? 'chip chip-success' : 'chip chip-info'} style={{ fontSize: '11px' }}>
+              {completedTasks.length} of {safeTasks.length} goals achieved
+            </span>
+          </div>
         </div>
 
         {/* Metric 2: Attendance Average */}
-        <div className="stat-card card">
-          <div className="stat-lbl">Attendance Average</div>
-          <div className="stat-val" style={{ color: Number(avgAttend) >= 75 ? 'var(--success)' : 'var(--error)', fontSize: '1.8rem', fontWeight: 800 }}>
+        <div className="stat-card card glass col-span-3">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <div className="stat-lbl" style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+              Attendance Health
+            </div>
+            <span className={Number(avgAttend) >= 75 ? 'chip chip-success' : 'chip chip-error'} style={{ fontSize: '10px' }}>
+              {Number(avgAttend) >= 75 ? 'Safe Clearance' : 'Below Cutoff'}
+            </span>
+          </div>
+          <div className="stat-val display" style={{ color: Number(avgAttend) >= 75 ? 'var(--success)' : 'var(--error)', fontSize: '2.2rem', fontWeight: 700, lineHeight: 1.1 }}>
             {avgAttend}%
           </div>
-          <small style={{ color: attendanceBuffer >= 0 ? 'var(--text-2)' : 'var(--error)' }}>
-            {totalHeld > 0
-              ? `Attendance standing: ${attendanceBuffer >= 0 ? `+${attendanceBuffer} buffer classes` : `${attendanceBuffer} classes deficit`}`
-              : 'No lectures held yet'}
-          </small>
+          <div style={{ marginTop: '8px' }}>
+            <span className={attendanceBuffer >= 0 ? 'chip chip-info' : 'chip chip-error'} style={{ fontSize: '11px' }}>
+              {totalHeld > 0
+                ? `${attendanceBuffer >= 0 ? `+${attendanceBuffer} buffer lectures` : `${attendanceBuffer} lectures deficit`}`
+                : 'No lectures held yet'}
+            </span>
+          </div>
         </div>
 
         {/* Metric 3: Active Courseworks */}
-        <div className="stat-card card">
-          <div className="stat-lbl">Active Courseworks</div>
-          <div className="stat-val" style={{ color: 'var(--info)', fontSize: '1.8rem', fontWeight: 800 }}>
+        <div className="stat-card card glass col-span-3">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <div className="stat-lbl" style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+              Active Courseworks
+            </div>
+            <span className={pendingAsgns.length > 0 ? 'chip chip-warning' : 'chip chip-success'} style={{ fontSize: '10px' }}>
+              {pendingAsgns.length > 0 ? `${pendingAsgns.length} Pending` : 'All Clear'}
+            </span>
+          </div>
+          <div className="stat-val display" style={{ color: 'var(--secondary-ink)', fontSize: '2.2rem', fontWeight: 700, lineHeight: 1.1 }}>
             {attendList.length > 0 ? `${attendList.length} Subjects` : `${safeAssignments.length} Assignments`}
           </div>
-          <small style={{ color: pendingAsgns.length > 0 ? 'var(--warning)' : 'var(--success)', fontWeight: 700 }}>
-            {pendingAsgns.length} Pending Submissions
-          </small>
+          <div style={{ marginTop: '8px' }}>
+            <span className={pendingAsgns.length > 0 ? 'chip chip-warning' : 'chip chip-success'} style={{ fontSize: '11px' }}>
+              {pendingAsgns.length} deliverables pending review
+            </span>
+          </div>
         </div>
 
         {/* Metric 4: Weekly Focus Sprint */}
-        <div className="stat-card card">
-          <div className="stat-lbl">Weekly Focus Sprint</div>
-          <div className="stat-val" style={{ color: 'var(--accent)', fontSize: '1.8rem', fontWeight: 800 }}>
-            {studyLogged.toFixed(1)}h <span style={{ fontSize: '0.9rem', color: 'var(--text-3)' }}>/ {studyTarget}h</span>
+        <div className="stat-card card glass col-span-3">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <div className="stat-lbl" style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+              Weekly Focus Sprint
+            </div>
+            <span className="chip chip-apricot" style={{ fontSize: '10px' }}>Pomodoro</span>
           </div>
-          <small style={{ color: 'var(--success)', fontWeight: 700 }}>{studyPct}% of sprint goal met</small>
+          <div className="stat-val display" style={{ color: 'var(--apricot)', fontSize: '2.2rem', fontWeight: 700, lineHeight: 1.1 }}>
+            {studyLogged.toFixed(1)}h <span style={{ fontSize: '1rem', color: 'var(--text-3)', fontStyle: 'normal' }}>/ {studyTarget}h</span>
+          </div>
+          <div style={{ marginTop: '8px' }}>
+            <span className="chip chip-apricot" style={{ fontSize: '11px' }}>
+              {studyPct}% of sprint goal logged
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* 3-Column Action Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+      {/* 3-Column Action Layout — Bento Layout */}
+      <div className="bento-grid" style={{ marginBottom: '24px' }}>
         {/* Today's Action Focus - Dynamically populated from pending tasks & assignments */}
-        <div className="card" style={{ padding: '20px' }}>
+        <div className="card glass col-span-4" style={{ padding: '22px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Today's Action Focus</h3>
+            <h3 className="display" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Today's Action Focus</h3>
             <button className="btn btn-xs btn-outline" onClick={() => onNavigate('tasks')}>
               Tasks →
             </button>
@@ -152,7 +193,7 @@ export default function DashboardView({
                   <div key={a.id} style={{ padding: '10px 12px', background: 'var(--bg-3)', borderRadius: 'var(--radius-sm)', borderLeft: '4px solid var(--warning)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <strong style={{ fontSize: '12.5px' }}>{a.title}</strong>
-                      <span className="badge badge-warning" style={{ fontSize: '10px' }}>{a.dueDate || 'Due Soon'}</span>
+                      <span className="chip chip-warning" style={{ fontSize: '10px' }}>{a.dueDate || 'Due Soon'}</span>
                     </div>
                     <small style={{ color: 'var(--text-2)', fontSize: '11px' }}>{a.code || a.subject || 'Coursework'}</small>
                   </div>
@@ -162,7 +203,7 @@ export default function DashboardView({
                   <div key={t.id} style={{ padding: '10px 12px', background: 'var(--bg-3)', borderRadius: 'var(--radius-sm)', borderLeft: '4px solid var(--primary)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <strong style={{ fontSize: '12.5px' }}>{t.title}</strong>
-                      <span className={`badge ${t.priority === 'HIGH' ? 'badge-error' : 'badge-primary'}`} style={{ fontSize: '10px' }}>
+                      <span className={`chip ${t.priority === 'HIGH' ? 'chip-error' : 'chip-primary'}`} style={{ fontSize: '10px' }}>
                         {t.priority}
                       </span>
                     </div>
@@ -175,9 +216,9 @@ export default function DashboardView({
         </div>
 
         {/* Academic Calendar Events & Deadlines */}
-        <div className="card" style={{ padding: '20px' }}>
+        <div className="card glass col-span-4" style={{ padding: '22px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Calendar &amp; Scheduled Events</h3>
+            <h3 className="display" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Calendar &amp; Scheduled Events</h3>
             <button className="btn btn-xs btn-outline" onClick={() => onNavigate('cal')}>
               Full Calendar →
             </button>
@@ -195,7 +236,7 @@ export default function DashboardView({
                     <strong style={{ fontSize: '12px' }}>{ev.title}</strong>
                     <div style={{ fontSize: '11px', color: 'var(--text-3)' }}>{ev.venue || 'Campus'} {ev.time ? `· ${ev.time}` : ''}</div>
                   </div>
-                  <span className="badge badge-primary" style={{ height: 'fit-content', fontSize: '10px' }}>Day {ev.day}</span>
+                  <span className="chip chip-primary" style={{ height: 'fit-content', fontSize: '10px' }}>Day {ev.day}</span>
                 </div>
               ))
             )}
@@ -203,9 +244,9 @@ export default function DashboardView({
         </div>
 
         {/* Active Reminders & Alerts */}
-        <div className="card" style={{ padding: '20px' }}>
+        <div className="card glass col-span-4" style={{ padding: '22px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Active Reminders &amp; Alerts</h3>
+            <h3 className="display" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Active Reminders &amp; Alerts</h3>
             <button className="btn btn-xs btn-primary" onClick={onOpenRemModal}>
               + Schedule Alert
             </button>
@@ -255,13 +296,13 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* 2-Column Secondary Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+      {/* 2-Column Secondary Row — Bento Layout */}
+      <div className="bento-grid" style={{ marginBottom: '24px' }}>
         {/* Attendance Health Progress */}
-        <div className="card" style={{ padding: '20px' }}>
+        <div className="card glass col-span-7" style={{ padding: '22px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Course Attendance Standing</h3>
+              <h3 className="display" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Course Attendance Standing</h3>
               <small style={{ color: 'var(--text-3)' }}>Mandatory 75% Cutoff Threshold</small>
             </div>
             <button className="btn btn-xs btn-outline" onClick={() => onNavigate('attend')}>
@@ -305,10 +346,10 @@ export default function DashboardView({
         </div>
 
         {/* Weekly Study Hours & Timetable Focus */}
-        <div className="card" style={{ padding: '20px' }}>
+        <div className="card glass col-span-5" style={{ padding: '22px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Weekly Study Sprint</h3>
+              <h3 className="display" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Weekly Study Sprint</h3>
               <small style={{ color: 'var(--text-3)' }}>Goal: {studyTarget} hours / week</small>
             </div>
             <button className="btn btn-xs btn-primary" onClick={() => onNavigate('study')}>
@@ -364,13 +405,13 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* 3rd Row: Priority Tasks & Recent Study Notes */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
+      {/* 3rd Row: Priority Tasks & Recent Study Notes — Bento Layout */}
+      <div className="bento-grid">
         {/* Productivity Tasks Snapshot */}
-        <div className="card" style={{ padding: '20px' }}>
+        <div className="card glass col-span-6" style={{ padding: '22px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Productivity Tasks</h3>
+              <h3 className="display" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Productivity Tasks</h3>
               <small style={{ color: 'var(--text-3)' }}>Immediate Focus Items</small>
             </div>
             <button className="btn btn-xs btn-outline" onClick={() => onNavigate('tasks')}>
@@ -402,7 +443,7 @@ export default function DashboardView({
                     </strong>
                     <div style={{ fontSize: '10px', color: 'var(--text-3)' }}>{t.subject || 'General'}</div>
                   </div>
-                  <span className={`badge ${t.status === 'DONE' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '10px' }}>
+                  <span className={`chip ${t.status === 'DONE' ? 'chip-success' : 'chip-warning'}`} style={{ fontSize: '10px' }}>
                     {t.status}
                   </span>
                 </div>
@@ -412,10 +453,10 @@ export default function DashboardView({
         </div>
 
         {/* Recent Study Notes */}
-        <div className="card" style={{ padding: '20px' }}>
+        <div className="card glass col-span-6" style={{ padding: '22px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Recent Study Notes</h3>
+              <h3 className="display" style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>Recent Study Notes</h3>
               <small style={{ color: 'var(--text-3)' }}>Markdown Summaries</small>
             </div>
             <button className="btn btn-xs btn-outline" onClick={() => onNavigate('notes')}>

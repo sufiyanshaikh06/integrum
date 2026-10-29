@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import ThreeHeroCanvas from './ThreeHeroCanvas';
 import IntegrumLogo from './IntegrumLogo';
+import { DesignTweaks, ThemeToggle } from './DesignTweaks';
 
 interface LandingPhaseProps {
   onGoLogin: (mode?: 'student' | 'admin' | 'register') => void;
   onGoApp: () => void;
+  darkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
-export default function LandingPhase({ onGoLogin }: LandingPhaseProps) {
+export default function LandingPhase({ onGoLogin, darkMode, onToggleDarkMode }: LandingPhaseProps) {
   // Mobile Nav Drawer
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -117,7 +120,11 @@ export default function LandingPhase({ onGoLogin }: LandingPhaseProps) {
           </div>
 
           {/* Header Action Buttons (Student Login & Register ONLY - NO Admin on Header) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <DesignTweaks align="right" id="lpTweaksToggleBtn" />
+            {onToggleDarkMode && (
+              <ThemeToggle darkMode={!!darkMode} onToggleDarkMode={onToggleDarkMode} id="lpDarkModeToggle" />
+            )}
             <button
               className="lp-button secondary nav-btn-signin"
               onClick={() => onGoLogin('student')}
@@ -163,6 +170,15 @@ export default function LandingPhase({ onGoLogin }: LandingPhaseProps) {
         {mobileMenuOpen && (
           <div className="lp-mobile-drawer" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)', padding: '16px 24px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-2)' }}>Appearance &amp; Palette</span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <DesignTweaks align="left" id="lpMobileTweaksToggleBtn" />
+                  {onToggleDarkMode && (
+                    <ThemeToggle darkMode={!!darkMode} onToggleDarkMode={onToggleDarkMode} id="lpMobileDarkModeToggle" />
+                  )}
+                </div>
+              </div>
               <a href="#features" onClick={() => setMobileMenuOpen(false)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-1)', textDecoration: 'none' }}>Platform Capabilities</a>
               <a href="#faq" onClick={() => setMobileMenuOpen(false)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-1)', textDecoration: 'none' }}>FAQ</a>
               <a href="#governance" onClick={() => setMobileMenuOpen(false)} style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-1)', textDecoration: 'none' }}>Faculty Portal</a>
@@ -188,23 +204,30 @@ export default function LandingPhase({ onGoLogin }: LandingPhaseProps) {
         )}
       </nav>
 
-      {/* ── 2. Hero Section with 3D WebGL (Three.js) ──────────────── */}
-      <header className="hero">
-        <div className="lp-wrap">
+      {/* ── 2. Hero Section with 3D WebGL (Three.js) & Aurora Blobs ── */}
+      <header className="hero" style={{ position: 'relative', overflow: 'hidden' }}>
+        {/* Drifting Aurora Blobs */}
+        <div className="aurora-container" aria-hidden="true">
+          <div className="aurora-blob aurora-blob-1" />
+          <div className="aurora-blob aurora-blob-2" />
+          <div className="aurora-blob aurora-blob-3" />
+        </div>
+
+        <div className="lp-wrap" style={{ position: 'relative', zIndex: 1 }}>
           <div className="hero-split-grid">
             {/* Left Content Column */}
             <div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 14px', borderRadius: '999px', background: 'var(--primary-light)', color: 'var(--primary)', fontSize: '12px', fontWeight: 700, marginBottom: '22px' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)' }} />
-                Academic Operations &amp; Intelligence Ledger
+              <div className="chip chip-apricot" style={{ marginBottom: '20px', padding: '6px 14px', fontSize: '12px', fontWeight: 800 }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--apricot)', boxShadow: '0 0 6px var(--apricot)' }} />
+                Academic Operations &amp; Intelligence Ledger · v2
               </div>
 
-              <h1 style={{ fontSize: 'clamp(2.2rem, 4vw, 3.4rem)', fontWeight: 900, lineHeight: 1.15, letterSpacing: '-0.03em', color: 'var(--text-1)', margin: '0 0 20px 0' }}>
-                Unified Student Success.
+              <h1 className="display" style={{ fontSize: 'clamp(2.4rem, 4.5vw, 3.8rem)', fontWeight: 700, lineHeight: 1.08, letterSpacing: '-0.025em', color: 'var(--text-1)', margin: '0 0 20px 0' }}>
+                Unified Student <em>Success.</em>
               </h1>
 
               <p style={{ fontSize: '16.5px', lineHeight: 1.65, color: 'var(--text-2)', maxWidth: '560px', margin: '0 0 32px 0' }}>
-                An all-in-one academic operating system. Compute course attendance health under university statutory regulations, track syllabus deliverables, power study sprints, and optimize technical career artifacts.
+                An artistic, fluid academic operating system. Compute course attendance health under university statutory regulations, track syllabus deliverables, power study sprints, and optimize technical career artifacts.
               </p>
 
               <div className="hero-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center' }}>
@@ -227,15 +250,15 @@ export default function LandingPhase({ onGoLogin }: LandingPhaseProps) {
               {/* Verified Metrics Highlights */}
               <div className="hero-metrics-grid">
                 <div>
-                  <div style={{ fontSize: '22px', fontWeight: 900, color: 'var(--primary)', fontVariantNumeric: 'tabular-nums' }}>75.0%</div>
+                  <div className="display" style={{ fontSize: '26px', fontWeight: 700, color: 'var(--action)', fontVariantNumeric: 'tabular-nums' }}>75.0%</div>
                   <div style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 600, marginTop: '2px' }}>Ordinance Policy</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '22px', fontWeight: 900, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums' }}>Row-Lock</div>
+                  <div className="display" style={{ fontSize: '26px', fontWeight: 700, color: 'var(--apricot)', fontVariantNumeric: 'tabular-nums' }}>Row-Lock</div>
                   <div style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 600, marginTop: '2px' }}>ACID Task Safety</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '22px', fontWeight: 900, color: 'var(--success)', fontVariantNumeric: 'tabular-nums' }}>ATS-Ready</div>
+                  <div className="display" style={{ fontSize: '26px', fontWeight: 700, color: 'var(--success)', fontVariantNumeric: 'tabular-nums' }}>ATS-Ready</div>
                   <div style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 600, marginTop: '2px' }}>Career Resume Engine</div>
                 </div>
               </div>
@@ -253,28 +276,49 @@ export default function LandingPhase({ onGoLogin }: LandingPhaseProps) {
         </div>
       </header>
 
+      {/* ── Tilted Marquee Ribbon ── */}
+      <div className="marquee-ribbon-wrap" aria-hidden="true">
+        <div className="marquee-ribbon">
+          <span className="marquee-item"><span className="spark-dot" /> 75% Statutory Attendance Protection</span>
+          <span className="marquee-item"><span className="spark-dot" /> Pomodoro Study Focus Timers</span>
+          <span className="marquee-item"><span className="spark-dot" /> ATS Resume Match Engine</span>
+          <span className="marquee-item"><span className="spark-dot" /> University Ordinance 6086 Verified</span>
+          <span className="marquee-item"><span className="spark-dot" /> ACID Row-Level Task Safety</span>
+          <span className="marquee-item"><span className="spark-dot" /> Synchronized Academic Timetable</span>
+          <span className="marquee-item"><span className="spark-dot" /> Periwinkle &amp; Plum Aesthetic v2</span>
+          {/* Loop repeat */}
+          <span className="marquee-item"><span className="spark-dot" /> 75% Statutory Attendance Protection</span>
+          <span className="marquee-item"><span className="spark-dot" /> Pomodoro Study Focus Timers</span>
+          <span className="marquee-item"><span className="spark-dot" /> ATS Resume Match Engine</span>
+          <span className="marquee-item"><span className="spark-dot" /> University Ordinance 6086 Verified</span>
+          <span className="marquee-item"><span className="spark-dot" /> ACID Row-Level Task Safety</span>
+          <span className="marquee-item"><span className="spark-dot" /> Synchronized Academic Timetable</span>
+          <span className="marquee-item"><span className="spark-dot" /> Periwinkle &amp; Plum Aesthetic v2</span>
+        </div>
+      </div>
+
       {/* ── 3. Core Capabilities & Explanations ───────────────────── */}
       <section className="lp-section" id="features" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)' }}>
         <div className="lp-wrap">
           <div className="lp-section-header">
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 800, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+            <div className="chip chip-primary" style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '10px' }}>
               PLATFORM ARCHITECTURE
             </div>
-            <h2 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: '12px', letterSpacing: '-0.02em' }}>
-              Engineered for Real Academic Workflows
+            <h2 className="display" style={{ fontSize: '2.2rem', fontWeight: 700, color: 'var(--text-1)', marginBottom: '12px' }}>
+              Engineered for <em>Real Academic Workflows</em>
             </h2>
             <p style={{ fontSize: '15.5px', color: 'var(--text-2)', lineHeight: 1.65 }}>
               Integrum equips university students with dedicated academic instruments designed specifically for degree rigor, course compliance, and engineering career outcomes.
             </p>
           </div>
 
-          <div className="lp-features-grid">
+          <div className="lp-features-grid auto-grid">
             {productPillars.map((p, idx) => (
-              <div key={idx} className="card lp-feature-card">
+              <div key={idx} className="card glass lp-feature-card">
                 <div style={{ fontSize: '28px', marginBottom: '16px', lineHeight: 1 }}>
                   {p.icon}
                 </div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '10px', color: 'var(--text-1)' }}>
+                <h3 className="display" style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '10px', color: 'var(--text-1)' }}>
                   {p.title}
                 </h3>
                 <p style={{ fontSize: '13.5px', color: 'var(--text-2)', lineHeight: 1.65, margin: 0 }}>

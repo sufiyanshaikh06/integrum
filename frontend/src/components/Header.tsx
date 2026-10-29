@@ -1,5 +1,5 @@
-
 import type { ActiveView, UserRole, StudentInfo, AdminInfo } from '../types';
+import { DesignTweaks, ThemeToggle } from './DesignTweaks';
 
 interface HeaderProps {
   activeView: ActiveView;
@@ -87,14 +87,36 @@ export default function Header({
   };
 
   return (
-    <header className="app-header">
+    <header className="app-header glass">
       <div className="hdr-left">
         <button className="mobile-menu-btn" onClick={onToggleSidebar} aria-label="Open menu" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
         </button>
-        <h2 id="pageTitle" style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>
-          {titles[activeView] || 'Integrum'}
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h2
+            id="pageTitle"
+            className="display"
+            style={{
+              margin: 0,
+              fontSize: '1.3rem',
+              fontWeight: 700,
+              letterSpacing: '-0.02em',
+              color: 'var(--text-1)',
+            }}
+          >
+            {titles[activeView] || 'Integrum'}
+          </h2>
+          <span
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: 'var(--apricot)',
+              display: 'inline-block',
+              boxShadow: '0 0 6px var(--apricot)',
+            }}
+          />
+        </div>
         {userRole === 'admin' && (
           <span className="admin-badge" id="hdrAdminBadge" style={{ marginLeft: '12px' }}>
             Administrator Mode
@@ -102,7 +124,7 @@ export default function Header({
         )}
       </div>
 
-      <div className="hdr-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="hdr-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         {/* Role Toggle */}
         <span
           className="role-indicator-badge"
@@ -110,10 +132,8 @@ export default function Header({
           style={{
             fontSize: '11px',
             padding: '4px 10px',
-            borderRadius: 'var(--radius-control)',
-            fontWeight: 600,
-            background: userRole === 'admin' ? 'var(--warning-light)' : 'var(--primary-light)',
-            color: userRole === 'admin' ? 'var(--warning)' : 'var(--primary)',
+            borderRadius: 'var(--radius-pill)',
+            fontWeight: 700,
             border: `1px solid ${userRole === 'admin' ? '#FDE68A' : 'var(--border)'}`,
             display: 'inline-flex',
             alignItems: 'center',
@@ -123,25 +143,11 @@ export default function Header({
           <span>{userRole === 'admin' ? 'Faculty Admin' : 'Student Workspace'}</span>
         </span>
 
-        {/* Dark Mode Toggle */}
-        <button
-          className="theme-btn"
-          id="darkModeToggle"
-          onClick={onToggleDarkMode}
-          title="Toggle Dark Mode"
-          style={{
-            background: 'var(--bg-3)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-control)',
-            padding: '4px 10px',
-            cursor: 'pointer',
-            fontSize: '11px',
-            fontWeight: 600,
-            color: 'var(--text-1)',
-          }}
-        >
-          {darkMode ? 'Light' : 'Dark'}
-        </button>
+        {/* Brand Tweaks Panel */}
+        <DesignTweaks align="right" id="tweaksToggleBtn" />
+
+        {/* Sun/Moon Dark Mode Toggle Button */}
+        <ThemeToggle darkMode={darkMode} onToggleDarkMode={onToggleDarkMode} id="darkModeToggle" />
 
         {/* Notifications Popover */}
         <div style={{ position: 'relative' }}>

@@ -43,6 +43,7 @@ import LandingPhase from './components/LandingPhase';
 import LoginPhase, { type RegisterData } from './components/LoginPhase';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
+import { initPrimaryColor } from './utils/themePresets';
 import Modals from './components/Modals';
 
 // Views
@@ -215,6 +216,10 @@ export default function App() {
     localStorage.setItem('integrum-dark', darkMode ? 'true' : 'false');
     localStorage.setItem('integrum-theme-mode', themeMode);
   }, [darkMode, themeMode]);
+
+  useEffect(() => {
+    initPrimaryColor();
+  }, []);
 
   const handleToggleDarkMode = () => {
     const nextMode: ThemeMode = darkMode ? 'light' : 'dark';
@@ -1140,6 +1145,8 @@ export default function App() {
       {/* PHASE 1: LANDING */}
       {((phase === 'app' && !user) ? 'landing' : phase) === 'landing' && (
         <LandingPhase
+          darkMode={darkMode}
+          onToggleDarkMode={handleToggleDarkMode}
           onGoLogin={(mode) => {
             setLoginMode(mode || 'student');
             setPhase('login');
@@ -1160,6 +1167,8 @@ export default function App() {
       {((phase === 'app' && !user) ? 'landing' : phase) === 'login' && (
         <LoginPhase
           initialMode={loginMode}
+          darkMode={darkMode}
+          onToggleDarkMode={handleToggleDarkMode}
           onStudentLogin={handleStudentLogin}
           onAdminLogin={handleAdminLogin}
           onRegister={handleRegister}

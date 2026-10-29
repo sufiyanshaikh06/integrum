@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import IntegrumLogo from './IntegrumLogo';
+import { ThemeToggle } from './DesignTweaks';
 
 export interface RegisterData {
   isInstitutional: boolean;
@@ -19,6 +20,8 @@ interface LoginPhaseProps {
   onRegister: (data: RegisterData) => Promise<void>;
   onGoLanding: () => void;
   showToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  darkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
 export default function LoginPhase({
@@ -28,6 +31,8 @@ export default function LoginPhase({
   onRegister,
   onGoLanding,
   showToast,
+  darkMode,
+  onToggleDarkMode,
 }: LoginPhaseProps) {
   const [portal, setPortal] = useState<'student' | 'admin' | 'register'>(initialMode);
   const [formError, setFormError] = useState<string | null>(null);
@@ -168,27 +173,50 @@ export default function LoginPhase({
   const passMatch = regConfirmPass.length > 0 && regPass === regConfirmPass;
 
   return (
-    <div className="phase active" id="phase-login">
-      <div className="login-wrapper">
+    <div className="phase active" id="phase-login" style={{ position: 'relative', overflow: 'hidden' }}>
+      {/* Drifting Aurora Blobs */}
+      <div className="aurora-container" aria-hidden="true">
+        <div className="aurora-blob aurora-blob-1" style={{ top: '-10%', left: '5%' }} />
+        <div className="aurora-blob aurora-blob-2" style={{ bottom: '-10%', right: '5%' }} />
+      </div>
+
+      <div className="login-wrapper card glass">
         {/* Left Brand Editorial Column */}
         <div className="login-brand">
           <div className="lb-logo">
             <div className="lb-icon">
               <IntegrumLogo size={36} style={{ color: '#fff' }} />
             </div>
-            <span className="lb-name">Integrum</span>
+            <span className="lb-name display">Integrum</span>
+            <span
+              style={{
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                background: 'var(--apricot)',
+                display: 'inline-block',
+                boxShadow: '0 0 6px var(--apricot)',
+                marginLeft: '4px',
+              }}
+            />
           </div>
 
-          <h2>Your entire student journey, unified.</h2>
-          <p>
+          <div className="chip chip-apricot" style={{ width: 'fit-content', marginBottom: '16px', fontSize: '11px', fontWeight: 800 }}>
+            ✦ ACADEMIC LEDGER v2
+          </div>
+
+          <h2 className="display" style={{ fontSize: '2rem', fontWeight: 700, lineHeight: 1.15, marginBottom: '16px' }}>
+            Your entire student journey, <em style={{ color: 'var(--apricot)' }}>unified.</em>
+          </h2>
+          <p style={{ fontSize: '0.92rem', opacity: 0.9, lineHeight: 1.65 }}>
             Academics, examination preparation, attendance health, career artifacts, and AI intelligence—all organized around your verified academic context.
           </p>
 
           <ul className="lb-features">
-            <li><span className="check">•</span> University Ordinance 6086 Attendance &amp; Standing Tracker</li>
-            <li><span className="check">•</span> Semester 5 Examination timetable &amp; hall allocations</li>
-            <li><span className="check">•</span> Atomic task execution with row-level transaction safety</li>
-            <li><span className="check">•</span> Academic ledger with clean data privacy isolation</li>
+            <li><span className="check" style={{ color: 'var(--apricot)' }}>✦</span> University Ordinance 6086 Attendance &amp; Standing</li>
+            <li><span className="check" style={{ color: 'var(--apricot)' }}>✦</span> Semester 5 Examination timetable &amp; hall allocations</li>
+            <li><span className="check" style={{ color: 'var(--apricot)' }}>✦</span> Atomic task execution with row-level transaction safety</li>
+            <li><span className="check" style={{ color: 'var(--apricot)' }}>✦</span> Academic ledger with clean data privacy isolation</li>
           </ul>
 
           <div style={{ marginTop: 'auto', paddingTop: '24px', fontSize: '0.8rem', opacity: 0.85 }}>
@@ -207,8 +235,8 @@ export default function LoginPhase({
                 background: 'none',
                 border: 'none',
                 fontSize: '13px',
-                fontWeight: 600,
-                color: 'var(--primary)',
+                fontWeight: 700,
+                color: 'var(--secondary-ink)',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -218,9 +246,14 @@ export default function LoginPhase({
             >
               ← Return to Integrum Home
             </button>
-            <span style={{ fontSize: '12px', color: 'var(--text-3)', fontWeight: 600 }}>
-              {portal === 'admin' ? 'Faculty Portal' : portal === 'register' ? 'Registration' : 'Student Access'}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {onToggleDarkMode && (
+                <ThemeToggle darkMode={!!darkMode} onToggleDarkMode={onToggleDarkMode} id="loginDarkModeToggle" />
+              )}
+              <span className="chip chip-primary" style={{ fontSize: '11px' }}>
+                {portal === 'admin' ? 'Faculty Portal' : portal === 'register' ? 'Registration' : 'Student Access'}
+              </span>
+            </div>
           </div>
 
           {/* Tab Switcher */}
@@ -250,7 +283,7 @@ export default function LoginPhase({
           {/* 1. Student Sign In Form */}
           {portal === 'student' && (
             <div id="form-portal-student">
-              <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginBottom: '6px', color: 'var(--text-1)' }}>
+              <h2 className="display" style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: '6px', color: 'var(--text-1)' }}>
                 Student Sign In
               </h2>
               <p className="login-sub" style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginBottom: '24px' }}>
@@ -399,7 +432,7 @@ export default function LoginPhase({
           {/* 2. Student Registration Form */}
           {portal === 'register' && (
             <div id="form-portal-register">
-              <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginBottom: '6px', color: 'var(--text-1)' }}>
+              <h2 className="display" style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: '6px', color: 'var(--text-1)' }}>
                 Student Registration
               </h2>
               <p className="login-sub" style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginBottom: '18px' }}>
@@ -693,10 +726,10 @@ export default function LoginPhase({
           {portal === 'admin' && (
             <div id="form-portal-admin">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-1)' }}>
+                <h2 className="display" style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
                   Faculty &amp; Administration
                 </h2>
-                <span className="admin-badge" style={{ background: 'var(--primary-light)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
+                <span className="chip chip-primary" style={{ fontSize: '11px', fontWeight: 700 }}>
                   Faculty Portal
                 </span>
               </div>

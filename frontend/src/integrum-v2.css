@@ -1,0 +1,144 @@
+/* Integrum Design System v2 — drop-in starter
+   Fonts:  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..800;1,9..144,400..800&family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+   Dark mode: add class="dark" to <body>. All v1 token names are kept. */
+
+:root {
+  /* Brand */
+  --primary: #442C43;  --primary-hover: #322031;  --primary-600: #5B3B5A;  --primary-300: #8A6C89;
+  --primary-light: #EAE6EA;  --primary-50: #F4F1F4;
+  --secondary: #8FACD9;  --secondary-hover: #7B99C8;  --secondary-light: #EFF3F9;
+  --secondary-ink: #3F5F94;               /* text-safe periwinkle (5.9:1 on --bg) */
+  --accent: var(--secondary);  --accent-hover: var(--secondary-hover);  --accent-light: var(--secondary-light);
+  --apricot: #E9A07F;  --apricot-light: #FBEAE1;   /* NEW: spark accent */
+
+  /* Role tokens: buttons use these so dark mode can swap them */
+  --action: var(--primary);  --on-action: #FFFFFF;  --action-hover: var(--primary-hover);
+
+  /* Surfaces & text (lighter, warmer than v1; muted text now passes 4.5:1) */
+  --bg: #F5F3F6;  --bg-2: #ECE9EE;  --bg-3: #E2DFE6;  --surface: #FFFFFF;
+  --text-1: #1F2123;  --text-2: #43474A;  --text-3: #5C6064;  --border: #CFCBD3;
+
+  /* Status: main / tint / text-safe ink */
+  --success: #10B981;  --success-light: #D1FAE5;  --success-ink: #065F46;
+  --warning: #F59E0B;  --warning-light: #FEF3C7;  --warning-ink: #92400E;
+  --error:   #EF4444;  --error-light:   #FEE2E2;  --error-ink:   #991B1B;
+  --info:    #3B82F6;  --info-light:    #DBEAFE;  --info-ink:    #1E40AF;
+
+  /* Glass & texture */
+  --glass: rgba(255,255,255,.62);  --glass-border: rgba(255,255,255,.8);  --dot: rgba(68,44,67,.16);
+  --blob-1: rgba(143,172,217,.55);  --blob-2: rgba(233,160,127,.42);  --blob-3: rgba(138,108,137,.35);
+
+  /* Type */
+  --font: 'Nunito', system-ui, sans-serif;
+  --font-heading: var(--font);
+  --font-display: 'Fraunces', Georgia, serif;
+  --step--1: clamp(.8rem, .77rem + .15vw, .9rem);
+  --step-0:  clamp(1rem, .96rem + .2vw, 1.125rem);
+  --step-1:  clamp(1.2rem, 1.1rem + .5vw, 1.5rem);
+  --step-2:  clamp(1.5rem, 1.3rem + 1vw, 2.1rem);
+  --step-3:  clamp(2rem, 1.6rem + 2vw, 3.1rem);
+  --step-4:  clamp(2.6rem, 1.8rem + 4vw, 4.6rem);
+  --step-5:  clamp(3rem, 1.6rem + 7vw, 7rem);
+
+  /* Fluid spacing */
+  --space-1: clamp(.25rem, .2rem + .2vw, .4rem);
+  --space-2: clamp(.5rem, .4rem + .4vw, .8rem);
+  --space-3: clamp(.9rem, .7rem + .8vw, 1.4rem);
+  --space-4: clamp(1.4rem, 1rem + 1.6vw, 2.4rem);
+  --space-5: clamp(2.4rem, 1.6rem + 3.2vw, 4.5rem);
+  --space-6: clamp(3.5rem, 2rem + 6vw, 8rem);
+  --gutter: clamp(16px, 4vw, 48px);
+
+  /* Geometry */
+  --radius-sm: 8px;  --radius-md: 16px;  --radius-lg: 24px;  --radius-xl: 32px;  --radius-2xl: 40px;
+  --radius-pill: 999px;
+  --radius-blob: 62% 38% 55% 45% / 48% 58% 42% 52%;
+  --sidebar-w: 260px;  --header-h: 64px;
+
+  /* Elevation */
+  --shadow-sm: 0 4px 12px rgba(37,40,42,.05);
+  --shadow-md: 0 8px 24px -4px rgba(37,40,42,.10);
+  --shadow-lg: 0 16px 32px -8px rgba(37,40,42,.14);
+  --shadow-xl: 0 28px 56px -14px rgba(68,44,67,.28);
+
+  /* Motion */
+  --ease: cubic-bezier(.4,0,.2,1);
+  --ease-spring: cubic-bezier(.34,1.56,.64,1);
+  --dur-1: 150ms;  --dur-2: 300ms;  --dur-3: 600ms;
+}
+
+body.dark {
+  --action: #8FACD9;  --on-action: #14151A;  --action-hover: #A5BDE3;
+  --bg: #141517;  --bg-2: #1D1F21;  --bg-3: #292C2F;  --surface: #1D1F21;
+  --text-1: #E8E9EA;  --text-2: #B4B7B9;  --text-3: #8E9194;  --border: #3A3E40;
+  --primary-light: rgba(138,108,137,.28);  --primary-50: rgba(138,108,137,.14);
+  --secondary-light: rgba(143,172,217,.16);  --secondary-ink: #A5BDE3;
+  --success-light: rgba(16,185,129,.16);  --success-ink: #6EE7B7;
+  --warning-light: rgba(245,158,11,.16);  --warning-ink: #FCD34D;
+  --error-light: rgba(239,68,68,.16);     --error-ink: #FCA5A5;
+  --info-light: rgba(59,130,246,.18);     --info-ink: #93C5FD;
+  --glass: rgba(29,31,33,.6);  --glass-border: rgba(255,255,255,.08);  --dot: rgba(255,255,255,.08);
+  --blob-1: rgba(143,172,217,.22);  --blob-2: rgba(233,160,127,.14);  --blob-3: rgba(138,108,137,.30);
+  --shadow-sm: 0 4px 12px rgba(0,0,0,.4);  --shadow-md: 0 8px 24px -4px rgba(0,0,0,.5);
+  --shadow-lg: 0 16px 32px -8px rgba(0,0,0,.6);  --shadow-xl: 0 28px 56px -14px rgba(0,0,0,.6);
+}
+
+/* ── Starter utilities ── */
+body { margin: 0; background: var(--bg); color: var(--text-1); font: var(--step-0)/1.6 var(--font); }
+:focus-visible { outline: 3px solid var(--secondary); outline-offset: 3px; border-radius: var(--radius-sm); }
+.wrap { width: min(1240px, 100% - 2 * var(--gutter)); margin-inline: auto; }
+.display { font-family: var(--font-display); font-weight: 600; letter-spacing: -.02em; line-height: 1.02; }
+.display em { font-style: italic; font-weight: 500; color: var(--secondary-ink); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: .55rem; min-height: 48px; padding: .7rem 1.4rem;
+  border: 2px solid transparent; border-radius: var(--radius-pill); font: 700 var(--step-0)/1 var(--font); cursor: pointer;
+  transition: transform var(--dur-2) var(--ease-spring), background var(--dur-1) var(--ease); }
+.btn:hover { transform: translateY(-2px); }
+.btn-primary { background: var(--action); color: var(--on-action); box-shadow: var(--shadow-md); }
+.btn-primary:hover { background: var(--action-hover); }
+.btn-ghost { background: transparent; color: var(--text-1); border-color: var(--border); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: var(--space-4); box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2) var(--ease); }
+.card:hover { transform: translateY(-4px) rotate(-.4deg); box-shadow: var(--shadow-lg); }
+.glass { background: var(--glass); border: 1px solid var(--glass-border); backdrop-filter: blur(18px) saturate(140%); box-shadow: var(--shadow-xl); }
+
+.chip { display: inline-flex; align-items: center; gap: .4rem; padding: .2rem .7rem; border-radius: var(--radius-pill); font-size: var(--step--1); font-weight: 700; }
+.chip-success { background: var(--success-light); color: var(--success-ink); }
+.chip-warning { background: var(--warning-light); color: var(--warning-ink); }
+.chip-error   { background: var(--error-light);   color: var(--error-ink); }
+.chip-info    { background: var(--info-light);    color: var(--info-ink); }
+
+/* Self-arranging grid: no breakpoints needed */
+.auto-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--space-3); }
+
+/* Bento grid: 12 cols desktop -> 6 cols tablet -> 1 col mobile */
+.bento-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: var(--space-3); }
+.col-span-12 { grid-column: span 12; }
+.col-span-8  { grid-column: span 8; }
+.col-span-7  { grid-column: span 7; }
+.col-span-6  { grid-column: span 6; }
+.col-span-5  { grid-column: span 5; }
+.col-span-4  { grid-column: span 4; }
+.col-span-3  { grid-column: span 3; }
+.col-span-2  { grid-column: span 2; }
+.col-span-1  { grid-column: span 1; }
+
+@media (max-width: 1024px) {
+  .bento-grid { grid-template-columns: repeat(6, 1fr); }
+  .bento-grid > .col-span-12,
+  .bento-grid > .col-span-8,
+  .bento-grid > .col-span-7,
+  .bento-grid > .col-span-6,
+  .bento-grid > .col-span-5 { grid-column: span 6; }
+  .bento-grid > .col-span-4 { grid-column: span 6; }
+  .bento-grid > .col-span-3 { grid-column: span 3; }
+  .bento-grid > .col-span-2 { grid-column: span 2; }
+}
+
+@media (max-width: 640px) {
+  .bento-grid { grid-template-columns: 1fr; }
+  .bento-grid > [class*="col-span-"] { grid-column: span 1 !important; }
+}
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
