@@ -17,6 +17,8 @@ export const setRefreshCookie = (res: Response, refreshToken: string): void => {
     secure: isSecure,
     sameSite: sameSite as 'strict' | 'lax' | 'none',
     maxAge: sevenDays,
+    path: '/',
+    ...(sameSite === 'none' ? { partitioned: true } : {}),
   });
 };
 
@@ -28,5 +30,7 @@ export const clearRefreshCookie = (res: Response): void => {
     httpOnly: true,
     secure: isSecure,
     sameSite: sameSite as 'strict' | 'lax' | 'none',
+    path: '/',
+    ...(sameSite === 'none' ? { partitioned: true } : {}),
   });
 };

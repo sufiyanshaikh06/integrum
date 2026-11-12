@@ -15,6 +15,8 @@ services:
         value: 5000
       - key: CLIENT_URL
         sync: false # Set to your Vercel frontend URL, e.g. https://<app>.vercel.app
+      - key: ALLOWED_ORIGINS
+        sync: false # Comma-separated list of allowed origins, e.g. https://integrum-beta.vercel.app,http://localhost:5173
       - key: DATABASE_URL
         sync: false # Supabase Transaction Pooler (port 6543, pgbouncer=true) for runtime queries
       - key: DIRECT_URL

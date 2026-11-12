@@ -9,6 +9,7 @@ export const healthCheck = async (req: Request, res: Response) => {
     await prisma.$queryRaw`SELECT 1`;
     dbStatus = 'connected';
   } catch (error) {
+    console.error('Database health check query failed:', error);
     dbStatus = 'error';
   }
 

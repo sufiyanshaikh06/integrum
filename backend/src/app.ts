@@ -9,6 +9,7 @@ import compression from 'compression';
 import { rateLimit } from 'express-rate-limit';
 import { env } from './config/env.js';
 import { uploadLimiter } from './config/limiters.js';
+import { corsOptions, getAllowedOrigins } from './config/cors.js';
 
 export { uploadLimiter };
 
@@ -76,17 +77,12 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'blob:'],
-        connectSrc: ["'self'", env.CLIENT_URL],
+        connectSrc: ["'self'", ...getAllowedOrigins()],
       },
     },
   })
 );
-app.use(
-  cors({
-    origin: env.CLIENT_URL,
-    credentials: true,
-  })
-);
+app.use(cors(corsOptions));
 
 // Logging
 if (env.NODE_ENV === 'development') {
